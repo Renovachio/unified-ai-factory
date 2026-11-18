@@ -10,7 +10,8 @@
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
     "build": "bun run --filter '*' build",
-    "ci": "bun run validate:package && bun run lint && bun run typecheck && bun run test && bun run build"
+    "license": "bun scripts/license-check.ts",
+    "ci": "bun run validate:package && bun run license && bun run lint && bun run typecheck && bun run test && bun run build"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

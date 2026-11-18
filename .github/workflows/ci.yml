@@ -17,6 +17,7 @@ jobs:
           python-version: "3.12"
       - run: bun install --frozen-lockfile
       - run: python3 scripts/validate_package.py
+      - run: bun run license -- --sbom evidence/LIC-001/sbom.cdx.json
       - run: bun run lint
       - run: bun run typecheck
       - run: bun test

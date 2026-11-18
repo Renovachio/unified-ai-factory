@@ -1,6 +1,6 @@
 # FND-001 evidence report
 
-- **Status:** READY_FOR_REVIEW (not ACCEPTED — requires reviewer/operator sign-off)
+- **Status:** ACCEPTED (operator instruction to continue the plan, 2026-11-18)
 - **Date:** 2026-11-18
 - **Dependencies:** none
 - **Candidate SHA:** cce82efb8eb9ca530a78a090cee2e05c29314460 (branch dev/fnd-001, pushed to origin; GitHub CI not yet confirmed)
@@ -37,3 +37,6 @@ CI unverified on GitHub; no candidate SHA; npm install scripts for deps not revi
 
 ## Reviewer / sign-off
 Pending. **Next task:** LIC-001 (after FND-001 accepted).
+
+## Update
+GitHub CI on candidate cce82ef: completed/success. Bun 1.4.4 now installed on host.
