@@ -59,6 +59,15 @@
       "name": "@factory/domain",
       "version": "0.0.0",
     },
+    "packages/scheduler": {
+      "name": "@factory/scheduler",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+      },
+    },
     "packages/telemetry": {
       "name": "@factory/telemetry",
       "version": "0.0.0",
@@ -94,6 +103,8 @@
     "@factory/db": ["@factory/db@workspace:packages/db"],
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
+
+    "@factory/scheduler": ["@factory/scheduler@workspace:packages/scheduler"],
 
     "@factory/telemetry": ["@factory/telemetry@workspace:packages/telemetry"],
 
