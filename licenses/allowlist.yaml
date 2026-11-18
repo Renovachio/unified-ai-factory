@@ -124,6 +124,18 @@ packages:
     approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
     approvedOn: "2026-11-18"
     allowedModes: [runtime]
+  - name: "ajv"
+    version: "8.20.0"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "ajv-formats"
+    version: "3.0.1"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
 # Installed packages whose license is not on the allowlist but were individually reviewed.
 exceptions:
   - name: "@img/sharp-libvips-*"

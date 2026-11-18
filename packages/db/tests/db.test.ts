@@ -32,9 +32,9 @@ describe("migrations: fresh install, upgrade, rollback", () => {
   test("fresh install applies all migrations once and is idempotent", async () => {
     const db = await createTestDb({ migrate: false });
     try {
-      expect(await migrateUp(db.sql)).toEqual(["0001", "0002"]);
+      expect(await migrateUp(db.sql)).toEqual(["0001", "0002", "0003"]);
       expect(await migrateUp(db.sql)).toEqual([]);
-      expect(await appliedVersions(db.sql)).toEqual(["0001", "0002"]);
+      expect(await appliedVersions(db.sql)).toEqual(["0001", "0002", "0003"]);
     } finally { await db.drop(); }
   });
   test("upgrade 0001 -> 0002 preserves data; rollback 0002 keeps it; rollback 0001 removes everything; re-apply works", async () => {
@@ -43,15 +43,15 @@ describe("migrations: fresh install, upgrade, rollback", () => {
       await migrateUp(db.sql, { target: "0001" });
       const s = await seed(db.sql);
       await newJob(db.sql, s.repoId);
-      expect(await migrateUp(db.sql)).toEqual(["0002"]);
+      expect(await migrateUp(db.sql)).toEqual(["0002", "0003"]);
       expect((await db.sql`SELECT count(*)::int AS c FROM jobs`)[0]!.c).toBe(1);
-      expect(await migrateDown(db.sql)).toEqual(["0002"]);
+      expect(await migrateDown(db.sql, { steps: 2 })).toEqual(["0003", "0002"]);
       expect((await db.sql`SELECT to_regclass('idempotency_keys') AS t`)[0]!.t).toBeNull();
       expect((await db.sql`SELECT count(*)::int AS c FROM jobs`)[0]!.c).toBe(1);
       expect(await migrateDown(db.sql)).toEqual(["0001"]);
       const left = await db.sql`SELECT count(*)::int AS c FROM information_schema.tables WHERE table_schema='public' AND table_name <> 'schema_migrations'`;
       expect(left[0]!.c).toBe(0);
-      expect(await migrateUp(db.sql)).toEqual(["0001", "0002"]);
+      expect(await migrateUp(db.sql)).toEqual(["0001", "0002", "0003"]);
     } finally { await db.drop(); }
   });
   test("failed migration rolls back atomically", async () => {
@@ -84,7 +84,7 @@ describe("migrations: fresh install, upgrade, rollback", () => {
     const db = await createTestDb({ migrate: false });
     try {
       const results = await Promise.all([migrateUp(db.sql), migrateUp(db.sql), migrateUp(db.sql)]);
-      expect(results.flat().sort()).toEqual(["0001", "0002"]);
+      expect(results.flat().sort()).toEqual(["0001", "0002", "0003"]);
     } finally { await db.drop(); }
   });
 });

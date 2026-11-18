@@ -222,6 +222,8 @@ export const events = pgTable("events", {
   type: text("type").notNull(),
   source: text("source").notNull(),
   actorId: text("actor_id"),
+  attempt: integer("attempt").notNull().default(1),
+  fencingToken: bigint("fencing_token", { mode: "number" }).notNull().default(0),
   payloadRedacted: jsonb("payload_redacted").notNull().default({}),
   digest: text("digest").notNull(),
   createdAt: created(),

@@ -1,0 +1,2 @@
+ALTER TABLE events DROP COLUMN IF EXISTS fencing_token;
+ALTER TABLE events DROP COLUMN IF EXISTS attempt;
