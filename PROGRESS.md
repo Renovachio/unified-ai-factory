@@ -11,7 +11,7 @@ This is a specification package. No engineering work orders have been implemente
 | API-001 | NOT_STARTED | — | — |
 | EVT-001 | ACCEPTED | evidence/EVT-001/report.md | operator (continue-plan instruction) |
 | SCH-001 | ACCEPTED | evidence/SCH-001/report.md | operator (continue-plan instruction) |
-| RUN-001 | NOT_STARTED | — | — |
+| RUN-001 | ACCEPTED | evidence/RUN-001/report.md | operator (continue-plan instruction) |
 | SCM-001 | NOT_STARTED | — | — |
 | AGT-001 | NOT_STARTED | — | — |
 | AGT-002 | NOT_STARTED | — | — |

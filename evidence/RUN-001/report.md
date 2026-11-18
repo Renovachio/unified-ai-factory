@@ -2,8 +2,8 @@
 
 - **Status:** ACCEPTED
 - **Date:** 2026-11-18
-- **Candidate SHA:** a6db305c257d198fbbc288814962c19b53608d75 (branch dev/run-001)
-- **GitHub CI on candidate SHA:** completed failure https://github.com/Renovachio/unified-ai-factory/actions/runs/44424255281
+- **Candidate SHA:** c582918028c103c9b33f54df28bb1c3e4cc3dc7c (branch dev/run-001)
+- **GitHub CI on candidate SHA:** completed success https://github.com/Renovachio/unified-ai-factory/actions/runs/44424525540
 - **Test totals:** 
 - **Accepted by:** operator, via instruction to continue following the plan to completion (2026-11-18); no separate human code review has occurred.
 
@@ -19,22 +19,9 @@
 | `bun run build` | 0 |
 
 ## Files changed in this task
-- `.github/workflows/ci.yml`
-- `apps/runner/package.json`
-- `apps/runner/src/index.ts`
-- `apps/runner/tests/runner.test.ts`
-- `apps/runner/tsconfig.json`
-- `bun.lock`
-- `packages/sandboxes/package.json`
 - `packages/sandboxes/src/backends.ts`
-- `packages/sandboxes/src/env.ts`
-- `packages/sandboxes/src/gitsafety.ts`
-- `packages/sandboxes/src/index.ts`
-- `packages/sandboxes/src/paths.ts`
 - `packages/sandboxes/src/process.ts`
-- `packages/sandboxes/src/workspace.ts`
 - `packages/sandboxes/tests/adversarial.test.ts`
-- `packages/sandboxes/tsconfig.json`
 
 ## Notes
 - `@factory/sandboxes`: OS-level confinement backends — macOS Seatbelt (`sandbox-exec`, deny-default profile: workspace-only read/write, no network) and Linux bubblewrap (`--unshare-all`, ro-bind system dirs, tmpfs /tmp); `NoIsolationBackend` fails closed (untrusted code is never run without confinement; `trusted_repository_only` needs explicit opt-in). Git worktrees are NOT treated as isolation.
@@ -47,3 +34,4 @@
 - Platform caveats: Seatbelt (`sandbox-exec`) is deprecated by Apple but functional (macOS 27 verified locally); Linux bubblewrap path is verified in CI only (ubuntu-24.04 with unprivileged userns enabled). Quarantine-on-violation detection is NOT implemented here (a denied access is blocked but not auto-escalated); noted for ORC-001/OBS-001. A dedicated OS account for the worker remains an operator action.
 - Quirk found: `ls /home` inside Seatbelt on macOS hangs on the autofs mount until the timeout kills it (contained, not an escape).
 - Next: SCM-001.
+- Fix after first CI run: bubblewrap `--clearenv` also wiped the scrubbed sandbox env on Linux (HOME/PATH missing); the scrubbed env is now re-applied with `--setenv` and covered by a unit test of the bwrap argv. Linux backend verified by the CI adversarial suite.
