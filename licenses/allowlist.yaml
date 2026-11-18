@@ -112,6 +112,18 @@ packages:
     approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
     approvedOn: "2026-11-18"
     allowedModes: [runtime]
+  - name: "drizzle-orm"
+    version: "0.45.4"
+    license: Apache-2.0
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "postgres"
+    version: "4.1.1"
+    license: Unlicense
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
 # Installed packages whose license is not on the allowlist but were individually reviewed.
 exceptions:
   - name: "@img/sharp-libvips-*"
