@@ -1,0 +1,25 @@
+{
+  "name": "unified-ai-factory",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "bun@1.4.4",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "validate:package": "python3 scripts/validate_package.py",
+    "lint": "eslint .",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test",
+    "build": "bun run --filter '*' build",
+    "ci": "bun run validate:package && bun run lint && bun run typecheck && bun run test && bun run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/bun": "1.4.4",
+    "@types/node": "26.6.6",
+    "eslint": "10.15.0",
+    "globals": "17.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.73.0",
+    "@next/eslint-plugin-next": "16.4.6"
+  }
+}

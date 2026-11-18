@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CreateJobRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repositoryId",
+    "request"
+  ],
+  "properties": {
+    "repositoryId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "title",
+        "description"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "feature",
+            "bug",
+            "maintenance",
+            "research"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceId": {
+          "type": "string"
+        }
+      }
+    },
+    "priority": {
+      "enum": [
+        "low",
+        "normal",
+        "high"
+      ]
+    }
+  }
+}
