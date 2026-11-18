@@ -10,7 +10,7 @@ This is a specification package. No engineering work orders have been implemente
 | DB-001 | ACCEPTED | evidence/DB-001/report.md | operator (continue-plan instruction) |
 | API-001 | NOT_STARTED | — | — |
 | EVT-001 | ACCEPTED | evidence/EVT-001/report.md | operator (continue-plan instruction) |
-| SCH-001 | NOT_STARTED | — | — |
+| SCH-001 | ACCEPTED | evidence/SCH-001/report.md | operator (continue-plan instruction) |
 | RUN-001 | NOT_STARTED | — | — |
 | SCM-001 | NOT_STARTED | — | — |
 | AGT-001 | NOT_STARTED | — | — |
