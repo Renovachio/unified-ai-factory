@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  assertEnvAllowed, buildSandboxEnv, createWorkspace, detectBackend, findEscapingSymlinks, NoIsolationBackend, PathEscapeError, PolicyViolation,
+  assertEnvAllowed, BwrapBackend, buildSandboxEnv, createWorkspace, detectBackend, findEscapingSymlinks, NoIsolationBackend, PathEscapeError, PolicyViolation,
   resolveInside, runSandboxed, sanitizeGitDir, sweepStaleWorkspaces, teardownWorkspace, type Workspace,
 } from "../src/index";
 
@@ -30,6 +30,18 @@ afterAll(() => { server.close(); });
 
 const sh = (script: string, extra: Partial<Parameters<typeof runSandboxed>[0]> = {}) =>
   runSandboxed({ backend, workspaceRoot: ws.root, cwd: ws.repoDir, command: "/bin/sh", args: ["-c", script], env, timeoutMs: 10_000, ...extra });
+
+test("bwrap argv: unshares everything, binds only the workspace read-write, re-applies the scrubbed env after --clearenv", () => {
+  const w = new BwrapBackend("/usr/bin/bwrap").wrap("/bin/echo", ["hi"], { workspaceRoot: ws.root, env: { HOME: "/h", PATH: "/usr/bin:/bin" }, cpuSeconds: 5 });
+  expect(w.command).toBe("/usr/bin/bwrap");
+  expect(w.args).toEqual(expect.arrayContaining(["--unshare-all", "--die-with-parent", "--new-session", "--clearenv"]));
+  expect(w.args).not.toContain("--share-net");
+  const i = w.args.indexOf("--clearenv");
+  expect(w.args.slice(i + 1, i + 7)).toEqual(["--setenv", "HOME", "/h", "--setenv", "PATH", "/usr/bin:/bin"]);
+  const binds = w.args.flatMap((a, k) => (a === "--bind" ? [w.args[k + 1]] : []));
+  expect(binds).toEqual([ws.root]);
+  expect(w.args.join(" ")).toContain("ulimit -t 5");
+});
 
 test("a real confinement backend is available on this host (suite must not silently weaken)", () => {
   expect(backend.isolation).toBe("strong");
