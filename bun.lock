@@ -86,6 +86,16 @@
         "@factory/telemetry": "workspace:*",
       },
     },
+    "packages/scm": {
+      "name": "@factory/scm",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+    },
     "packages/telemetry": {
       "name": "@factory/telemetry",
       "version": "0.0.0",
@@ -127,6 +137,8 @@
     "@factory/sandboxes": ["@factory/sandboxes@workspace:packages/sandboxes"],
 
     "@factory/scheduler": ["@factory/scheduler@workspace:packages/scheduler"],
+
+    "@factory/scm": ["@factory/scm@workspace:packages/scm"],
 
     "@factory/telemetry": ["@factory/telemetry@workspace:packages/telemetry"],
 

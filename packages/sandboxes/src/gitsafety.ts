@@ -74,7 +74,7 @@ export function sanitizeGitDir(repoDir: string): GitSanitizeReport {
     sections.set(header, lines);
   }
   for (const [h, lines] of sections) out.push(h, ...lines);
-  out.push("[core]", "\thooksPath = /dev/null", "\tfsmonitor = false", "[protocol]", "\text.allow = never", "\tfile.allow = never");
+  out.push("[core]", "\thooksPath = /dev/null", "\tfsmonitor = false", '[protocol "ext"]', "\tallow = never", '[protocol "file"]', "\tallow = never");
   writeFileSync(cfgPath, out.join("\n") + "\n");
   return report;
 }

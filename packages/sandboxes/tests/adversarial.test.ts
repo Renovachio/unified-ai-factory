@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { createServer, type Server } from "node:net";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -155,6 +156,21 @@ describe("path and git safety", () => {
     expect(cfg).toContain("https://github.com/o/r.git");
     expect(report.droppedConfigKeys).toEqual(expect.arrayContaining(["core.fsmonitor", "core.hookspath", "alias.co", "credential.helper", "remote.origin.url", "include.path"]));
     expect(existsSync(join(repo, ".git", "hooks", "pre-commit"))).toBe(false);
+  });
+  test("the sanitized config is valid for real git, idempotent, and effective", () => {
+    
+    const repo = join(ws.root, "realgit");
+    mkdirSync(repo, { recursive: true });
+    const g = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: ws.homeDir, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
+    g("init", "-q");
+    g("config", "alias.x", "!touch /tmp/should-not-exist");
+    g("config", "core.sshCommand", "evil");
+    sanitizeGitDir(repo);
+    sanitizeGitDir(repo); // second pass over its own output must still parse
+    const listed = g("config", "--local", "--list");
+    expect(listed).toContain("core.hookspath=/dev/null");
+    expect(listed).toContain("protocol.ext.allow=never");
+    expect(listed).not.toMatch(/alias|sshcommand/i);
   });
   test("a .git gitfile or symlink pointing elsewhere is refused", () => {
     const repo = join(ws.root, "gitfile");
