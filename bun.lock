@@ -15,6 +15,16 @@
         "typescript-eslint": "8.73.0",
       },
     },
+    "apps/runner": {
+      "name": "@factory/runner",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+      },
+    },
     "apps/web": {
       "name": "@factory/web",
       "version": "0.0.0",
@@ -58,6 +68,14 @@
     "packages/domain": {
       "name": "@factory/domain",
       "version": "0.0.0",
+    },
+    "packages/sandboxes": {
+      "name": "@factory/sandboxes",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/domain": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+      },
     },
     "packages/scheduler": {
       "name": "@factory/scheduler",
@@ -103,6 +121,10 @@
     "@factory/db": ["@factory/db@workspace:packages/db"],
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
+
+    "@factory/runner": ["@factory/runner@workspace:apps/runner"],
+
+    "@factory/sandboxes": ["@factory/sandboxes@workspace:packages/sandboxes"],
 
     "@factory/scheduler": ["@factory/scheduler@workspace:packages/scheduler"],
 
