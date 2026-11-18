@@ -5,7 +5,7 @@ This is a specification package. No engineering work orders have been implemente
 | Task | Status | Evidence | Accepted by |
 |---|---|---|---|
 | FND-001 | ACCEPTED | evidence/FND-001/report.md | operator (continue-plan instruction) |
-| LIC-001 | NOT_STARTED | — | — |
+| LIC-001 | ACCEPTED | evidence/LIC-001/report.md | operator (continue-plan instruction) |
 | DOM-001 | NOT_STARTED | — | — |
 | DB-001 | NOT_STARTED | — | — |
 | API-001 | NOT_STARTED | — | — |
