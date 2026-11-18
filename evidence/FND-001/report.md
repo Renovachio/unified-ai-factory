@@ -3,7 +3,7 @@
 - **Status:** READY_FOR_REVIEW (not ACCEPTED — requires reviewer/operator sign-off)
 - **Date:** 2026-11-18
 - **Dependencies:** none
-- **Candidate SHA:** N/A — directory is not a git repository. Operator must `git init`/commit; CI also needs a remote.
+- **Candidate SHA:** cce82efb8eb9ca530a78a090cee2e05c29314460 (branch dev/fnd-001, pushed to origin; GitHub CI not yet confirmed)
 
 ## Files added
 `package.json`, `bun.lock`, `bunfig.toml`, `tsconfig.base.json`, `eslint.config.mjs`, `.github/workflows/ci.yml`,
