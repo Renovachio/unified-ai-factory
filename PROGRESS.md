@@ -132,6 +132,6 @@ Spec package: `../dispatch-v2.3`. Branch `dev/v23-dispatch` (on `dev/v22-sai`, w
   blockers: [no worker daemon, no qualified model/authorized runtime, no GitHub App, v2.1 gates NOT READY]
 ```
 
-Local-folder projects (migration 0014, `/new <folder>`, `dispatch --project`) are implemented and tested; jobs on them still cannot run (no worker, and the SCM/PR flow is GitHub-only). Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Package sha256 (darwin-arm64 tarball): `f7ccc285995d18087383a8acd003eeec5717f0b554776bb7f2fb2824b0e31eb0`.
+Agent work on local folders (migration 0015, `dispatch work`, `dispatch mcp`, plugin `packaging/dispatch/claude-plugin`) is implemented and tested up to, but excluding, a real Claude session: DSP-10 stays blocked until the operator records provider terms and a supervised first run is done. Local-folder projects (migration 0014, `/new <folder>`, `dispatch --project`) are implemented and tested; jobs on them still cannot run (no worker, and the SCM/PR flow is GitHub-only). Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Package sha256 (darwin-arm64 tarball): `f7ccc285995d18087383a8acd003eeec5717f0b554776bb7f2fb2824b0e31eb0`.
 
 Also fixed while verifying: a v2.2 idempotent-activation race (`packages/skills/src/registry.ts`), found by the full suite.

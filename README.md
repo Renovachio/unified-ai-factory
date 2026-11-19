@@ -25,7 +25,7 @@ Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual
 | `apps/api`, `apps/runner`, `apps/web` | HTTP API, worker, Next.js dashboard |
 | `packages/skills`, `capabilities`, `improvements`, `product` | v2.2: skill/agent registry (quarantine, static validation, digest-bound approval, CAS activation), capability matcher and gap analysis, zero-authority improvement supervisor, PM artifacts |
 | `apps/dispatch-cli`, `packages/dispatch-core`, `packages/dispatch-client`, `apps/dispatch-menubar` | v2.3: the `dispatch` launcher/REPL, lifecycle and intent router, shared typed client + sync engine, optional macOS menu bar |
-| `migrations/` | Reversible SQL migrations 0001-0014 |
+| `migrations/` | Reversible SQL migrations 0001-0015 |
 | `config/` | Inference policy, provider terms, risk policy, runtime allowlist, cloud, eval thresholds, gate manifests |
 | `evidence/<ID>/` | Per-task acceptance report |
 | `docs/` | Blueprint, ADRs, third-party notices, eval report, operator actions |
@@ -57,9 +57,12 @@ Needs macOS (Apple silicon) and PostgreSQL 17 (`brew install postgresql@17`); Bu
 | `dispatch` / `--no-browser` | start or attach (idempotent, lock-protected), open the dashboard, enter the prompt |
 | `dispatch <request>` / `/dispatch <request>` | same, plus create a new request in the active (or only) project |
 | `dispatch --project <folder> [request]` / `/new <folder>` | use a folder on this machine as the project (GitHub is optional) |
+| `dispatch work` | have Claude Code do the next queued job in a copy of the folder (Opus plans, cheaper agents execute in parallel); you approve the diff with `/runs` `/review` `/accept` (needs your provider-terms approval first; see `docs/dispatch/AGENTS.md`) |
 | `dispatch start` / `status` / `doctor` | start missing services / report real health / diagnose without changing anything |
 | `dispatch stop [--yes]` / `migrate` | stop only services Dispatch owns, warning about in-flight jobs / apply pending migrations explicitly |
 | `/help /jobs /status /projects /project use /models /skills /agents /approvals /approve /pause /resume /cancel /logs /dashboard /context /exit /shutdown` | inside the prompt; `/exit` detaches and leaves jobs running |
+
+**Agent work (Claude Code):** `dispatch work` launches Claude Code in `--restricted` mode with the Dispatch plugin. Dispatch validates the plan, makes a throwaway copy of the project, measures the diff itself and applies it only after a typed human approval. **Never run against a real Claude session yet**; read `docs/dispatch/AGENTS.md` for what is and is not verified.
 
 Plain sentences work only for a fixed phrase set ("show my jobs", "list models"); anything else is refused until a qualified, authorized model interpreter exists (none does). Model output can only propose typed intents; destructive actions need a typed confirmation bound to the revision you saw.
 

@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export interface DispatchPaths { home: string; config: string; state: string; lock: string; logs: string; secrets: string; token: string; pgData: string; pgSocket: string; history: string }
+export interface DispatchPaths { home: string; config: string; state: string; lock: string; logs: string; secrets: string; token: string; agentToken: string; pgData: string; pgSocket: string; history: string }
 
 /** Application data location (macOS: ~/Library/Application Support/Dispatch; elsewhere XDG). `DISPATCH_HOME` overrides (tests, relocation). */
 export function dispatchPaths(env: Record<string, string | undefined> = process.env, platform: string = process.platform): DispatchPaths {
@@ -11,6 +11,6 @@ export function dispatchPaths(env: Record<string, string | undefined> = process.
   const pgSocket = Buffer.byteLength(join(sock, ".s.PGSQL.54329")) > 100 ? join("/tmp", `dispatch-${typeof process.getuid === "function" ? process.getuid() : "u"}`, "sock") : sock;
   return {
     home, config: join(home, "config.json"), state: join(home, "state.json"), lock: join(home, "start.lock"), logs: join(home, "logs"), secrets: join(home, "secrets"),
-    token: join(home, "secrets", "local-owner-token"), pgData: join(home, "pg", "data"), pgSocket, history: join(home, "history"),
+    token: join(home, "secrets", "local-owner-token"), agentToken: join(home, "secrets", "local-agent-token"), pgData: join(home, "pg", "data"), pgSocket, history: join(home, "history"),
   };
 }

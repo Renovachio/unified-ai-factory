@@ -6,7 +6,7 @@ import { createRemoteJWKSet } from "jose";
 import { createApi } from "./app";
 import { OidcLogin } from "./login";
 import { CompositeAuthenticator, OidcAuthenticator, SessionManager, type Authenticator } from "./auth";
-import { bootstrapLocalOwner, LocalBrowserEntry, LocalOwnerAuthenticator } from "./local";
+import { bootstrapLocalOwner, LOCAL_AGENT_SUBJECT, LocalBrowserEntry, LocalOwnerAuthenticator } from "./local";
 
 const env = process.env;
 // The API legitimately holds DB/OIDC/webhook secrets, so only MODEL-provider credentials are refused here.
@@ -18,6 +18,7 @@ const sql = connect(need("DATABASE_URL"));
 const localTokenFile = env.DISPATCH_LOCAL_TOKEN_FILE;
 if (localTokenFile && (env.HOST ?? "127.0.0.1") !== "127.0.0.1") throw new Error("Dispatch local mode requires HOST=127.0.0.1");
 const auths: Authenticator[] = localTokenFile ? [LocalOwnerAuthenticator.fromFile(localTokenFile)] : [new OidcAuthenticator({ issuer: need("OIDC_ISSUER"), audience: need("OIDC_AUDIENCE"), ...(env.OIDC_JWKS_URI ? { jwksUri: env.OIDC_JWKS_URI } : {}) })];
+if (localTokenFile && env.DISPATCH_LOCAL_AGENT_TOKEN_FILE) auths.push(LocalOwnerAuthenticator.fromFile(env.DISPATCH_LOCAL_AGENT_TOKEN_FILE, LOCAL_AGENT_SUBJECT));
 let local: { entry: LocalBrowserEntry } | undefined;
 if (localTokenFile) {
   await bootstrapLocalOwner(sql);

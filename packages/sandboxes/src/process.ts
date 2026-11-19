@@ -14,6 +14,8 @@ export interface RunOptions {
   killGraceMs?: number;
   signal?: AbortSignal;
   readOnlyPaths?: string[];
+  /** ADR-0004: see WrapContext. */
+  allowNetworkPorts?: number[];
   cpuSeconds?: number;
   maxFileBytes?: number;
   /** Written to the process stdin, then closed (prompts travel on stdin, never in argv). */
@@ -52,6 +54,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function runSandboxed(opts: RunOptions): Promise<RunResult> {
   const ctx: WrapContext = { workspaceRoot: opts.workspaceRoot, env: opts.env, cwd: opts.cwd };
   if (opts.readOnlyPaths) ctx.readOnlyPaths = opts.readOnlyPaths;
+  if (opts.allowNetworkPorts) ctx.allowNetworkPorts = opts.allowNetworkPorts;
   if (opts.cpuSeconds) ctx.cpuSeconds = opts.cpuSeconds;
   if (opts.maxFileBytes) ctx.maxFileBytes = opts.maxFileBytes;
   const wrapped = opts.backend.wrap(opts.command, opts.args ?? [], ctx); // throws PolicyViolation when no isolation

@@ -4,8 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "main": "src/index.ts",
-  "scripts": { "typecheck": "tsc -p tsconfig.json", "build": "tsc -p tsconfig.json" },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
   "dependencies": {
-    "@factory/telemetry": "workspace:*"
+    "@factory/telemetry": "workspace:*",
+    "zod": "4.6.7"
   }
 }

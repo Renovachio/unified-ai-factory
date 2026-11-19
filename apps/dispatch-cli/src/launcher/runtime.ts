@@ -22,3 +22,9 @@ export function configDir(env: Record<string, string | undefined> = process.env,
   for (const d of [env.DISPATCH_CONFIG_DIR, join(execPath, "..", "..", "config"), join(process.cwd(), "config")]) if (d && exists(join(d, "inference-policy.json"))) return d;
   return undefined;
 }
+
+/** The Claude Code plugin shipped next to the binary (install) or in the checkout (`packaging/dispatch/claude-plugin`). Override: DISPATCH_PLUGIN_DIR. */
+export function pluginDir(env: Record<string, string | undefined> = process.env, execPath = process.execPath, exists: (p: string) => boolean = existsSync): string | undefined {
+  for (const d of [env.DISPATCH_PLUGIN_DIR, join(execPath, "..", "..", "claude-plugin"), join(process.cwd(), "packaging/dispatch/claude-plugin")]) if (d && exists(join(d, ".claude-plugin", "plugin.json"))) return d;
+  return undefined;
+}

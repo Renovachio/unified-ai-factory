@@ -41,8 +41,8 @@ export function buildSpecs(cfg: DispatchConfig, paths: DispatchPaths, env: Recor
       return ready?.status === 200 ? { live: true, ready: true, detail: `listening on ${cfg.host}:${cfg.ports.api}` } : { live: true, ready: false, detail: "API is up but the database is not ready" };
     },
     start: async (marker): Promise<Started> => {
-      ensureSecret(paths.token, 32); const sessionFile = join(paths.secrets, "session-secret"); ensureSecret(sessionFile, 32);
-      const e = childEnv(env, { DATABASE_URL: databaseUrl(cfg, paths), PORT: String(cfg.ports.api), HOST: cfg.host, DISPATCH_LOCAL_TOKEN_FILE: paths.token, DISPATCH_SESSION_SECRET_FILE: sessionFile, DISPATCH_DASHBOARD_URL: dashboardUrl(cfg), ALLOWED_ORIGINS: dashboardUrl(cfg), DISPATCH_HOME: paths.home, ...(configDir(env) ? { DISPATCH_CONFIG_DIR: configDir(env) as string } : {}) });
+      ensureSecret(paths.token, 32); ensureSecret(paths.agentToken, 32); const sessionFile = join(paths.secrets, "session-secret"); ensureSecret(sessionFile, 32);
+      const e = childEnv(env, { DATABASE_URL: databaseUrl(cfg, paths), PORT: String(cfg.ports.api), HOST: cfg.host, DISPATCH_LOCAL_TOKEN_FILE: paths.token, DISPATCH_LOCAL_AGENT_TOKEN_FILE: paths.agentToken, DISPATCH_SESSION_SECRET_FILE: sessionFile, DISPATCH_DASHBOARD_URL: dashboardUrl(cfg), ALLOWED_ORIGINS: dashboardUrl(cfg), DISPATCH_HOME: paths.home, ...(configDir(env) ? { DISPATCH_CONFIG_DIR: configDir(env) as string } : {}) });
       const m = `--dispatch-instance=${marker}`;
       const { pid } = spawnDetached(self.cmd, [...self.prefix, "__serve", "api", m], e, join(paths.logs, "api.log"));
       await new Promise((r) => setTimeout(r, 200)); const id = processIdentity(pid);

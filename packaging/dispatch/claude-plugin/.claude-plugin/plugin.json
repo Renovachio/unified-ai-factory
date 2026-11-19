@@ -1,0 +1,6 @@
+{
+  "name": "dispatch",
+  "version": "2.3.0",
+  "description": "Dispatch factory workforce: Opus plans a queued job, cheaper agents execute in parallel in a throwaway copy of the project, and you approve the diff in the Dispatch terminal.",
+  "author": { "name": "Dispatch (local)" }
+}

@@ -75,6 +75,7 @@ export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.R
       case "unknown": say(`Unknown command ${safe(p.input.split(" ")[0] ?? "")}.${p.suggestions.length ? ` Did you mean ${p.suggestions.join(", ")}?` : ""} Try /help.`); break;
       case "local-project": show(await ex.addLocalProject(p.path)); break;
       case "request": show(await ex.submitRequest(p.text)); break;
+      case "run": show(await (p.action === "list" ? ex.runs() : p.action === "review" ? ex.reviewRun(p.ref) : p.action === "accept" ? ex.acceptRun(p.ref) : ex.discardRun(p.ref))); break;
       case "usage": say(`Usage: ${p.usage}`); break;
       case "intent": show(await ex.execute(p.intent)); break;
       case "local": {

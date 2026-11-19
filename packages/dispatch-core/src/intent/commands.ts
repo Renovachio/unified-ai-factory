@@ -16,6 +16,10 @@ export const COMMANDS: readonly CommandInfo[] = [
   { name: "skills", usage: "/skills", summary: "Approved registry capabilities (proposals labelled separately)" },
   { name: "agents", usage: "/agents", summary: "Registered agents and their permitted roles" },
   { name: "approvals", usage: "/approvals", summary: "Human action inbox" },
+  { name: "runs", usage: "/runs", summary: "Agent runs waiting for your review, and recent ones" },
+  { name: "review", usage: "/review [run]", summary: "Show what an agent run changed (a diff), without applying anything" },
+  { name: "accept", usage: "/accept [run]", summary: "Apply a reviewed run to your folder (you type a word to confirm)" },
+  { name: "discard", usage: "/discard [run]", summary: "Reject a run and delete its work copy" },
   { name: "approve", usage: "/approve <id>", summary: "Review an approval, then confirm it in a separate step" },
   { name: "pause", usage: "/pause <jobId>", summary: "Request a safe pause" },
   { name: "resume", usage: "/resume <jobId>", summary: "Resume a paused job" },
@@ -32,6 +36,7 @@ export type Parsed =
   | { kind: "local"; command: "help" | "exit" | "shutdown" | "dashboard" | "context" | "context-clear" | "projects" | "models" | "skills" | "agents" | "approvals" | "logs"; arg?: string }
   | { kind: "request"; text: string }
   | { kind: "local-project"; path: string }
+  | { kind: "run"; action: "list" | "review" | "accept" | "discard"; ref?: string }
   | { kind: "usage"; command: string; usage: string }
   | { kind: "unknown"; input: string; suggestions: string[] }
   | { kind: "text"; text: string };
@@ -64,6 +69,8 @@ export function parseLine(line: string): Parsed {
   switch (name) {
     case "help": case "exit": case "shutdown": case "dashboard": case "projects": case "models": case "skills": case "agents": case "approvals":
       return arg === "" ? { kind: "local", command: name } : usage();
+    case "runs": return arg === "" ? { kind: "run", action: "list" } : usage();
+    case "review": case "accept": case "discard": return arg === "" ? { kind: "run", action: name } : /^[0-9a-f]{6,36}(-[0-9a-f-]*)?$/i.test(arg) ? { kind: "run", action: name, ref: arg.toLowerCase() } : usage(); // no id = the only run awaiting approval
     case "jobs": return arg === "" ? { kind: "intent", intent: { type: "job.list" }, viaCommand: name } : usage();
     case "status": return arg === "" ? { kind: "intent", intent: { type: "factory.status" }, viaCommand: name } : usage();
     case "dispatch": return arg === "" || arg.length > MAX_TEXT ? usage() : { kind: "request", text: arg };
@@ -78,7 +85,7 @@ export function parseLine(line: string): Parsed {
 }
 
 /** Subcommands of the shell program. `dispatch <words>` is a request, so a one-word typo of a subcommand must be refused rather than become a job. */
-export const SHELL_SUBCOMMANDS = ["start", "status", "doctor", "stop", "migrate", "help"] as const;
+export const SHELL_SUBCOMMANDS = ["start", "status", "doctor", "stop", "migrate", "help", "work", "mcp"] as const;
 export function shellRequestText(args: string[]): { ok: true; text: string } | { ok: false; error: string } {
   const text = args.join(" ").trim();
   if (text === "") return { ok: false, error: "empty request" };

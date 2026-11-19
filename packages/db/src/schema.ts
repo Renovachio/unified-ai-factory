@@ -558,3 +558,24 @@ export const productArtifacts = pgTable("product_artifacts", {
   approvedBy: uuid("approved_by").references(() => users.id),
   createdAt: created(),
 });
+
+export const workRuns = pgTable("work_runs", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  jobId: uuid("job_id").notNull().references(() => jobs.id),
+  status: text("status").notNull(),
+  plan: jsonb("plan").notNull(),
+  planDigest: text("plan_digest").notNull(),
+  workspacePath: text("workspace_path").notNull(),
+  baseManifest: jsonb("base_manifest").notNull(),
+  changes: jsonb("changes"),
+  changesDigest: text("changes_digest"),
+  summary: text("summary"),
+  failure: text("failure"),
+  log: jsonb("log").notNull().default([]),
+  createdBy: uuid("created_by").references(() => users.id),
+  decidedBy: uuid("decided_by").references(() => users.id),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
