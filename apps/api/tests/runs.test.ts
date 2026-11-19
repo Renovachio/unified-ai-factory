@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { scopeFile } from "@factory/dispatch-core";
 import { createTestDb } from "../../../packages/db/src/testing";
 import { bootstrapLocalOwner, CompositeAuthenticator, createApi, LOCAL_AGENT_SUBJECT, LocalOwnerAuthenticator } from "../src/index";
 
@@ -121,5 +122,59 @@ describe("work runs: the agent identity may submit work, never approve it", () =
     const [rq] = await db.sql`INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) VALUES (${repo!.id}, 'api', ${"g" + n++}, 'x', 'feature', 't', 'd') RETURNING id`;
     const [j] = await db.sql`INSERT INTO jobs (request_id, repository_id, state) VALUES (${rq!.id}, ${repo!.id}, 'QUEUED') RETURNING id`;
     expect((await agent("/runs", { jobId: j!.id, plan: goodPlan() })).status).toBe(422);
+  });
+});
+
+describe("in-place runs: real folder, snapshot, plan scope, keep or restore", () => {
+  const scopeOf = () => { const f = scopeFile(home, proj); return existsSync(f) ? readFileSync(f, "utf8") : null; };
+  test("start snapshots the real folder, returns it as the workspace, writes the plan scope; .env is not snapshotted", async () => {
+    const id = await freshJob(); const r = await agent("/runs", { jobId: id, inPlace: true, plan: goodPlan() });
+    expect(r.status).toBe(201); expect(r.body).toMatchObject({ mode: "in_place", workspace: proj }); expect(r.body.files).toBe(2);
+    const [row] = await db.sql`SELECT mode, snapshot_dir, workspace_path FROM work_runs WHERE id = ${r.body.runId}`;
+    expect(row).toMatchObject({ mode: "in_place", workspace_path: proj }); expect(existsSync(join(row!.snapshot_dir, "notes/a.txt"))).toBe(true); expect(existsSync(join(row!.snapshot_dir, ".env"))).toBe(false);
+    expect(JSON.parse(scopeOf()!)).toMatchObject({ runId: r.body.runId, project: proj, writes: ["notes/", "out/"] });
+    expect((await agent("/runs/" + r.body.runId + "/finish", { summary: "nothing" })).body.status).toBe("failed"); // no changes: closes the run and clears the scope
+    expect(scopeOf()).toBeNull();
+  });
+  test("a plan with no write paths is refused for in-place; one run per folder at a time", async () => {
+    const id = await freshJob(); expect((await agent("/runs", { jobId: id, inPlace: true, plan: plan(t("only-read")) })).status).toBe(422);
+    const ok = await agent("/runs", { jobId: id, inPlace: true, plan: goodPlan() }); expect(ok.status).toBe(201);
+    const [q2] = await db.sql`INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) SELECT repository_id, 'dispatch', ${"s" + n++}, 'x', 'feature', 't2', 'd2' FROM jobs WHERE id = ${id} RETURNING id, repository_id`;
+    const [j2] = await db.sql`INSERT INTO jobs (request_id, repository_id, state) VALUES (${q2!.id}, ${q2!.repository_id}, 'QUEUED') RETURNING id`;
+    const r2 = await agent("/runs", { jobId: j2!.id, inPlace: true, plan: goodPlan() }); expect(r2.status).toBe(409); expect(r2.body.code).toBe("folder-busy");
+    await agent("/runs/" + ok.body.runId + "/finish", { summary: "x" });
+  });
+  test("work/next can be limited to one project folder", async () => {
+    const id = await freshJob(); expect((await agent("/work/next?projectPath=" + encodeURIComponent(proj), undefined, "GET")).body.job.id).toBe(id);
+    expect((await agent("/work/next?projectPath=" + encodeURIComponent("/no/such/folder"), undefined, "GET")).body.job).toBeNull();
+  });
+  test("finish measures the REAL folder; out-of-plan edits fail the run with an undo hint; in-plan edits await review", async () => {
+    const id = await freshJob(); const r = await agent("/runs", { jobId: id, inPlace: true, plan: goodPlan() });
+    put("notes/a.txt", "ALPHA!\n"); put("out/summary.md", "s\n");
+    const f = await agent(`/runs/${r.body.runId}/finish`, { summary: "did it" }); expect(f.body).toMatchObject({ status: "awaiting_approval", changes: 2 }); expect(f.body.originalChanged).toBeUndefined();
+    const v = await call(`/runs/${r.body.runId}`); expect(v.body.mode).toBe("in_place"); expect(v.body.diff).toContain("-alpha"); expect(v.body.diff).toContain("+ALPHA!"); expect(existsSync(join(proj, ".diff-"))).toBe(false);
+    expect(readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("ALPHA!\n"); expect(scopeOf()).toBeNull();
+    // second job, escaping the plan
+    const id2 = await freshJob(); const r2 = await agent("/runs", { jobId: id2, inPlace: true, plan: goodPlan() }); put("elsewhere.txt", "x");
+    const f2 = await agent(`/runs/${r2.body.runId}/finish`, { summary: "oops" }); expect(f2.body.status).toBe("failed"); expect(f2.body.failure).toContain("elsewhere.txt"); expect(f2.body.failure).toContain("dispatch undo");
+  });
+  test("keep leaves the files; the agent cannot decide; wrong digest refused", async () => {
+    const id = await freshJob(); const r = await agent("/runs", { jobId: id, inPlace: true, plan: goodPlan() }); put("notes/a.txt", "kept\n");
+    const f = await agent(`/runs/${r.body.runId}/finish`, { summary: "s" });
+    expect((await agent(`/runs/${r.body.runId}/decision`, { decision: "approve", digest: f.body.digest })).status).toBe(403);
+    expect((await call(`/runs/${r.body.runId}/decision`, { method: "POST", body: { decision: "approve", digest: "sha256:bad" } })).body.code).toBe("changes-differ");
+    const ok = await call(`/runs/${r.body.runId}/decision`, { method: "POST", body: { decision: "approve", digest: f.body.digest } }); expect(ok.body).toMatchObject({ status: "applied", mode: "in_place" });
+    expect(readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("kept\n");
+  });
+  test("reject restores the snapshot (modified, added, deleted) and never touches .env; refuses if the folder moved after the review", async () => {
+    const id = await freshJob(); const r = await agent("/runs", { jobId: id, inPlace: true, plan: goodPlan() });
+    put("notes/a.txt", "changed\n"); rmSync(join(proj, "notes/b.txt")); put("out/new.md", "n\n");
+    const f = await agent(`/runs/${r.body.runId}/finish`, { summary: "s" }); expect(f.body.changes).toBe(3);
+    put("notes/a.txt", "edited after review\n"); // you changed something after the review
+    const bad = await call(`/runs/${r.body.runId}/decision`, { method: "POST", body: { decision: "reject", digest: f.body.digest } }); expect(bad.status).toBe(409); expect(bad.body.code).toBe("changes-differ");
+    expect(readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("edited after review\n"); // nothing restored
+    put("notes/a.txt", "changed\n"); // back to the reviewed state
+    const ok = await call(`/runs/${r.body.runId}/decision`, { method: "POST", body: { decision: "reject", digest: f.body.digest } }); expect(ok.body).toMatchObject({ status: "rejected", mode: "in_place" });
+    expect(readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("alpha\n"); expect(readFileSync(join(proj, "notes/b.txt"), "utf8")).toBe("beta\n"); expect(existsSync(join(proj, "out/new.md"))).toBe(false); expect(readFileSync(join(proj, ".env"), "utf8")).toBe("SECRET=1\n");
   });
 });

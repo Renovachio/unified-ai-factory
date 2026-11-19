@@ -112,7 +112,7 @@ const looksBinary = (b: Buffer) => b.subarray(0, 8000).includes(0);
  * Human-readable unified diff of the changes, for the approval screen. Original text comes from the real folder (only when it still matches the
  * work copy's base hash, otherwise the file is flagged as changed since), new text from the work copy. Size-capped; binary files are summarised.
  */
-export function renderDiff(realDir: string, copyDir: string, changes: Change[], maxBytes = 200_000): string {
+export function renderDiff(realDir: string, copyDir: string, changes: Change[], maxBytes = 200_000, scratchDir?: string): string {
   const real = realpathSync(realDir); const copy = realpathSync(copyDir); let out = ""; let truncated = false;
   for (const c of changes) {
     if (out.length >= maxBytes) { truncated = true; break; }
@@ -121,7 +121,7 @@ export function renderDiff(realDir: string, copyDir: string, changes: Change[], 
     const after = c.kind === "delete" ? null : existsSync(b) && !lstatSync(b).isSymbolicLink() ? readFileSync(b) : null;
     if (before && createHash("sha256").update(before).digest("hex") !== c.baseHash) { out += `~ ${c.path}: changed in your folder since the work copy was made (diff not shown)\n`; continue; }
     if ((before && looksBinary(before)) || (after && looksBinary(after))) { out += `${c.kind === "add" ? "+" : c.kind === "delete" ? "-" : "~"} ${c.path}: binary file (${c.kind})\n`; continue; }
-    const tmp = join(copy, `.diff-${randomBytes(4).toString("hex")}`); // scratch files live in the work copy, never in the project
+    const tmp = join(scratchDir ? realpathSync(scratchDir) : copy, `.diff-${randomBytes(4).toString("hex")}`); // scratch files live in a Dispatch-owned folder, never in the project
     try {
       const fa = `${tmp}.a`; const fb = `${tmp}.b`;
       writeFileSync(fa, before ?? ""); writeFileSync(fb, after ?? "");

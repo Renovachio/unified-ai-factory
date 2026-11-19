@@ -114,8 +114,14 @@ export class Executor {
   async acceptRun(ref?: string): Promise<Outcome> {
     try {
       const f = await this.findRun(ref); if (!("id" in f)) return f;
-      const r = await this.c.get<{ id: string; status: string; project: string; digest: string | null; changes: Array<{ path: string; kind: string }>; diff?: string }>(`/api/v2/dispatch/runs/${f.id}`);
+      const r = await this.c.get<{ id: string; status: string; mode?: string; project: string; digest: string | null; changes: Array<{ path: string; kind: string }>; diff?: string }>(`/api/v2/dispatch/runs/${f.id}`);
       if (r.status !== "awaiting_approval" || !r.digest) return blocked("not-awaiting", `That run is ${r.status}; there is nothing to apply.`);
+      if (r.mode === "in_place") {
+        this.io.out(r.diff ?? ""); this.io.out(`${r.changes.length} change(s) are ALREADY in your folder for ${r.project}.`);
+        if ((await this.io.ask("Type “keep” to accept them (they stay as they are), anything else leaves the run open: ")).trim().toLowerCase() !== "keep") return blocked("not-confirmed", "Nothing was decided; the changes are still in your folder.");
+        await this.c.send(this.c.mutation("POST", `/api/v2/dispatch/runs/${r.id}/decision`, { decision: "approve", digest: r.digest }));
+        return done(`Kept ${r.changes.length} change(s) in ${r.project}.`);
+      }
       this.io.out(r.diff ?? ""); this.io.out(`${r.changes.length} change(s) will be written into your folder for ${r.project}.`);
       if ((await this.io.ask("Type “apply” to write them, anything else cancels: ")).trim().toLowerCase() !== "apply") return blocked("not-confirmed", "Nothing was applied.");
       const d = await this.c.send<{ status: string; applied: number }>(this.c.mutation("POST", `/api/v2/dispatch/runs/${r.id}/decision`, { decision: "approve", digest: r.digest }));
@@ -128,6 +134,12 @@ export class Executor {
   async discardRun(ref?: string): Promise<Outcome> {
     try {
       const f = await this.findRun(ref); if (!("id" in f)) return f;
+      const r = await this.c.get<{ mode?: string; digest: string | null; changes: unknown[]; project: string }>(`/api/v2/dispatch/runs/${f.id}`);
+      if (r.mode === "in_place") {
+        if ((await this.io.ask(`This RESTORES ${r.project} to the snapshot taken before the run (${r.changes.length} file(s) change back). Type “restore” to do it: `)).trim().toLowerCase() !== "restore") return blocked("not-confirmed", "Nothing was restored.");
+        await this.c.send(this.c.mutation("POST", `/api/v2/dispatch/runs/${f.id}/decision`, { decision: "reject", digest: r.digest ?? "" }));
+        return done(`Restored ${r.project} to the snapshot; the run is closed.`);
+      }
       await this.c.send(this.c.mutation("POST", `/api/v2/dispatch/runs/${f.id}/decision`, { decision: "reject", digest: "" }));
       return done("Run discarded; its work copy was deleted and your folder was not touched.");
     } catch (e) { if (e instanceof ApiError && e.status === 409) return blocked("refused", `${e.detail ?? e.title}`); return this.explain(e); }

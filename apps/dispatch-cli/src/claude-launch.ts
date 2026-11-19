@@ -33,14 +33,13 @@ export function buildClaudeLaunch(o: { claude: string; pluginDir: string; projec
 export const workDirOf = (home: string): string => join(home, "work");
 
 /**
- * In-place session: Claude Code runs in YOUR folder on the real files (like plain `claude`), with Opus coordinating cheaper agents. Writes are NOT
- * pre-approved (Claude asks, as usual); the session-wide guard confines writes to the folder and refuses .git/.github/.env/keys/dependencies.
- * No MCP servers at all (--strict-mcp-config with an empty set): no connectors, no Dispatch tools. A snapshot is taken first so the change can be undone.
+ * In-place session: Claude Code runs in YOUR folder on the real files, with Opus coordinating cheaper agents and the Dispatch tool server. Same plan
+ * validation as `dispatch work`; no copy. Writes are NOT pre-approved (Claude asks, as usual) and the session-wide guard additionally allows only what the
+ * accepted plan declares (scope file written by the API), never .git/.github/.env/keys/dependencies. The initial prompt names the folder so the right job is picked.
  */
-export function buildHereLaunch(o: { claude: string; pluginDir: string; projectPath: string; env: Record<string, string | undefined>; guardCommand: string; request?: string | undefined }): ClaudeLaunch {
-  const prompt = o.request ? `/dispatch:here ${o.request}` : "/dispatch:here";
+export function buildHereLaunch(o: { claude: string; pluginDir: string; projectPath: string; env: Record<string, string | undefined>; guardCommand: string; mcpCommand: { cmd: string; args: string[] } }): ClaudeLaunch {
   return {
     command: o.claude, cwd: o.projectPath, env: claudeEnv(o.env),
-    args: [prompt, "--restricted", "--model", "opus", "--plugin-dir", o.pluginDir, "--settings", guardSettings(o.guardCommand), "--tools", AGENT_TOOLS, "--mcp-config", '{"mcpServers":{}}', "--strict-mcp-config"],
+    args: [`/dispatch:code ${o.projectPath}`, "--restricted", "--model", "opus", "--plugin-dir", o.pluginDir, "--settings", guardSettings(o.guardCommand), "--tools", AGENT_TOOLS, "--mcp-config", mcpConfig(o.mcpCommand.cmd, o.mcpCommand.args), "--strict-mcp-config"],
   };
 }

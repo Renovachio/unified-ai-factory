@@ -45,8 +45,16 @@ dispatch                                                                        
 ## Working in place: `dispatch code` (like `claude`, in the folder you are in)
 ```sh
 cd ~/some/folder
-dispatch code "what you want done"     # request is optional
-dispatch changes                       # what changed since the snapshot taken at start
+dispatch code "what you want done"     # request is optional: it asks if you leave it out
+dispatch changes                       # what changed since the snapshot
 dispatch undo [--yes]                  # restore the snapshot (preview without --yes)
 ```
-Claude Code opens in that folder on the **real files**: Opus plans, Haiku/Sonnet agents read and write in parallel (command `/dispatch:here`). Claude asks before changing files, as usual. Safety that replaces the copy-and-approve step: (1) a snapshot of the folder is taken first (no `.git`, `.env`, keys or symlinks; max 5000 files / 200 MB, otherwise it refuses to start); (2) a session-wide write guard confines writes to the folder and refuses `.git`, `.github`, `.env*`, keys and `node_modules`; (3) no shell, web or MCP tools; (4) `undo` restores the snapshot and refuses if a file changed in the meantime. **Not verified live yet**: it needs your provider-terms approval, like `dispatch work`. What you give up compared with `dispatch work`: no approval before files change and no conflict check against your own concurrent edits. Agents that run at the same time can overwrite each other; the coordinator is told to keep their files disjoint but nothing enforces it here.
+The folder you are in becomes the project (GitHub is not needed), the request is queued as a job, and Claude Code opens in it with the same Dispatch tools as `dispatch work` (command `/dispatch:code`). Opus plans; Haiku/Sonnet agents execute in parallel **on the real files**. Controls:
+1. **Plan validation** as for `work` (≤12 tasks, ≤2 Opus, safe paths, parallel tasks write disjoint paths); an in-place plan must declare the paths it writes.
+2. **Snapshot** of the folder (no `.git`, `.env`, keys, symlinks; max 5000 files / 200 MB) taken by Dispatch when the plan is accepted, not by the model.
+3. **Plan-scoped write guard**, session-wide (applies to subagents): a write is allowed only inside the union of the paths the accepted plan declares, never `.git`, `.github`, `.env*`, keys or `node_modules`; with no accepted plan nothing is writable. The scope file is written by the API and removed when the run ends.
+4. **Finish**: Dispatch recomputes the diff against the snapshot and fails the run (with an `undo` hint) if anything changed outside the plan.
+5. **Review after the fact**: `/runs`, `/review` show the diff; `/accept` keeps the changes (type "keep"); `/discard` restores the snapshot (type "restore"). Both refuse if the folder changed after the review you saw (digest-bound). One in-place run per folder at a time.
+6. No shell, web search or connectors; only the Dispatch tool server. Claude still asks before each file change, as usual.
+
+Not enforced: **which agent** wrote a file. The guard enforces the union of all tasks' paths; two tasks in the same wave are kept apart by plan validation, not by identity. Whether Claude's hook input identifies the subagent is being checked (see the payload check in the evidence). Gives up compared with `dispatch work`: the approval comes after the files change, not before. **Not run live yet** with `dispatch code`: it needs your provider-terms approval, like `dispatch work`.

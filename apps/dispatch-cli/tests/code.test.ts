@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, realpathSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { latestSnapshot, takeSnapshot, changesSince, undoSince } from "@factory/dispatch-core";
+import { latestSnapshot, takeSnapshot, changesSince, undoSince, writeScope, clearScope, scopeFile } from "@factory/dispatch-core";
 import { guardWrite } from "../src/guard";
-import { buildHereLaunch } from "../src/claude-launch";
 import { cmdChanges, cmdUndo, runCode, type CodeDeps } from "../src/commands/code";
 
 function proj() {
@@ -53,26 +52,55 @@ describe("guard with --protect (in place)", () => {
   });
 });
 
-describe("dispatch code", () => {
-  function deps(over: Partial<CodeDeps>, p: string, home: string) {
-    const out: string[] = []; const err: string[] = []; const launches: Array<{ args: string[]; cwd: string; env: Record<string, string> }> = [];
-    const d: CodeDeps = { home, cwd: p, terms: () => approved, which: () => "/bin/claude", plugin: () => "/plug", env: { PATH: "/usr/bin", ANTHROPIC_API_KEY: "k", GITHUB_TOKEN: "g" }, guardCommand: "'/d' 'guard-write'",
-      spawn: async (l) => { launches.push(l); writeFileSync(join(p, "a.txt"), "edited by agent\n"); return 0; }, out: (s) => out.push(s), err: (s) => err.push(s), ...over };
-    return { d, out, err, launches };
-  }
-  test("refuses without terms approval and launches nothing (no snapshot either)", async () => {
-    const t = proj(); try { const x = deps({ terms: () => ({ approved: false, reason: "none" }) }, t.p, t.home); expect(await runCode(x.d)).toBe(1); expect(x.launches).toEqual([]); expect(latestSnapshot(t.p, t.home)).toBeNull(); } finally { t.done(); }
-  });
-  test("snapshots first, launches in the folder with the folder-scoped guard and no MCP, then reports changes", async () => {
+describe("guard with a plan scope (in-place run)", () => {
+  const input = (file: string) => JSON.stringify({ tool_name: "Edit", tool_input: { file_path: file } });
+  test("no active plan = no writes; with a plan only its paths; a plan for another folder is ignored", () => {
     const t = proj(); try {
-      const x = deps({ request: "fix the typo" }, t.p, t.home); expect(await runCode(x.d)).toBe(0);
-      const l = x.launches[0]!; expect(l.cwd).toBe(t.p); expect(l.args[0]).toBe("/dispatch:here fix the typo");
-      expect(l.args).toContain("--restricted"); expect(l.args[l.args.indexOf("--mcp-config") + 1]).toBe('{"mcpServers":{}}'); expect(l.args).toContain("--strict-mcp-config");
-      expect(l.args).not.toContain("--allowedTools"); // writes are not pre-approved: Claude asks
-      const hook = JSON.parse(l.args[l.args.indexOf("--settings") + 1]!).hooks.PreToolUse[0].hooks[0].command as string; expect(hook).toContain("--root"); expect(hook).toContain("--protect");
-      expect(Object.keys(l.env)).toEqual(["PATH"]);
-      expect(x.out.join("\n")).toContain("1 file changed"); expect(latestSnapshot(t.p, t.home)).not.toBeNull();
+      mkdirSync(join(t.p, "src")); const root = realpathSync(t.p); const sf = join(t.home, "scope.json"); const o = { protect: true, scopeFile: sf };
+      expect(guardWrite(input(join(t.p, "src/a.ts")), t.p, o).allow).toBe(false); // file missing
+      writeScope(t.home, { runId: "r", project: root, writes: ["src/", "README.md"] }); const real = scopeFile(t.home, root);
+      const g = (f: string) => guardWrite(input(f), t.p, { protect: true, scopeFile: real }).allow;
+      expect(g(join(t.p, "src/a.ts"))).toBe(true); expect(g(join(t.p, "README.md"))).toBe(true); expect(g(join(t.p, "other.ts"))).toBe(false); expect(g(join(t.p, "src2/x.ts"))).toBe(false); expect(g(join(t.p, ".env"))).toBe(false);
+      writeFileSync(real, JSON.stringify({ runId: "r", project: "/somewhere/else", writes: ["src/"] })); expect(g(join(t.p, "src/a.ts"))).toBe(false);
+      clearScope(t.home, root, "r"); writeScope(t.home, { runId: "r2", project: root, writes: ["src/"] }); clearScope(t.home, root, "r"); expect(g(join(t.p, "src/a.ts"))).toBe(true); // a stale run id cannot clear a newer scope
     } finally { t.done(); }
   });
-  test("a request is optional", () => { expect(buildHereLaunch({ claude: "c", pluginDir: "p", projectPath: "/x", env: {}, guardCommand: "g" }).args[0]).toBe("/dispatch:here"); });
+});
+
+describe("dispatch code", () => {
+  function deps(over: Partial<CodeDeps>, p: string, home: string) {
+    const out: string[] = []; const err: string[] = []; const launches: Array<{ args: string[]; cwd: string; env: Record<string, string> }> = []; const jobs: string[] = [];
+    const d: CodeDeps = { home, cwd: p, request: "fix the typo", terms: () => approved, which: () => "/bin/claude", plugin: () => "/plug", env: { PATH: "/usr/bin", ANTHROPIC_API_KEY: "k", GITHUB_TOKEN: "g" },
+      guardCommand: "'/d' 'guard-write'", mcpCommand: { cmd: "/d", args: ["mcp"] }, ensureFactory: async () => true, ask: async () => "from the prompt",
+      createJob: async (_c, r) => { jobs.push(r); return { jobId: "11111111-2222-3333-4444-555555555555", project: "proj" }; },
+      latestRun: async () => ({ id: "aaaaaaaa-0000", status: "awaiting_approval", changes: 2, failure: null }),
+      spawn: async (l) => { launches.push(l); return 0; }, out: (s) => out.push(s), err: (s) => err.push(s), ...over };
+    return { d, out, err, launches, jobs };
+  }
+  test("refuses without terms approval: no job is queued, nothing launched", async () => {
+    const t = proj(); try { const x = deps({ terms: () => ({ approved: false, reason: "none" }) }, t.p, t.home); expect(await runCode(x.d)).toBe(1); expect(x.launches).toEqual([]); expect(x.jobs).toEqual([]); } finally { t.done(); }
+  });
+  test("queues the request, launches in the folder with scoped guard + Dispatch MCP, and reports the run", async () => {
+    const t = proj(); try {
+      const x = deps({}, t.p, t.home); expect(await runCode(x.d)).toBe(0); expect(x.jobs).toEqual(["fix the typo"]);
+      const l = x.launches[0]!; expect(l.cwd).toBe(realpathSync(t.p)); expect(l.args[0]).toBe(`/dispatch:code ${realpathSync(t.p)}`);
+      expect(l.args).toContain("--restricted"); expect(l.args).toContain("--strict-mcp-config"); expect(l.args).not.toContain("--allowedTools");
+      expect(JSON.parse(l.args[l.args.indexOf("--mcp-config") + 1]!).mcpServers.dispatch.args).toEqual(["mcp"]);
+      const hook = JSON.parse(l.args[l.args.indexOf("--settings") + 1]!).hooks.PreToolUse[0].hooks[0].command as string;
+      for (const w of ["--root", "--protect", "--scope-file"]) expect(hook).toContain(w);
+      expect(Object.keys(l.env)).toEqual(["PATH"]); expect(x.out.join("\n")).toContain("2 file(s) changed");
+    } finally { t.done(); }
+  });
+  test("asks for the request when none was given; empty answer starts nothing", async () => {
+    const t = proj(); try {
+      const a = deps({ request: undefined }, t.p, t.home); await runCode(a.d); expect(a.jobs).toEqual(["from the prompt"]);
+      const b = deps({ request: undefined, ask: async () => "  " }, t.p, t.home); expect(await runCode(b.d)).toBe(1); expect(b.launches).toEqual([]);
+    } finally { t.done(); }
+  });
+  test("a factory that will not start, or no run happening, is reported honestly", async () => {
+    const t = proj(); try {
+      const a = deps({ ensureFactory: async () => false }, t.p, t.home); expect(await runCode(a.d)).toBe(1); expect(a.launches).toEqual([]);
+      const b = deps({ latestRun: async () => null }, t.p, t.home); await runCode(b.d); expect(b.out.join("\n")).toContain("without starting a run");
+    } finally { t.done(); }
+  });
 });

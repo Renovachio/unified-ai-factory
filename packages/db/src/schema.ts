@@ -567,6 +567,8 @@ export const workRuns = pgTable("work_runs", {
   plan: jsonb("plan").notNull(),
   planDigest: text("plan_digest").notNull(),
   workspacePath: text("workspace_path").notNull(),
+  mode: text("mode").notNull().default("copy"),
+  snapshotDir: text("snapshot_dir"),
   baseManifest: jsonb("base_manifest").notNull(),
   changes: jsonb("changes"),
   changesDigest: text("changes_digest"),

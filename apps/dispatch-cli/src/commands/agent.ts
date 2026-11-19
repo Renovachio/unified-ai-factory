@@ -25,7 +25,7 @@ export async function cmdMcp(): Promise<number> {
 export async function cmdGuardWrite(args: string[] = []): Promise<number> {
   let input = ""; for await (const chunk of process.stdin) input += chunk;
   const ri = args.indexOf("--root"); const root = ri >= 0 ? args[ri + 1] : undefined;
-  const r = root ? guardWrite(input, root, { protect: args.includes("--protect") }) : guardWrite(input, join(makeCtx({ create: false }).paths.home, "work")); // no --root: the work folder (queued-job flow)
+  const r = root ? guardWrite(input, root, { protect: args.includes("--protect"), ...(args.includes("--scope-file") ? { scopeFile: args[args.indexOf("--scope-file") + 1] as string } : {}) }) : guardWrite(input, join(makeCtx({ create: false }).paths.home, "work")); // no --root: the work folder (queued-job flow)
   if (r.allow) return 0;
   process.stderr.write(`Dispatch blocked this write: ${r.reason}\n`); return 2;
 }
