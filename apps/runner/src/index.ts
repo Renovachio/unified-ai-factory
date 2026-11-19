@@ -16,6 +16,8 @@ export interface RunnerConfig {
   trustedRepositoryOnly?: boolean;
   uid?: number | undefined;
   heartbeatMs?: number;
+  /** Lease TTL for claims made by runOnce (default: scheduler default, 45s). */
+  leaseTtlMs?: number;
 }
 
 /** Enrollment/run-time checks (SECURITY.md): unprivileged identity, no model credentials, real isolation. */
@@ -108,6 +110,6 @@ export async function runLeasedTask(cfg: RunnerConfig, workerId: string, lease: 
 
 /** One polling iteration: claim a task and run it. Returns null when nothing was runnable. */
 export async function runOnce(cfg: RunnerConfig, workerId: string, executor: TaskExecutor, roles?: string[]): Promise<TaskOutcome | null> {
-  const lease = await claimTask(cfg.sql, { workerId, ...(roles ? { roles } : {}) });
+  const lease = await claimTask(cfg.sql, { workerId, ...(roles ? { roles } : {}), ...(cfg.leaseTtlMs ? { ttlMs: cfg.leaseTtlMs } : {}) });
   return lease ? runLeasedTask(cfg, workerId, lease, executor) : null;
 }

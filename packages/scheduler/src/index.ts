@@ -34,14 +34,21 @@ export interface EnqueueInput {
   notBefore?: Date;
 }
 
+/**
+ * Idempotent per (job, stage, role) regardless of the current attempt number: the scheduler bumps `attempt` in place on
+ * retry, so keying on attempt would create a duplicate task after a retry.
+ */
 export async function enqueueTask(sql: Sql, input: EnqueueInput): Promise<string> {
-  const [row] = await sql<{ id: string }[]>`
-    INSERT INTO tasks (job_id, stage, role, attempt, not_before)
-    VALUES (${input.jobId}, ${input.stage}, ${input.role}, ${input.attempt ?? 1}, ${input.notBefore ?? new Date()})
-    ON CONFLICT (job_id, stage, attempt, role) DO UPDATE SET updated_at = tasks.updated_at
-    RETURNING id`;
-  if (!row) throw new Error("enqueueTask: no row");
-  return row.id;
+  const find = async () => (await sql<{ id: string }[]>`SELECT id FROM tasks WHERE job_id = ${input.jobId} AND stage = ${input.stage} AND role = ${input.role} ORDER BY created_at LIMIT 1`)[0]?.id;
+  const existing = await find();
+  if (existing) return existing;
+  await sql`INSERT INTO tasks (job_id, stage, role, attempt, not_before)
+    SELECT ${input.jobId}, ${input.stage}, ${input.role}, ${input.attempt ?? 1}, ${input.notBefore ?? new Date()}
+    WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE job_id = ${input.jobId} AND stage = ${input.stage} AND role = ${input.role})
+    ON CONFLICT DO NOTHING`;
+  const id = await find();
+  if (!id) throw new Error("enqueueTask: no row");
+  return id;
 }
 
 export async function registerWorker(sql: Sql, input: { organizationId: string; mode: "local" | "cloud"; capabilities?: Record<string, unknown> }): Promise<string> {

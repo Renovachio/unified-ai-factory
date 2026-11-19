@@ -61,9 +61,11 @@ describe("guards", () => {
     expect(code(() => assertTransition(job({ state: "REVIEWING", reviews: [{ role: "code", binding: bind({ headSha: H2 }) }] }), "PREMERGE"))).toBe("stale-review");
     expect(code(() => assertTransition(job({ state: "REVIEWING" }), "PREMERGE"))).toBeUndefined();
   });
-  test("rework budget enforced", () => {
-    expect(code(() => assertTransition(job({ state: "BUILDING", round: 3 }), "REWORK"))).toBe("rework-budget");
-    expect(code(() => assertTransition(job({ state: "BUILDING", round: 2 }), "REWORK"))).toBeUndefined();
+  test("rework budget bounds new build rounds (entering REWORK is always allowed so a human can be reached)", () => {
+    expect(code(() => assertTransition(job({ state: "REWORK", round: 4 }), "BUILDING"))).toBe("rework-budget");
+    expect(code(() => assertTransition(job({ state: "REWORK", round: 3 }), "BUILDING"))).toBeUndefined();
+    expect(code(() => assertTransition(job({ state: "BUILDING", round: 3 }), "REWORK"))).toBeUndefined();
+    expect(code(() => assertTransition(job({ state: "REWORK", round: 3 }), "AWAITING_HUMAN"))).toBeUndefined();
   });
   test("paused jobs can only be cancelled and hold no lease", () => {
     expect(code(() => assertTransition(job({ state: "BUILDING", pausedAt: "t" }), "GATING"))).toBe("paused");

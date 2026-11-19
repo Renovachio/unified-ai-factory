@@ -69,6 +69,19 @@
       "name": "@factory/domain",
       "version": "0.0.0",
     },
+    "packages/orchestrator": {
+      "name": "@factory/orchestrator",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/runner": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+      },
+    },
     "packages/runtimes": {
       "name": "@factory/runtimes",
       "version": "0.0.0",
@@ -142,6 +155,8 @@
     "@factory/db": ["@factory/db@workspace:packages/db"],
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
+
+    "@factory/orchestrator": ["@factory/orchestrator@workspace:packages/orchestrator"],
 
     "@factory/runner": ["@factory/runner@workspace:apps/runner"],
 
