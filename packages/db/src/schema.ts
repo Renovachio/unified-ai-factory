@@ -287,3 +287,17 @@ export const pullRequests = pgTable("pull_requests", {
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const candidates = pgTable("candidates", {
+  id: id(),
+  jobId: uuid("job_id").notNull().references(() => jobs.id),
+  round: integer("round").notNull(),
+  role: text("role").notNull(),
+  parentSha: text("parent_sha").notNull(),
+  headSha: text("head_sha").notNull(),
+  treeSha: text("tree_sha").notNull(),
+  patchDigest: text("patch_digest").notNull(),
+  descriptorDigest: text("descriptor_digest").notNull(),
+  filesChanged: integer("files_changed").notNull(),
+  createdAt: created(),
+});

@@ -20,7 +20,7 @@ export interface ScmPort {
   ensureDraftPr(job: JobCtx, headSha: string): Promise<{ prNumber: number; url: string }>;
 }
 export interface GatePort {
-  run(job: JobCtx, headSha: string, baseSha: string): Promise<{ verdict: "pass" | "fail" | "error"; configDigest: string; resultsDigest: string }>;
+  run(job: JobCtx, headSha: string, baseSha: string): Promise<{ verdict: "pass" | "fail" | "error"; configDigest: string; resultsDigest: string; failureClass?: string }>;
 }
 export interface ReviewPort {
   requiredRoles(job: JobCtx): string[];

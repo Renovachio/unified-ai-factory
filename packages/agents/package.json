@@ -20,6 +20,7 @@
     "@factory/orchestrator": "workspace:*",
     "@factory/runner": "workspace:*",
     "@factory/sandboxes": "workspace:*",
-    "@factory/scheduler": "workspace:*"
+    "@factory/scheduler": "workspace:*",
+    "@factory/scm": "workspace:*"
   }
 }

@@ -69,6 +69,7 @@
         "@factory/runner": "workspace:*",
         "@factory/sandboxes": "workspace:*",
         "@factory/scheduler": "workspace:*",
+        "@factory/scm": "workspace:*",
       },
     },
     "packages/checks": {
@@ -130,6 +131,7 @@
         "@factory/runtimes": "workspace:*",
         "@factory/sandboxes": "workspace:*",
         "@factory/scheduler": "workspace:*",
+        "@factory/scm": "workspace:*",
         "@factory/telemetry": "workspace:*",
       },
     },
@@ -166,6 +168,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
         "@factory/sandboxes": "workspace:*",
         "@factory/telemetry": "workspace:*",
         "zod": "4.6.7",

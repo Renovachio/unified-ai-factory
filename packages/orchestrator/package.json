@@ -15,6 +15,7 @@
     "@factory/runner": "workspace:*",
     "@factory/scheduler": "workspace:*",
     "@factory/telemetry": "workspace:*",
-    "@factory/sandboxes": "workspace:*"
+    "@factory/sandboxes": "workspace:*",
+    "@factory/scm": "workspace:*"
   }
 }

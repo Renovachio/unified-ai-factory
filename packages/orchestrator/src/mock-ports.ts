@@ -34,7 +34,7 @@ export function mockPorts(o: MockPortOptions = {}): Ports {
       async run(job, headSha, baseSha) {
         calls.push("gate.run");
         const failed = (o.gateFailRounds ?? []).includes(job.round);
-        return { verdict: failed ? "fail" : "pass", configDigest: "sha256:" + fakeSha("gatecfg"), resultsDigest: "sha256:" + fakeSha("gate", headSha, baseSha, failed ? "f" : "p") };
+        return { verdict: failed ? "fail" : "pass", configDigest: "sha256:" + fakeSha("gatecfg"), resultsDigest: "sha256:" + fakeSha("gate", headSha, baseSha, failed ? "f" : "p"), ...(failed ? { failureClass: "unit" } : {}) };
       },
     },
     review: {

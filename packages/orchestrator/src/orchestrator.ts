@@ -7,6 +7,9 @@ import { digestOf } from "@factory/telemetry";
 import { artifactKind, AGENT_STAGES, taskStage } from "./pipeline";
 import type { IntakeHandler, JobCtx, Ports, SpecHandler } from "./ports";
 
+/** Automated fix attempts allowed per gate-failure class (blueprint section 5). */
+export const MAX_FIXES_PER_CLASS = 2;
+
 export type FaultHook = (point: string) => void | Promise<void>;
 
 export interface OrchestratorOptions {
@@ -108,6 +111,12 @@ export class Orchestrator {
       case "REVIEWING": return this.review(job);
       case "REWORK": {
         if (job.round + 1 > job.maxRounds) return this.move(job, "AWAITING_HUMAN", { reason: "rework-budget-exhausted" });
+        // At most MAX_FIXES_PER_CLASS automated fixes per gate failure class; the next failure of that class goes to a human.
+        const [lastFail] = await this.o.sql<{ cls: string | null }[]>`SELECT payload_redacted->>'class' AS cls FROM events WHERE job_id = ${job.id} AND type = 'gate.failed' ORDER BY sequence DESC LIMIT 1`;
+        if (lastFail?.cls) {
+          const [cnt] = await this.o.sql<{ c: number }[]>`SELECT count(*)::int AS c FROM events WHERE job_id = ${job.id} AND type = 'gate.failed' AND payload_redacted->>'class' = ${lastFail.cls}`;
+          if ((cnt?.c ?? 0) > MAX_FIXES_PER_CLASS) return this.move(job, "AWAITING_HUMAN", { reason: `fix-budget-exhausted:${lastFail.cls}` });
+        }
         return this.move(job, "BUILDING", { round: job.round + 1 }, async (tx) => { await (tx as Sql)`UPDATE jobs SET current_round = current_round + 1 WHERE id = ${job.id}`; });
       }
       case "PREMERGE": return this.premerge(job);
@@ -186,7 +195,10 @@ export class Orchestrator {
         VALUES (${job.id}, ${headSha}, ${baseSha}, ${r.configDigest}, ${r.verdict}, ${r.resultsDigest}) ON CONFLICT DO NOTHING`;
     };
     if (r.verdict === "pass") return this.move(job, "REVIEWING", { gate: r.resultsDigest }, write);
-    return this.move(job, "REWORK", { gate: r.resultsDigest, verdict: r.verdict }, write);
+    return this.move(job, "REWORK", { gate: r.resultsDigest, verdict: r.verdict }, async (tx) => {
+      await write(tx);
+      await appendEvent(tx, { jobId: job.id, type: "gate.failed", source: "orchestrator", payload: { round: job.round, head_sha: headSha, class: r.failureClass ?? r.verdict, results: r.resultsDigest } });
+    });
   }
 
   private async review(job: JobCtx): Promise<TickResult> {
