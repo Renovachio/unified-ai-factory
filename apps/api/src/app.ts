@@ -11,6 +11,7 @@ import { pauseJob, quarantineJob, releaseQuarantine, resumeJob, workerAction } f
 import { ApiProblem, problemResponse, problems, SECURITY_HEADERS } from "./problem";
 import { jobTimeline, listArtifacts, listAudit, listWorkers, policyView, usageReport } from "./readmodels";
 import { RateLimiter } from "./ratelimit";
+import { registryProblem, registryRoutes, type SkillsConfig } from "./registry";
 
 export interface ApiConfig {
   sql: Sql;
@@ -25,11 +26,14 @@ export interface ApiConfig {
   autoMerge?: AutoMergeController;
   /** Interactive OIDC login (authorization code + PKCE) and server-side sessions. */
   login?: OidcLogin;
+  /** v2.2 skill/agent registry: quarantined imports, exact-digest approvals, CAS activation. Routes under /api/v2. */
+  skills?: SkillsConfig;
   ready?: () => Promise<boolean>;
   log?: (line: Record<string, unknown>) => void;
 }
 
 const BASE = "/api/v1";
+const BASE2 = "/api/v2";
 const json = (r: JsonResult): Response => new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: { ...(r.body === undefined ? {} : { "content-type": "application/json" }), ...SECURITY_HEADERS, ...(r.headers ?? {}) } });
 
 /** Framework-free request handler (Web `Request` -> `Response`); mounted by Bun.serve in server.ts and called directly by tests. */
@@ -52,6 +56,18 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
     const m = req.method;
+    if (path.startsWith(`${BASE2}/`)) {
+      const sub = path.slice(BASE2.length);
+      const hit = registryRoutes.filter((r) => r.pattern.test(sub));
+      if (hit.length === 0) throw problems.notFound("no such route");
+      const route2 = hit.find((r) => r.method === m);
+      if (!route2) throw problems.methodNotAllowed([...new Set(hit.map((r) => r.method))]);
+      const actor = await authn(req); // authenticate before any state is revealed
+      try {
+        const r = await route2.handler({ req, sql: cfg.sql, actor, cfg: cfg.skills, maxBody, mutating: () => mutating(req, actor), key: () => requireIdempotencyKey(req) });
+        return json(r);
+      } catch (e) { const p = registryProblem(e); if (p) throw p; throw e; }
+    }
     if (path === `${BASE}/health/live`) return json({ status: 200, body: { status: "ok" } });
     if (path === `${BASE}/health/ready`) {
       const ok = await (cfg.ready ?? (async () => { await cfg.sql`SELECT 1`; return true; }))().catch(() => false);
