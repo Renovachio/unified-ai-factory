@@ -9,6 +9,8 @@ import type { IntakeHandler, JobCtx, Ports, SpecHandler } from "./ports";
 
 /** Automated fix attempts allowed per gate-failure class (blueprint section 5). */
 export const MAX_FIXES_PER_CLASS = 2;
+/** Failure classes that indicate tampering or an untrustworthy gate: no automated retry, straight to a human. */
+export const ESCALATE_IMMEDIATELY_CLASSES: readonly string[] = ["manifest-mismatch", "checks-tampered", "head-mismatch"];
 
 export type FaultHook = (point: string) => void | Promise<void>;
 
@@ -113,6 +115,7 @@ export class Orchestrator {
         if (job.round + 1 > job.maxRounds) return this.move(job, "AWAITING_HUMAN", { reason: "rework-budget-exhausted" });
         // At most MAX_FIXES_PER_CLASS automated fixes per gate failure class; the next failure of that class goes to a human.
         const [lastFail] = await this.o.sql<{ cls: string | null }[]>`SELECT payload_redacted->>'class' AS cls FROM events WHERE job_id = ${job.id} AND type = 'gate.failed' ORDER BY sequence DESC LIMIT 1`;
+        if (lastFail?.cls && ESCALATE_IMMEDIATELY_CLASSES.includes(lastFail.cls)) return this.move(job, "AWAITING_HUMAN", { reason: `untrusted-gate:${lastFail.cls}` });
         if (lastFail?.cls) {
           const [cnt] = await this.o.sql<{ c: number }[]>`SELECT count(*)::int AS c FROM events WHERE job_id = ${job.id} AND type = 'gate.failed' AND payload_redacted->>'class' = ${lastFail.cls}`;
           if ((cnt?.c ?? 0) > MAX_FIXES_PER_CLASS) return this.move(job, "AWAITING_HUMAN", { reason: `fix-budget-exhausted:${lastFail.cls}` });

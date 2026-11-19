@@ -21,6 +21,7 @@
     "@factory/runner": "workspace:*",
     "@factory/sandboxes": "workspace:*",
     "@factory/scheduler": "workspace:*",
-    "@factory/scm": "workspace:*"
+    "@factory/scm": "workspace:*",
+    "@factory/checks": "workspace:*"
   }
 }

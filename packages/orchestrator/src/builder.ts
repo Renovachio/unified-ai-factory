@@ -63,6 +63,12 @@ export function builderTaskExecutor(d: BuilderDeps): TaskExecutor {
         dateIso: job.created_at.toISOString(), ...(d.limits ?? {}),
       });
     } catch (e) {
+      if (e instanceof CandidateRejected && e.code === "empty" && role === "tester") {
+        // Nothing new to test this round (e.g. a rework that only touched source): the candidate stays at the builder's commit.
+        const stored = d.store.put(JSON.stringify({ schema: "factory.candidate/1", jobId, round, role, noop: true, headSha: parent }));
+        await recordArtifact(d.sql, { jobId, kind: artifactKind(step, round), stored });
+        return { ok: true, payload: { head_sha: parent, noop: true } };
+      }
       if (e instanceof CandidateRejected) return { ok: false, payload: { error: "candidate-rejected", code: e.code, message: e.message } };
       throw e;
     }
