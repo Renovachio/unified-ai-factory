@@ -200,7 +200,16 @@ export class Orchestrator {
       await (tx as Sql)`INSERT INTO gate_results (job_id, head_sha, base_sha, gate_config_digest, verdict, results_digest)
         VALUES (${job.id}, ${headSha}, ${baseSha}, ${r.configDigest}, ${r.verdict}, ${r.resultsDigest}) ON CONFLICT DO NOTHING`;
     };
-    if (r.verdict === "pass") return this.move(job, "REVIEWING", { gate: r.resultsDigest }, write);
+    if (r.verdict === "pass") {
+      // Re-assess risk from the actual candidate BEFORE reviewers are routed, so a change that turns out to touch protected paths
+      // gets the reviewers its real risk demands. Risk only ratchets up.
+      const pol = await this.o.ports.policy.evaluate(job, headSha);
+      await this.hit("after-port:policy.assess");
+      return this.move(job, "REVIEWING", { gate: r.resultsDigest, risk: pol.risk }, async (tx) => {
+        await write(tx);
+        await this.ratchetRisk(tx, job.id, pol.risk);
+      });
+    }
     return this.move(job, "REWORK", { gate: r.resultsDigest, verdict: r.verdict }, async (tx) => {
       await write(tx);
       await appendEvent(tx, { jobId: job.id, type: "gate.failed", source: "orchestrator", payload: { round: job.round, head_sha: headSha, class: r.failureClass ?? r.verdict, results: r.resultsDigest } });
@@ -245,6 +254,14 @@ export class Orchestrator {
     return this.move(job, allPass ? "PREMERGE" : "REWORK", { reviews: results.map((r) => `${r.role}:${r.verdict}`) }, write);
   }
 
+  /** Raise (never lower) the job's risk. An unclassified job simply takes the policy's value. */
+  private async ratchetRisk(tx: Q, jobId: string, polRisk: RiskLevel): Promise<void> {
+    const t = tx as Sql;
+    const [cur] = await t<{ risk: RiskLevel; risk_classified: boolean }[]>`SELECT risk, risk_classified FROM jobs WHERE id = ${jobId}`;
+    const next = cur?.risk_classified ? maxRisk(cur.risk, polRisk) : polRisk;
+    await t`UPDATE jobs SET risk = ${next}, risk_classified = true WHERE id = ${jobId}`;
+  }
+
   private async premerge(job: JobCtx): Promise<TickResult> {
     if (!job.headSha) return this.fail(job, "premerge-without-candidate");
     const head = job.headSha;
@@ -254,8 +271,10 @@ export class Orchestrator {
     await this.hit("after-port:scm.ensureDraftPr");
     return this.move(job, "AWAITING_HUMAN", { policy: pol.policyDigest, pr: pr.prNumber }, async (tx) => {
       const q = tx as Sql;
-      const risk = maxRisk(job.risk, pol.risk); // risk only ratchets up
-      await q`UPDATE jobs SET policy_digest = ${pol.policyDigest}, pr_number = ${pr.prNumber}, risk = ${risk}, risk_classified = true WHERE id = ${job.id}`;
+      await this.ratchetRisk(tx, job.id, pol.risk);
+      const [rr] = await q<{ risk: RiskLevel }[]>`SELECT risk FROM jobs WHERE id = ${job.id}`;
+      const risk = (rr?.risk ?? pol.risk) as RiskLevel;
+      await q`UPDATE jobs SET policy_digest = ${pol.policyDigest}, pr_number = ${pr.prNumber} WHERE id = ${job.id}`;
       await q`INSERT INTO policy_decisions (job_id, head_sha, policy_digest, risk, eligible, reasons)
         SELECT ${job.id}, ${head}, ${pol.policyDigest}, ${risk}, ${pol.eligible && (risk === "LOW" || risk === "MEDIUM")}, ${q.json(pol.reasons as never)}
         WHERE NOT EXISTS (SELECT 1 FROM policy_decisions WHERE job_id = ${job.id} AND head_sha = ${head} AND policy_digest = ${pol.policyDigest})`;

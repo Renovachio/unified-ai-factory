@@ -24,3 +24,4 @@ export * from "./risk";
 export * from "./binding";
 export * from "./guards";
 export * from "./gates";
+export * from "./policy";
