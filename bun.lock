@@ -80,6 +80,15 @@
         "@factory/scm": "workspace:*",
       },
     },
+    "packages/capabilities": {
+      "name": "@factory/capabilities",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/skills": "workspace:*",
+        "postgres": "4.1.1",
+      },
+    },
     "packages/checks": {
       "name": "@factory/checks",
       "version": "0.0.0",
@@ -264,6 +273,8 @@
     "@factory/agents": ["@factory/agents@workspace:packages/agents"],
 
     "@factory/api": ["@factory/api@workspace:apps/api"],
+
+    "@factory/capabilities": ["@factory/capabilities@workspace:packages/capabilities"],
 
     "@factory/checks": ["@factory/checks@workspace:packages/checks"],
 

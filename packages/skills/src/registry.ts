@@ -20,8 +20,8 @@ export async function submitCandidate(sql: Sql, i: Scope & { kind: "skill" | "ag
   const permDigest = i.signed.report.permissionDigest ?? fail("NO_PERMISSION_DIGEST", "report has no permission digest");
   const check = verifyValidationReport(i.signed, i.reportPublicKeyPem, { digest: m.digest, policyDigest: i.policyDigest, ...(i.now ? { now: i.now } : {}) });
   return await sql.begin(async (tx) => {
-    const [row] = await tx`INSERT INTO skill_versions (organization_id, workspace_id, kind, slug, version, digest, permission_digest, manifest, origin, file_manifest, created_by)
-      VALUES (${i.organizationId}, ${ws(i)}, ${i.kind}, ${m.slug}, ${m.version}, ${m.digest}, ${permDigest}, ${tx.json(m as never)}, ${tx.json(m.origin as never)}, ${tx.json(i.files as never)}, ${i.createdBy}) RETURNING id`;
+    const [row] = await tx`INSERT INTO skill_versions (organization_id, workspace_id, kind, slug, version, digest, permission_digest, manifest, origin, file_manifest, meta, created_by)
+      VALUES (${i.organizationId}, ${ws(i)}, ${i.kind}, ${m.slug}, ${m.version}, ${m.digest}, ${permDigest}, ${tx.json(m as never)}, ${tx.json(m.origin as never)}, ${tx.json(i.files as never)}, ${tx.json((i.signed.report.meta ?? {}) as never)}, ${i.createdBy}) RETURNING id`;
     const rowId = (row ?? fail("INSERT_FAILED", "no row")).id as string;
     const evidence = digestOfJson({ report: i.signed.report, signature: i.signed.signature });
     await tx`INSERT INTO skill_validations (version_id, candidate_digest, policy_digest, ok, report, signature, key_id, evidence_digest, expires_at)

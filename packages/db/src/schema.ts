@@ -368,6 +368,7 @@ export const skillVersions = pgTable("skill_versions", {
   manifest: jsonb("manifest").notNull(),
   origin: jsonb("origin").notNull(),
   fileManifest: jsonb("file_manifest").notNull(),
+  meta: jsonb("meta").notNull().default({}),
   state: text("state").notNull().default("quarantined"),
   createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: created(),

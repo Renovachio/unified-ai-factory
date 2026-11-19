@@ -12,6 +12,7 @@ CREATE TABLE skill_versions (
   manifest jsonb NOT NULL,
   origin jsonb NOT NULL,
   file_manifest jsonb NOT NULL,
+  meta jsonb NOT NULL DEFAULT '{}',
   state text NOT NULL DEFAULT 'quarantined' CHECK (state IN ('quarantined','validated','awaiting_approval','approved','rejected','revoked')),
   created_by uuid NOT NULL REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -21,8 +22,8 @@ CREATE TABLE skill_versions (
 CREATE FUNCTION skill_versions_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'skill_versions rows are immutable and cannot be deleted'; END IF;
-  IF (NEW.id, NEW.organization_id, NEW.workspace_id, NEW.kind, NEW.slug, NEW.version, NEW.digest, NEW.permission_digest, NEW.manifest, NEW.origin, NEW.file_manifest, NEW.created_by, NEW.created_at)
-     IS DISTINCT FROM (OLD.id, OLD.organization_id, OLD.workspace_id, OLD.kind, OLD.slug, OLD.version, OLD.digest, OLD.permission_digest, OLD.manifest, OLD.origin, OLD.file_manifest, OLD.created_by, OLD.created_at)
+  IF (NEW.id, NEW.organization_id, NEW.workspace_id, NEW.kind, NEW.slug, NEW.version, NEW.digest, NEW.permission_digest, NEW.manifest, NEW.origin, NEW.file_manifest, NEW.meta, NEW.created_by, NEW.created_at)
+     IS DISTINCT FROM (OLD.id, OLD.organization_id, OLD.workspace_id, OLD.kind, OLD.slug, OLD.version, OLD.digest, OLD.permission_digest, OLD.manifest, OLD.origin, OLD.file_manifest, OLD.meta, OLD.created_by, OLD.created_at)
   THEN RAISE EXCEPTION 'skill version content is immutable'; END IF;
   IF NEW.state <> OLD.state AND NOT (
        (OLD.state = 'quarantined' AND NEW.state IN ('validated','rejected')) OR

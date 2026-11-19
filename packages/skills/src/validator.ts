@@ -47,6 +47,8 @@ export interface ValidationReport {
   expiresAt: string;
   /** "static" only: no behavioural/dynamic test has been performed by this report. */
   scope: "static";
+  /** Descriptive metadata used for routing/search. It carries NO authority: permissions come only from the manifest + grants. */
+  meta: { description: string; triggers: string[]; produces: string[]; domains: string[] };
 }
 export const VALIDATOR_VERSION = "1.0.0";
 
@@ -165,7 +167,7 @@ export function validateSkillTree(i: ValidateInput): ValidationReport {
   const ok = !findings.some((f) => f.severity === "error");
   return {
     schemaVersion: "2.2", candidateDigest: digest, manifest, permissionDigest: manifest ? permissionDigest(manifest.permissions) : null, policyDigest: policyDigestOf(i.policy), ok, findings, files: entries.length,
-    toolVersions: { validator: VALIDATOR_VERSION, runtime: `bun ${Bun.version}` }, createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 14 * 86_400_000).toISOString(), scope: "static",
+    meta: { description: typeof fm?.data.description === "string" ? fm.data.description.slice(0, 400) : "", triggers: list(fm?.data.triggers).slice(0, 20), produces: list(fm?.data.produces).slice(0, 20), domains: list(fm?.data.domains).slice(0, 10) }, toolVersions: { validator: VALIDATOR_VERSION, runtime: `bun ${Bun.version}` }, createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 14 * 86_400_000).toISOString(), scope: "static",
   };
 }
 
