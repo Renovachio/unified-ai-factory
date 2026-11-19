@@ -19,7 +19,7 @@ This is a specification package. No engineering work orders have been implemente
 | AGT-004 | ACCEPTED | evidence/AGT-004/report.md | operator (continue-plan instruction) |
 | ORC-001 | ACCEPTED | evidence/ORC-001/report.md | operator (continue-plan instruction) |
 | INT-001 | ACCEPTED | evidence/INT-001/report.md | operator (continue-plan instruction) |
-| SPC-001 | NOT_STARTED | — | — |
+| SPC-001 | ACCEPTED | evidence/SPC-001/report.md | operator (continue-plan instruction) |
 | BLD-001 | NOT_STARTED | — | — |
 | GAT-001 | NOT_STARTED | — | — |
 | REV-001 | NOT_STARTED | — | — |
