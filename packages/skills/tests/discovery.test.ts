@@ -43,7 +43,7 @@ describe("SAI-02 catalog: provenance, pinning, blocked-not-replaced (T-02, T-03,
   test("missing license, unpinned revision, wrong host and unreviewed license are blocked with reasons", async () => {
     const cfg: SourcesConfig = { schemaVersion: 1, sources: [gh("s1")] };
     const { entries } = await refreshCatalog(cfg, port({ s1: [
-      { uri: good.uri.replace("skills/prd-writer", "a1"), name: "a1x", description: good.description, revision: SHA }, { ...good, uri: "https://github.com/x/y/a2", name: "a2x", revision: "main" },
+      { uri: good.uri.replace("skills/prd-writer", "a1"), name: "a1x", description: "Write product requirement documents", revision: SHA }, { ...good, uri: "https://github.com/x/y/a2", name: "a2x", revision: "main" },
       { ...good, uri: "https://evil.test/x/y/a3", name: "a3x" }, { ...good, uri: "https://github.com/x/y/a4", name: "a4x", license: "GPL-3.0-only" }, { ...good, uri: "http://github.com/x/y/a5", name: "a5x" },
     ] }), LIC);
     const reasons = Object.fromEntries(entries.map((e) => [e.name, e.blockedReasons.join("|")]));
