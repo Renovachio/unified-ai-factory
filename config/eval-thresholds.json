@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "note": "Quality thresholds for promoting a role/model route and regression tolerances for changing one. Changing this file is an operator decision; the benchmark is reproducible from packages/evals fixtures (the fixture digest is recorded in every report). A route that misses a threshold is not eligible for that role; a candidate that regresses beyond tolerance versus the recorded baseline is rejected.",
+  "minimums": {
+    "reviewRecall": 0.8,
+    "securityReviewRecall": 0.8,
+    "builderAcceptancePassRate": 0.7,
+    "negativeControlEscalationRate": 1
+  },
+  "maximums": {
+    "reviewFalsePositiveRate": 0.34,
+    "riskUnderClassificationRate": 0.1,
+    "highRiskAutoMergeAuthorizations": 0,
+    "p95SecondsPerTask": 240
+  },
+  "regressionTolerance": { "reviewRecall": 0.05, "securityReviewRecall": 0.05, "builderAcceptancePassRate": 0.05, "reviewFalsePositiveRate": 0.05, "riskUnderClassificationRate": 0.05 }
+}

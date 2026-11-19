@@ -120,6 +120,18 @@
         "zod": "4.6.7",
       },
     },
+    "packages/evals": {
+      "name": "@factory/evals",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/domain": "workspace:*",
+        "@factory/intake": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+    },
     "packages/intake": {
       "name": "@factory/intake",
       "version": "0.0.0",
@@ -242,6 +254,8 @@
     "@factory/db": ["@factory/db@workspace:packages/db"],
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
+
+    "@factory/evals": ["@factory/evals@workspace:packages/evals"],
 
     "@factory/intake": ["@factory/intake@workspace:packages/intake"],
 
