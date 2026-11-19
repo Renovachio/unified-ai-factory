@@ -24,7 +24,7 @@ Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual
 | `packages/intake`, `agents`, `checks`, `contracts`, `telemetry`, `secrets`, `evals` | Intake classification, role agents and policy port, gates, shared schemas, redacting telemetry, secret broker, eval benchmark |
 | `apps/api`, `apps/runner`, `apps/web` | HTTP API, worker, Next.js dashboard |
 | `packages/skills`, `capabilities`, `improvements`, `product` | v2.2: skill/agent registry (quarantine, static validation, digest-bound approval, CAS activation), capability matcher and gap analysis, zero-authority improvement supervisor, PM artifacts |
-| `migrations/` | Reversible SQL migrations 0001-0012 |
+| `migrations/` | Reversible SQL migrations 0001-0013 |
 | `config/` | Inference policy, provider terms, risk policy, runtime allowlist, cloud, eval thresholds, gate manifests |
 | `evidence/<ID>/` | Per-task acceptance report |
 | `docs/` | Blueprint, ADRs, third-party notices, eval report, operator actions |

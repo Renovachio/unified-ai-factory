@@ -3,6 +3,7 @@ export * from "./ids";
 export * from "./migrate";
 export * from "./events";
 export * from "./outbox";
+export * from "./diagnostics";
 export * from "./transition";
 export * from "./sse";
 export * as schema from "./schema";

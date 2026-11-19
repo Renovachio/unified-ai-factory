@@ -77,7 +77,7 @@ Plan: `Unified_AI_Software_Factory_v2.1_Hardening_Operational_Activation.md` (au
 
 ```yaml
 - work_package: ACT-07
-  status: in_progress   # audit done; dead-letter, diagnostics, fault injection, CI watcher not built
+  status: in_progress   # dead letter, diagnostics, CI watcher (fake port), crash test done; no live GitHub, no rebase, no backup/restore, no multi-process fault injection
   evidence: evidence/ACT-07/report.md
 ```
 

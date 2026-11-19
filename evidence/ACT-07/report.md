@@ -1,6 +1,6 @@
 # ACT-07 — Operational reliability (v2.1)
 
-**Status: `in_progress` — audit done, gaps recorded; no new reliability work was performed for this work package.** Nothing below was run under real production conditions.
+**Status: `in_progress` — dead letter, diagnostics, post-merge watcher and a crash test added; remaining gaps below.** Nothing below was run under real production conditions.
 
 ## What already exists (v2.0/v2.1) and is covered by tests
 | Area | Where | Test evidence |
@@ -14,12 +14,14 @@
 | Idempotent API writes | `apps/api` | `api.test.ts` |
 | v2.2 registry: concurrent identical activations, revocation mid-run, stale CAS | `packages/skills` | `registry.test.ts` ("recovery and revocation mid-run") |
 
-## Gaps (not done)
-- No **post-merge CI watcher** (only `recordPostmerge`); no automatic **rebase** on base-branch movement.
-- No **dead-letter** handling or alerting for poisoned outbox rows; no retention/backup/restore procedure or test; no database-restart fault-injection test.
-- No **diagnostics bundle** command (redacted logs + versions + migration state); real OpenTelemetry export is not wired.
-- No end-to-end **failure-injection suite** across processes (worker SIGKILL mid-gate, DB restart mid-activation, partitioned callbacks). Single-process crash tests exist; multi-process ones do not.
-- Privileged components still run in one process unless the operator provisions per-component LOGIN roles (see ACT-05).
+## Added in this work package (tested locally; `packages/db/tests/reliability.test.ts`, `packages/scm/tests/postmerge.test.ts`)
+- **Dead letter** (migration 0013): outbox rows stop retrying after `maxAttempts` (default 10), keep `last_error`, are listed by `listDeadLetters` and restored by `requeueDeadLetter`; other jobs are unaffected. Rollback returns dead rows to pending.
+- **Diagnostics bundle** (`diagnosticsBundle`, `bun scripts/diagnostics.ts`): migration state, job/outbox/task/worker counts, alerts (dead letters, stale outbox, expired leases, pending/unknown migrations). Counts and ids only, redacted; a test asserts no request text appears.
+- **Post-merge CI watcher** (`watchPostmerge`): reads the merge commit's CI status through an injected port and records the outcome once through the existing `recordPostmerge` (so failures trip the auto-merge breaker). Failure, timeout, unknown merge sha or an unreachable status API all fail closed; pending within the window waits.
+- **Crash mid-delivery**: killing the consumer's DB backend mid-batch leaves all rows pending and redelivery completes (at-least-once, consumers dedupe by sequence).
 
-## Next
-Implement the four gaps above in priority order: dead-letter + alert, diagnostics bundle, restart fault injection (Postgres + worker), CI watcher. Re-run this audit and flip to `verified` only with evidence from those runs.
+## Remaining gaps (not done)
+- The watcher has no GitHub adapter (the `CiStatusPort` is injected); nothing schedules it or the dead-letter alert; verified only with fakes, not live GitHub.
+- No automatic **rebase** when the base branch moves; no backup/restore procedure or test; no real Postgres server restart or multi-process (worker SIGKILL mid-gate, network partition) injection - the crash test terminates a backend inside one process.
+- Real OpenTelemetry export is not wired.
+- Privileged components still run in one process unless the operator provisions per-component LOGIN roles (see ACT-05).

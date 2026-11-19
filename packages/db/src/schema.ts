@@ -242,6 +242,8 @@ export const outbox = pgTable("outbox", {
   status: text("status").notNull().default("pending"),
   attempts: integer("attempts").notNull().default(0),
   retryAfter: timestamp("retry_after", { withTimezone: true }),
+  lastError: text("last_error"),
+  deadAt: timestamp("dead_at", { withTimezone: true }),
   createdAt: created(),
 });
 

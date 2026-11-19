@@ -88,12 +88,12 @@ describe("outbox", () => {
     const consumer = new DedupingConsumer(async () => undefined);
     let handled = 0;
     const r1 = await deliverOutbox(db.sql, { destination: dest, handler: async (item) => { await consumer.receive(item); if (++handled === 3) throw new Error("crash after effect, before ack"); } });
-    expect(r1).toEqual({ delivered: 2, failed: 1 });
+    expect(r1).toEqual({ delivered: 2, failed: 1, deadLettered: 0 });
     expect(consumer.seen.map((s) => s.sequence)).toEqual([1, 2, 3]); // effect of #3 happened but was not acked
     const pending = async () => (await db.sql`SELECT count(*)::int AS c FROM outbox WHERE destination=${dest} AND status='pending'`)[0]!.c;
     expect(await pending()).toBe(4);
     // retry is delayed by backoff
-    expect(await deliverOutbox(db.sql, { destination: dest, handler: async () => undefined })).toEqual({ delivered: 0, failed: 0 });
+    expect(await deliverOutbox(db.sql, { destination: dest, handler: async () => undefined })).toEqual({ delivered: 0, failed: 0, deadLettered: 0 });
     const later = new Date(Date.now() + 10 * 60_000);
     const r2 = await deliverOutbox(db.sql, { destination: dest, now: later, handler: (item) => consumer.receive(item).then(() => undefined) });
     expect(r2.delivered).toBe(4);

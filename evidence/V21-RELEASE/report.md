@@ -10,7 +10,7 @@ Recorded honestly per the plan ("Record NOT READY if gates fail"). Auto-merge re
 | ACT-04 dashboard auth | `in_progress` | `evidence/ACT-04/report.md` | Operator: real OIDC IdP; browser E2E |
 | ACT-05 security hardening | `in_progress` | `evidence/ACT-05/report.md` | Operator: per-component LOGIN roles; Linux/cloud enforcement evidence |
 | ACT-06 model qualification | `blocked` | `evidence/ACT-06/report.md` | Dataset owner: >= 30 samples/role + holdout; run candidates; operator approval |
-| ACT-07 reliability | `in_progress` | `evidence/ACT-07/report.md` | Engineering: dead-letter, diagnostics, fault injection, CI watcher |
+| ACT-07 reliability | `in_progress` | `evidence/ACT-07/report.md` | Engineering: live CI adapter + scheduling, rebase, backup/restore, multi-process fault injection |
 
 ## What is genuinely verified (locally, CI-green: 1136 tests)
 Sandbox confinement (Seatbelt on macOS; bwrap in CI), egress denial, secret isolation, redaction hardening, DB privilege separation proven by a real runner role, OIDC code+PKCE against a **fake** issuer, tool loop against a real local model for a trivial task, evaluator leakage fix, and the v2.2 registry/approval/supervisor controls.
