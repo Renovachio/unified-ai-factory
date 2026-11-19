@@ -6,6 +6,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "validate:package": "python3 scripts/validate_package.py",
+    "demo": "bun scripts/demo.ts",
     "lint": "eslint .",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test --timeout 30000",
