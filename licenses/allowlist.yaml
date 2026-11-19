@@ -136,6 +136,12 @@ packages:
     approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
     approvedOn: "2026-11-18"
     allowedModes: [runtime]
+  - name: "jose"
+    version: "6.2.18"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-19"
+    allowedModes: [runtime]
 # Installed packages whose license is not on the allowlist but were individually reviewed.
 exceptions:
   - name: "@img/sharp-libvips-*"

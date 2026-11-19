@@ -1,0 +1,120 @@
+import { randomUUID } from "node:crypto";
+import { sseResponse, type Sql } from "@factory/db";
+import { receiveGitHubWebhook } from "@factory/scm";
+import { assertCsrf, require_, resolveActor, type Actor, type Authenticator } from "./auth";
+import { readJson, readRaw } from "./body";
+import { cancelJob, createJob, getJob, listEvents, listJobs, requireIdempotencyKey, type JsonResult } from "./jobs";
+import { ApiProblem, problemResponse, problems, SECURITY_HEADERS } from "./problem";
+import { RateLimiter } from "./ratelimit";
+
+export interface ApiConfig {
+  sql: Sql;
+  authenticator: Authenticator;
+  allowedOrigins?: string[];
+  maxBodyBytes?: number;
+  githubWebhookSecret?: string;
+  rateLimit?: { capacity: number; refillPerSec: number };
+  ready?: () => Promise<boolean>;
+  log?: (line: Record<string, unknown>) => void;
+}
+
+const BASE = "/api/v1";
+const json = (r: JsonResult): Response => new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: { ...(r.body === undefined ? {} : { "content-type": "application/json" }), ...SECURITY_HEADERS, ...(r.headers ?? {}) } });
+
+/** Framework-free request handler (Web `Request` -> `Response`); mounted by Bun.serve in server.ts and called directly by tests. */
+export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
+  const maxBody = cfg.maxBodyBytes ?? 256 * 1024;
+  const limiter = new RateLimiter(cfg.rateLimit?.capacity ?? 120, cfg.rateLimit?.refillPerSec ?? 2);
+  const log = cfg.log ?? (() => undefined);
+
+  async function authn(req: Request): Promise<Actor> {
+    const id = await cfg.authenticator.authenticate(req);
+    if (!id) throw problems.unauthorized();
+    const actor = await resolveActor(cfg.sql, id);
+    const wait = limiter.take(actor.userId);
+    if (wait) throw problems.rateLimited(wait);
+    return actor;
+  }
+  const mutating = (req: Request, actor: Actor) => assertCsrf(req, actor, cfg.allowedOrigins ?? []);
+
+  async function route(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const path = url.pathname;
+    const m = req.method;
+    if (path === `${BASE}/health/live`) return json({ status: 200, body: { status: "ok" } });
+    if (path === `${BASE}/health/ready`) {
+      const ok = await (cfg.ready ?? (async () => { await cfg.sql`SELECT 1`; return true; }))().catch(() => false);
+      return json({ status: ok ? 200 : 503, body: { status: ok ? "ready" : "unavailable" } });
+    }
+    if (path === `${BASE}/integrations/github/webhook`) {
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      if (!cfg.githubWebhookSecret) throw new ApiProblem({ status: 503, code: "not-configured", title: "Webhook receiver not configured" });
+      const raw = await readRaw(req, 5 * 1024 * 1024);
+      const r = await receiveGitHubWebhook(cfg.sql, { rawBody: raw, signature: req.headers.get("x-hub-signature-256"), deliveryId: req.headers.get("x-github-delivery"), eventName: req.headers.get("x-github-event"), secret: cfg.githubWebhookSecret });
+      if (r.status === "rejected") throw r.reason === "bad-signature" ? problems.unauthorized("invalid webhook signature") : problems.badRequest(`webhook rejected: ${r.reason}`);
+      return json({ status: 202, body: { status: r.status } });
+    }
+    if (!path.startsWith(`${BASE}/jobs`)) throw problems.notFound("no such route");
+    const rest = path.slice(`${BASE}/jobs`.length);
+    const actor = await authn(req);
+
+    if (rest === "" || rest === "/") {
+      if (m === "POST") {
+        require_(actor, "job:create"); mutating(req, actor);
+        const key = requireIdempotencyKey(req);
+        const { value } = await readJson(req, maxBody);
+        return json(await createJob(cfg.sql, actor, key, value));
+      }
+      if (m === "GET") { require_(actor, "job:read"); return json({ status: 200, body: await listJobs(cfg.sql, actor, url.searchParams) }); }
+      throw problems.methodNotAllowed(["GET", "POST"]);
+    }
+    const seg = rest.split("/").filter(Boolean);
+    const id = seg[0] as string;
+    if (seg.length === 1) {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      require_(actor, "job:read");
+      const { detail, version } = await getJob(cfg.sql, actor, id);
+      const etag = `"${version}"`;
+      if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { etag, ...SECURITY_HEADERS } });
+      return json({ status: 200, body: detail, headers: { etag } });
+    }
+    if (seg.length === 2 && seg[1] === "events") {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      require_(actor, "job:read");
+      return json({ status: 200, body: await listEvents(cfg.sql, actor, id, url.searchParams) });
+    }
+    if (seg.length === 3 && seg[1] === "events" && seg[2] === "stream") {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      require_(actor, "job:read");
+      await getJob(cfg.sql, actor, id);
+      const last = req.headers.get("last-event-id") ?? url.searchParams.get("afterSequence");
+      const res = sseResponse(cfg.sql, { jobId: id, lastEventId: last, signal: req.signal });
+      for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v);
+      return res;
+    }
+    if (seg.length === 2 && seg[1] === "cancel") {
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      require_(actor, "job:cancel"); mutating(req, actor);
+      requireIdempotencyKey(req);
+      const { value } = await readJson(req, maxBody);
+      return json(await cancelJob(cfg.sql, actor, id, value));
+    }
+    throw problems.notFound("no such route");
+  }
+
+  return async (req) => {
+    const requestId = req.headers.get("x-request-id")?.slice(0, 64) || randomUUID();
+    let res: Response;
+    try {
+      res = await route(req);
+    } catch (e) {
+      if (e instanceof ApiProblem) res = problemResponse(e.init, requestId);
+      else {
+        log({ level: "error", requestId, error: e instanceof Error ? e.message : String(e) }); // details stay server-side
+        res = problemResponse({ status: 500, code: "internal", title: "Internal Server Error", detail: "unexpected error" }, requestId);
+      }
+    }
+    res.headers.set("x-request-id", requestId);
+    return res;
+  };
+}
