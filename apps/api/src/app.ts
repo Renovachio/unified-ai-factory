@@ -5,6 +5,7 @@ import { AutoMergeRefused, DecisionRejected, recordDecision, type AutoMergeContr
 import { receiveGitHubWebhook } from "@factory/scm";
 import { assertCsrf, require_, resolveActor, type Actor, type Authenticator } from "./auth";
 import { readJson, readRaw } from "./body";
+import { pendingCookies, type OidcLogin } from "./login";
 import { cancelJob, createJob, getJob, listEvents, listJobs, requireIdempotencyKey, type JsonResult } from "./jobs";
 import { pauseJob, quarantineJob, releaseQuarantine, resumeJob, workerAction } from "./operator";
 import { ApiProblem, problemResponse, problems, SECURITY_HEADERS } from "./problem";
@@ -22,6 +23,8 @@ export interface ApiConfig {
   review?: Pick<ReviewPort, "requiredRoles">;
   /** Rollout controls for opt-in auto-merge (kill switch, per-repository opt-in, hold). */
   autoMerge?: AutoMergeController;
+  /** Interactive OIDC login (authorization code + PKCE) and server-side sessions. */
+  login?: OidcLogin;
   ready?: () => Promise<boolean>;
   log?: (line: Record<string, unknown>) => void;
 }
@@ -62,15 +65,27 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       if (r.status === "rejected") throw r.reason === "bad-signature" ? problems.unauthorized("invalid webhook signature") : problems.badRequest(`webhook rejected: ${r.reason}`);
       return json({ status: 202, body: { status: r.status } });
     }
+    if (path === `${BASE}/auth/login` || path === `${BASE}/auth/callback` || path === `${BASE}/auth/logout`) {
+      if (!cfg.login) throw new ApiProblem({ status: 503, code: "not-configured", title: "Interactive login is not configured" });
+      if (path.endsWith("/login") || path.endsWith("/callback")) {
+        if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+        return path.endsWith("/login") ? cfg.login.start(req) : cfg.login.callback(req);
+      }
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      const a = await authn(req);
+      if (a.via !== "session") throw problems.badRequest("logout applies to browser sessions");
+      mutating(req, a);
+      return cfg.login.logout(req, a.userId, a.orgId);
+    }
     if (path === `${BASE}/session`) {
       if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
       const a = await authn(req);
       return json({ status: 200, body: { userId: a.userId, role: a.role, via: a.via, csrf: a.csrf ?? null } });
     }
     if (path === `${BASE}/auto-merge` || path === `${BASE}/auto-merge/kill` || path === `${BASE}/auto-merge/disarm` || /^\/api\/v1\/repositories\/[^/]+\/auto-merge$/.test(path)) {
+      const a = await authn(req); // authenticate before revealing configuration state
       if (!cfg.autoMerge) throw new ApiProblem({ status: 503, code: "not-configured", title: "Auto-merge controls are not configured" });
       const ctl = cfg.autoMerge;
-      const a = await authn(req);
       const reason = async () => { const { value } = await readJson(req, maxBody); const r = (value as { reason?: unknown })?.reason; if (typeof r !== "string" || r.length < 1 || r.length > 1000) throw problems.unprocessable("reason (1..1000 characters) is required"); return { reason: r, body: value as Record<string, unknown> }; };
       try {
         if (path === `${BASE}/auto-merge`) {
@@ -247,6 +262,7 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       }
     }
     res.headers.set("x-request-id", requestId);
+    for (const c of pendingCookies.get(req) ?? []) res.headers.append("set-cookie", c); // session id rotation
     return res;
   };
 }

@@ -41,3 +41,10 @@ Plan: `Unified_AI_Software_Factory_v2.1_Hardening_Operational_Activation.md` (au
   evidence: evidence/ACT-01/report.md
   blockers: [provider-terms approval, no role-qualified builder model]
 ```
+
+```yaml
+- work_package: ACT-04
+  status: in_progress   # HTTP-level flow verified with a fake issuer; no real IdP, no browser E2E
+  evidence: evidence/ACT-04/report.md
+  blockers: [OIDC provider configuration, browser-level E2E]
+```

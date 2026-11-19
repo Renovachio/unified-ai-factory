@@ -329,3 +329,27 @@ export const autoMergeRepoControls = pgTable("auto_merge_repo_controls", {
   tripReason: text("trip_reason"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const authLoginTransactions = pgTable("auth_login_transactions", {
+  stateHash: text("state_hash").primaryKey(),
+  nonce: text("nonce").notNull(),
+  codeVerifier: text("code_verifier").notNull(),
+  returnTo: text("return_to").notNull(),
+  browserBindingHash: text("browser_binding_hash").notNull(),
+  createdAt: created(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+});
+
+export const authSessions = pgTable("auth_sessions", {
+  idHash: text("id_hash").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  csrf: text("csrf").notNull(),
+  createdAt: created(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  rotatedAt: timestamp("rotated_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokeReason: text("revoke_reason"),
+  replacedBy: text("replaced_by"),
+});
