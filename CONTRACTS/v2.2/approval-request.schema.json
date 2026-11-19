@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unified-ai-factory.local/contracts/v2.2/approval-request.schema.json",
+  "title": "ApprovalRequest v2.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "targetKind",
+    "targetId",
+    "targetDigest",
+    "permissionDigest",
+    "policyDigest",
+    "evidenceDigest",
+    "operation",
+    "workspaceId",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.2"
+    },
+    "targetKind": {
+      "type": "string",
+      "enum": [
+        "skill",
+        "agent"
+      ]
+    },
+    "targetId": {
+      "type": "string"
+    },
+    "targetDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "permissionDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "policyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evidenceDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "activate",
+        "upgrade",
+        "revoke",
+        "rollback",
+        "grant_permission"
+      ]
+    },
+    "workspaceId": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "risk": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    }
+  }
+}

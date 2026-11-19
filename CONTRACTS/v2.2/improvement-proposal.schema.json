@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unified-ai-factory.local/contracts/v2.2/improvement-proposal.schema.json",
+  "title": "ImprovementProposal v2.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "proposalId",
+    "targetDigest",
+    "signalIds",
+    "problem",
+    "hypothesis",
+    "state",
+    "risk",
+    "requestedAction"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.2"
+    },
+    "proposalId": {
+      "type": "string"
+    },
+    "targetDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "signalIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "problem": {
+      "type": "string",
+      "minLength": 10
+    },
+    "hypothesis": {
+      "type": "string",
+      "minLength": 10
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "triaged",
+        "planned",
+        "candidate_ready",
+        "evaluating",
+        "rejected",
+        "awaiting_approval",
+        "approved",
+        "monitoring",
+        "accepted",
+        "rolled_back",
+        "blocked"
+      ]
+    },
+    "risk": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "requestedAction": {
+      "type": "string",
+      "enum": [
+        "create_skill",
+        "revise_skill",
+        "create_agent",
+        "revise_agent",
+        "revise_workflow",
+        "no_action"
+      ]
+    },
+    "candidateDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "comparisonReportId": {
+      "type": "string"
+    },
+    "rollbackRule": {
+      "type": "string"
+    }
+  }
+}

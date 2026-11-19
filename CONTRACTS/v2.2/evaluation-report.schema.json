@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unified-ai-factory.local/contracts/v2.2/evaluation-report.schema.json",
+  "title": "EvaluationReport v2.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidateDigest",
+    "baselineDigest",
+    "benchmarkDigest",
+    "policyDigest",
+    "status",
+    "metrics",
+    "criticalRegressions",
+    "evidenceUris"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.2"
+    },
+    "candidateDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "baselineDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "benchmarkDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "policyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "insufficient_evidence"
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "criticalRegressions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sampleSize": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "uncertaintyNotes": {
+      "type": "string"
+    },
+    "evidenceUris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "runtimeProvenance": {
+      "type": "object"
+    }
+  }
+}

@@ -220,6 +220,19 @@
         "@factory/telemetry": "workspace:*",
       },
     },
+    "packages/skills": {
+      "name": "@factory/skills",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/checks": "workspace:*",
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "postgres": "4.1.1",
+        "zod": "4.6.7",
+      },
+    },
     "packages/telemetry": {
       "name": "@factory/telemetry",
       "version": "0.0.0",
@@ -277,6 +290,8 @@
     "@factory/scm": ["@factory/scm@workspace:packages/scm"],
 
     "@factory/secrets": ["@factory/secrets@workspace:packages/secrets"],
+
+    "@factory/skills": ["@factory/skills@workspace:packages/skills"],
 
     "@factory/telemetry": ["@factory/telemetry@workspace:packages/telemetry"],
 

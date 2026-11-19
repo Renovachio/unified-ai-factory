@@ -1,0 +1,126 @@
+openapi: 3.1.0
+info:
+  title: Unified AI Factory v2.2 Additive API (draft)
+  version: 2.2.0
+servers:
+  - url: /api/v2
+security:
+  - userSession: []
+components:
+  securitySchemes:
+    userSession:
+      type: apiKey
+      in: cookie
+      name: session
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  schemas:
+    Operation:
+      type: object
+      required: [id, status]
+      properties:
+        id: {type: string}
+        status: {type: string, enum: [queued, running, completed, failed, blocked]}
+        statusUrl: {type: string}
+    Error:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        correlationId: {type: string}
+paths:
+  /skills:
+    get:
+      summary: List authorized visible skill versions
+      responses:
+        '200': {description: Paged skill list}
+  /skills/imports:
+    post:
+      summary: Stage quarantined skill import (never activate)
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '202': {description: Staged import}
+        '403': {description: Forbidden}
+  /skills/candidates/{id}/validate:
+    post:
+      summary: Start isolated static and behavioral validation
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202': {description: Validation queued}
+  /skills/candidates/{id}/evaluate:
+    post:
+      summary: Start paired qualification against pinned baseline
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202': {description: Evaluation queued}
+  /capabilities/match:
+    post:
+      summary: Explain permission-qualified route
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '200': {description: Matching decision or blocked explanation}
+  /approvals:
+    post:
+      summary: Request exact-digest human approval
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '201': {description: Approval request created}
+  /approvals/{id}/decision:
+    post:
+      summary: Approve or reject as authorized independent human
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200': {description: Decision recorded}
+        '412': {description: Candidate/evidence/policy changed}
+  /activations:
+    post:
+      summary: CAS activation with approved exact version
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '200': {description: Activated}
+        '409': {description: Stale revision}
+        '412': {description: Digest or policy mismatch}
+  /improvements:
+    get:
+      summary: List redacted improvement proposals
+      responses:
+        '200': {description: Paged improvements}
+  /improvements/{id}/experiment:
+    post:
+      summary: Stage improvement experiment only, never activate
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202': {description: Experiment queued}
+  /product/workspaces/{id}/artifacts:
+    post:
+      summary: Create versioned draft PM artifact
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201': {description: Draft artifact created}
+  /product/artifacts/{id}/handoff:
+    post:
+      summary: Send approved artifact to existing engineering intake
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202': {description: Engineering handoff queued}
+        '423': {description: Approval missing}
