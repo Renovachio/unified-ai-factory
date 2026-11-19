@@ -146,6 +146,17 @@
         "zod": "4.6.7",
       },
     },
+    "packages/improvements": {
+      "name": "@factory/improvements",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/capabilities": "workspace:*",
+        "@factory/db": "workspace:*",
+        "@factory/evals": "workspace:*",
+        "@factory/skills": "workspace:*",
+        "postgres": "4.1.1",
+      },
+    },
     "packages/intake": {
       "name": "@factory/intake",
       "version": "0.0.0",
@@ -285,6 +296,8 @@
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
 
     "@factory/evals": ["@factory/evals@workspace:packages/evals"],
+
+    "@factory/improvements": ["@factory/improvements@workspace:packages/improvements"],
 
     "@factory/intake": ["@factory/intake@workspace:packages/intake"],
 

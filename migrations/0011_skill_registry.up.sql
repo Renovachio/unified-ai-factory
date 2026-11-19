@@ -172,23 +172,26 @@ GRANT UPDATE (consumed_at) ON approval_decisions TO factory_control;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO factory_control;
 
 -- The ONLY write path the supervisor has to the active registry: a deterministic, pre-approved, disable-only (never enable) action.
-CREATE FUNCTION registry_policy_disable(p_policy uuid, p_observed double precision, p_samples integer, p_key text) RETURNS integer
+CREATE FUNCTION registry_policy_disable(p_policy uuid, p_observed double precision, p_samples integer, p_key text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE pol rollback_policies; v skill_versions; act registry_active; breached boolean; rev integer;
+DECLARE pol rollback_policies; v skill_versions; act registry_active; breached boolean; rev integer; prior registry_log;
 BEGIN
   SELECT * INTO pol FROM rollback_policies WHERE id = p_policy;
-  IF NOT FOUND THEN RAISE EXCEPTION 'no such rollback policy'; END IF;
-  IF p_samples < pol.min_samples THEN RAISE EXCEPTION 'not enough samples for policy (% < %)', p_samples, pol.min_samples; END IF;
+  IF NOT FOUND THEN RETURN jsonb_build_object('action', 'none', 'reason', 'no such rollback policy'); END IF;
+  IF pol.action <> 'disable' THEN RETURN jsonb_build_object('action', 'none', 'reason', 'only disable policies are executable here'); END IF;
+  SELECT * INTO prior FROM registry_log WHERE organization_id = pol.organization_id AND idempotency_key = p_key;
+  IF FOUND THEN RETURN jsonb_build_object('action', 'disabled', 'revision', prior.revision, 'replayed', true); END IF;
+  IF p_samples < pol.min_samples THEN RETURN jsonb_build_object('action', 'none', 'reason', format('not enough samples for policy (%s < %s)', p_samples, pol.min_samples)); END IF;
   breached := CASE pol.comparator WHEN 'lt' THEN p_observed < pol.threshold ELSE p_observed > pol.threshold END;
-  IF NOT breached THEN RAISE EXCEPTION 'policy threshold not breached'; END IF;
+  IF NOT breached THEN RETURN jsonb_build_object('action', 'none', 'reason', 'policy threshold not breached'); END IF;
   SELECT * INTO v FROM skill_versions WHERE id = pol.version_id;
   SELECT * INTO act FROM registry_active WHERE organization_id = v.organization_id AND workspace_id = v.workspace_id AND kind = v.kind AND slug = v.slug FOR UPDATE;
-  IF NOT FOUND OR act.active_version_id IS DISTINCT FROM v.id THEN RAISE EXCEPTION 'policy target is not the active version'; END IF;
+  IF NOT FOUND OR act.active_version_id IS DISTINCT FROM v.id THEN RETURN jsonb_build_object('action', 'none', 'reason', 'policy target is not the active version'); END IF;
   rev := act.revision + 1;
   UPDATE registry_active SET active_version_id = NULL, revision = rev, disabled_reason = 'policy ' || p_policy::text, updated_at = now() WHERE organization_id = act.organization_id AND workspace_id = act.workspace_id AND kind = act.kind AND slug = act.slug;
   INSERT INTO registry_log (organization_id, workspace_id, kind, slug, operation, from_version_id, to_version_id, revision, actor, idempotency_key, reason)
     VALUES (v.organization_id, v.workspace_id, v.kind, v.slug, 'policy_disable', v.id, NULL, rev, 'supervisor', p_key, format('metric %s=%s over %s samples breached %s %s', pol.metric, p_observed, p_samples, pol.comparator, pol.threshold));
-  RETURN rev;
+  RETURN jsonb_build_object('action', 'disabled', 'revision', rev);
 END $$;
 REVOKE ALL ON FUNCTION registry_policy_disable(uuid, double precision, integer, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION registry_policy_disable(uuid, double precision, integer, text) TO factory_supervisor, factory_control;
