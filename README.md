@@ -24,6 +24,7 @@ Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual
 | `packages/intake`, `agents`, `checks`, `contracts`, `telemetry`, `secrets`, `evals` | Intake classification, role agents and policy port, gates, shared schemas, redacting telemetry, secret broker, eval benchmark |
 | `apps/api`, `apps/runner`, `apps/web` | HTTP API, worker, Next.js dashboard |
 | `packages/skills`, `capabilities`, `improvements`, `product` | v2.2: skill/agent registry (quarantine, static validation, digest-bound approval, CAS activation), capability matcher and gap analysis, zero-authority improvement supervisor, PM artifacts |
+| `apps/dispatch-cli`, `packages/dispatch-core`, `packages/dispatch-client`, `apps/dispatch-menubar` | v2.3: the `dispatch` launcher/REPL, lifecycle and intent router, shared typed client + sync engine, optional macOS menu bar |
 | `migrations/` | Reversible SQL migrations 0001-0013 |
 | `config/` | Inference policy, provider terms, risk policy, runtime allowlist, cloud, eval thresholds, gate manifests |
 | `evidence/<ID>/` | Per-task acceptance report |
@@ -38,6 +39,9 @@ Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual
 
 ## v2.2 (inactive by default)
 Skill/agent registry, paired evaluation, improvement supervisor and PM artifacts exist behind `/api/v2` and dashboard pages `/skills`, `/improvements`. No skill is active, all discovery sources are disabled, and the supervisor can only propose. v2.1 gates are NOT READY (`evidence/V21-RELEASE/report.md`); v2.2 status and gaps: `evidence/SAI/report.md`, operations: `docs/operator/SKILLS_AND_IMPROVEMENT.md`.
+
+## Dispatch (v2.3): one command
+`dispatch` starts or attaches to the factory, opens the dashboard and gives you a prompt with slash commands (`/help`, `/jobs`, `/status`, `/models`, `/pause`, `/cancel`, `/exit`, ...). Build and install: `bun scripts/package-dispatch.ts`, then `./install.sh` from `dist/dispatch-*/`. It manages a private local PostgreSQL, the API and the dashboard; it never uses metered model APIs. A real coding pilot is still **blocked** (no qualified model, worker daemon or GitHub App): see `evidence/DSP-10/report.md` and `docs/dispatch/`.
 
 ## Try it locally
 `bun run demo` starts a throwaway Postgres, seeds **synthetic** data through the real API (one active skill, one awaiting approval, one rejected hostile archive, one improvement proposal), and serves the API on `127.0.0.1:8787` and the dashboard on `127.0.0.1:3000` (first page load compiles for ~30 s; add `--no-web` for the API only). Pick an identity at `http://127.0.0.1:8787/demo/login`, then open `/skills` and `/improvements`. The demo authenticator lives only in `scripts/demo.ts`, is loopback-only, and must never be reused in a deployment. `bun scripts/diagnostics.ts` (with `DATABASE_URL`) prints a redacted health snapshot.

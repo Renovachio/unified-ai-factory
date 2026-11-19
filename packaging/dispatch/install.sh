@@ -18,7 +18,7 @@ DEST="$DATA/versions/$VERSION"
 mkdir -p "$DATA/versions" "$BIN_DIR"
 if [ -d "$DEST" ]; then chmod -R u+w "$DEST" 2>/dev/null || true; fi
 TMP="$DATA/versions/.install-$VERSION.$$"; rm -rf "$TMP"; mkdir -p "$TMP"
-cp -R "$SRC/bin" "$SRC/migrations" "$SRC/dashboard" "$SRC/VERSION" "$SRC/SHA256SUMS" "$TMP/" 2>/dev/null || cp -R "$SRC/bin" "$SRC/migrations" "$SRC/dashboard" "$SRC/VERSION" "$TMP/"
+cp -R "$SRC/bin" "$SRC/migrations" "$SRC/config" "$SRC/dashboard" "$SRC/VERSION" "$SRC/SHA256SUMS" "$TMP/"
 rm -rf "$DEST"; mv "$TMP" "$DEST"
 ln -sfn "$DEST/bin/dispatch" "$BIN_DIR/dispatch"
 echo "Installed Dispatch $VERSION -> $DEST"

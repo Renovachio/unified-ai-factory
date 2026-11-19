@@ -23,7 +23,8 @@ async function job(state = "QUEUED", priority = "normal"): Promise<string> {
   return j!.id;
 }
 const worker = () => registerWorker(db.sql, { organizationId: org, mode: "local" });
-const T0 = new Date(Date.now() + 5_000); // tasks become runnable at enqueue time
+// Tasks become runnable at enqueue time (DB clock). A generous margin keeps this independent of how long database setup takes on a loaded machine.
+const T0 = new Date(Date.now() + 120_000);
 const at = (ms: number) => new Date(T0.getTime() + ms);
 
 describe("claims", () => {

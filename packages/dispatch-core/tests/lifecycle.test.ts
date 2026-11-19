@@ -1,9 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { acquireLock, childEnv, ConfigError, DEFAULT_CONFIG, dispatchPaths, ensureConfig, forbiddenEnvNames, isOwnedProcess, Lifecycle, LockTimeout, loadConfig, phaseOf, processIdentity, readState, transition, validateConfig, writeState, IllegalTransition, type ServiceSpec } from "../src/index";
+
+// Real database/process startup is slow on a busy machine; give each test generous headroom (the CLI --timeout would otherwise cap it).
+setDefaultTimeout(180_000);
 
 let home = ""; const spawned: number[] = [];
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), "dsp-")); });

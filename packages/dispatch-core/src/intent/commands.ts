@@ -1,5 +1,5 @@
 import type { Intent } from "./schema";
-import { ID_RE } from "./schema";
+import { ID_RE, PROJECT_REF_RE } from "./schema";
 
 /** Versioned command table. Unknown slash commands are returned as `unknown`: they are never forwarded to a model or a shell. */
 export const COMMAND_TABLE_VERSION = 1;
@@ -58,7 +58,7 @@ export function parseLine(line: string): Parsed {
     case "jobs": return arg === "" ? { kind: "intent", intent: { type: "job.list" }, viaCommand: name } : usage();
     case "status": return arg === "" ? { kind: "intent", intent: { type: "factory.status" }, viaCommand: name } : usage();
     case "new": return arg === "" || arg.length > 200 ? usage() : { kind: "intent", intent: { type: "project.create", title: arg }, viaCommand: name };
-    case "project": { const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && ID_RE.test(pid) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
+    case "project": { const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && (ID_RE.test(pid) || PROJECT_REF_RE.test(pid)) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
     case "pause": case "resume": case "cancel": return id() ? { kind: "intent", intent: { type: `job.${name}`, jobId: arg }, viaCommand: name } : usage();
     case "approve": return id() ? { kind: "intent", intent: { type: "approval.review", approvalId: arg }, viaCommand: name } : usage();
     case "logs": return id() ? { kind: "local", command: "logs", arg } : usage();

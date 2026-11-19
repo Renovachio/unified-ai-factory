@@ -100,14 +100,38 @@ Spec package: `../dispatch-v2.3`. Branch `dev/v23-dispatch` (on `dev/v22-sai`, w
 
 ```yaml
 - work_package: DSP-01
-  status: in_progress   # implemented + packaged-install verified locally; browser open not observed on a display; unsigned
+  status: in_progress   # packaged install verified locally; real browser window not observed; unsigned; macOS arm64 only
   evidence: evidence/DSP-01/report.md
 - work_package: DSP-02
   status: in_progress   # real-process lifecycle verified; no launchd; no worker daemon exists to manage
   evidence: evidence/DSP-02/report.md
+- work_package: DSP-03
+  status: in_progress   # all slash commands verified via piped stdin + real API; no human TTY session; /new blocked (no repo linking)
+  evidence: evidence/DSP-03/report.md
+- work_package: DSP-04
+  status: in_progress   # router/validator/confirmations verified; no qualified model interpreter exists (fails closed)
+  evidence: evidence/DSP-04/report.md
 - work_package: DSP-05
-  status: in_progress   # client+sync+feed verified against real API/Postgres; not yet wired into REPL/dashboard
+  status: in_progress   # client+sync+feed verified against real API/Postgres; not embedded in browser pages
   evidence: evidence/DSP-05/report.md
+- work_package: DSP-06
+  status: in_progress   # terminal scope verified; no server-side session table, not shared with dashboard
+  evidence: evidence/DSP-06/report.md
+- work_package: DSP-07
+  status: in_progress   # pages verified over HTTP from packaged install; no real-browser/a11y tool pass
+  evidence: evidence/DSP-07/report.md
+- work_package: DSP-08
+  status: in_progress   # views/controls verified; capability approval + activation not run end to end
+  evidence: evidence/DSP-08/report.md
+- work_package: DSP-09
+  status: in_progress   # P2; compiles, headless status verified; GUI not observed; no bundle/signing
+  evidence: evidence/DSP-09/report.md
+- work_package: DSP-10
+  status: blocked       # all local checks pass (CI 1236/0); REAL authorized pilot blocked: no runtime, qualified model, provider terms, worker daemon or GitHub App
+  evidence: evidence/DSP-10/report.md
+  blockers: [no worker daemon, no qualified model/authorized runtime, no GitHub App, v2.1 gates NOT READY]
 ```
+
+Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Package sha256 (darwin-arm64 tarball): `f7ccc285995d18087383a8acd003eeec5717f0b554776bb7f2fb2824b0e31eb0`.
 
 Also fixed while verifying: a v2.2 idempotent-activation race (`packages/skills/src/registry.ts`), found by the full suite.

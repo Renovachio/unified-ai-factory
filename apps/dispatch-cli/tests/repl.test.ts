@@ -35,6 +35,7 @@ async function session(lines: string[], h = hooks()): Promise<{ out: string; res
 describe("interactive REPL against the real API (DSP-03/06/08)", () => {
   test("/help lists every documented command; unknown slash commands get suggestions and reach neither the API nor a shell", async () => {
     calls = []; const { out, result } = await session(["/help", "/statu", "/rm -rf /", "/exit"]);
+    expect(out).toContain("\n  /new"); // multi-line output keeps its line breaks
     for (const c of ["/new", "/projects", "/project use", "/jobs", "/status", "/models", "/skills", "/agents", "/approvals", "/approve", "/pause", "/resume", "/cancel", "/logs", "/dashboard", "/context", "/exit", "/shutdown"]) expect(out).toContain(c);
     expect(out).toContain("Did you mean /status"); expect(out).toContain("Unknown command /rm"); expect(calls).toEqual([]); expect(result).toBe("detached");
   });

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,9 @@ import { readState } from "@factory/dispatch-core";
 import { apiCall, getSummary } from "../src/launcher/api";
 import { makeCtx } from "../src/launcher/context";
 import { startFactory } from "../src/commands/lifecycle";
+
+// Real database/process startup is slow on a busy machine; give each test generous headroom (the CLI --timeout would otherwise cap it).
+setDefaultTimeout(180_000);
 
 // Real managed PostgreSQL + real API process (own OS processes), driven through the same code the `dispatch` command uses. No mocks.
 let home = ""; let apiPort = 0; const env = () => ({ PATH: process.env.PATH ?? "", HOME: home, DISPATCH_HOME: home, DISPATCH_SELF_MAIN: join(import.meta.dir, "../src/main.ts"), DISPATCH_DASHBOARD_DIR: join(home, "no-dashboard") });

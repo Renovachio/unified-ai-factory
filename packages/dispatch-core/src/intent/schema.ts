@@ -11,12 +11,12 @@ export type Intent =
   | { type: "clarification.required"; question: string };
 export type IntentType = Intent["type"];
 
-type Spec = Record<string, "str" | "str?" | "text" | "text?" | readonly string[]>;
+type Spec = Record<string, "str" | "str?" | "ref" | "ref?" | "text" | "text?" | readonly string[]>;
 const SPECS: Record<IntentType, Spec> = {
   "project.create": { title: "text", description: "text?" },
-  "project.select": { projectId: "str" },
-  "job.create": { projectId: "str", request: "text" },
-  "job.list": { projectId: "str?" },
+  "project.select": { projectId: "ref" },
+  "job.create": { projectId: "ref", request: "text" },
+  "job.list": { projectId: "ref?" },
   "job.pause": { jobId: "str" }, "job.resume": { jobId: "str" }, "job.cancel": { jobId: "str" },
   "approval.review": { approvalId: "str" },
   "capability.list": { category: ["skills", "agents", "models"] },
@@ -26,6 +26,8 @@ const SPECS: Record<IntentType, Spec> = {
 export const INTENT_TYPES = Object.keys(SPECS) as IntentType[];
 export const MAX_TEXT = 8_000;
 /** Identifiers are opaque tokens, never free text: a restricted alphabet keeps them out of shell/SQL/log-injection territory. */
+/** A project is addressed by id or by `owner/name`. Each segment must start alphanumeric, so `..`, leading dots, absolute paths and empty segments cannot match. */
+export const PROJECT_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(\/[A-Za-z0-9][A-Za-z0-9._-]{0,63})?$/;
 export const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export type Validation = { ok: true; intent: Intent } | { ok: false; error: string };
@@ -42,6 +44,7 @@ export function validateIntent(raw: unknown): Validation {
     if (typeof v !== "string") return { ok: false, error: `${k} must be a string` };
     const base = (kind as string).replace("?", "");
     if (base === "str") { if (!ID_RE.test(v)) return { ok: false, error: `${k} is not a valid identifier` }; }
+    else if (base === "ref") { if (!PROJECT_REF_RE.test(v) && !ID_RE.test(v)) return { ok: false, error: `${k} is not a valid project reference` }; }
     else if (v.trim().length === 0 || v.length > MAX_TEXT) return { ok: false, error: `${k} must be 1..${MAX_TEXT} characters` };
   }
   return { ok: true, intent: raw as Intent };

@@ -42,7 +42,8 @@ export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.R
   const session = Session.open(sessionFile, LOCAL_ACTOR);
   const completer = (l: string): [string[], string] => { const all = COMMANDS.map((x) => `/${x.name}`); return [l.startsWith("/") ? all.filter((x) => x.startsWith(l)) : [], l]; };
   const lines = new Lines(opts.input ?? process.stdin, output, completer);
-  const say = (s: string) => output.write(`${safe(s)}\n`);
+  // Sanitise per line: control characters (ESC sequences etc.) are stripped, but our own line breaks survive.
+  const say = (s: string) => output.write(`${s.split("\n").map((l) => safe(l)).join("\n")}\n`);
   const io: Io = { out: say, ask: async (p) => (await lines.next(p)) ?? "" };
   const ex = new Executor(client, session, io);
   const show = (o: Outcome) => say(o.status === "completed" ? o.message : `${o.status === "failed" ? sym.fail() : sym.warn()} ${o.message}`);

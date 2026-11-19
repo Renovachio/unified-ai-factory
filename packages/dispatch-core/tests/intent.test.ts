@@ -19,6 +19,8 @@ describe("slash commands (COMMANDS.md)", () => {
   });
   test("argument handling: /project use, /new, pause/resume/cancel/approve map to the right intents; malformed arguments give usage, not execution", () => {
     expect(parseLine("/project use p-1")).toMatchObject({ kind: "intent", intent: { type: "project.select", projectId: "p-1" } });
+    expect(parseLine("/project use acme/clip")).toMatchObject({ intent: { type: "project.select", projectId: "acme/clip" } });
+    for (const bad of ["../x", "a/../b", "/etc", "a//b", "a/b/c", ".hidden/x", "a b/c"]) expect(parseLine(`/project use ${bad}`).kind).toBe("usage");
     expect(parseLine("/project p-1").kind).toBe("usage"); expect(parseLine("/project use").kind).toBe("usage");
     expect(parseLine("/new Clipboard sync")).toMatchObject({ intent: { type: "project.create", title: "Clipboard sync" } });
     expect(parseLine("/cancel j1")).toMatchObject({ intent: { type: "job.cancel", jobId: "j1" } }); expect(parseLine("/pause j1;id").kind).toBe("usage"); expect(parseLine("/cancel").kind).toBe("usage");
