@@ -5,11 +5,13 @@ import { AutoMergeRefused, DecisionRejected, recordDecision, type AutoMergeContr
 import { receiveGitHubWebhook } from "@factory/scm";
 import { assertCsrf, require_, resolveActor, type Actor, type Authenticator } from "./auth";
 import { readJson, readRaw } from "./body";
+import { pendingCookies, type OidcLogin } from "./login";
 import { cancelJob, createJob, getJob, listEvents, listJobs, requireIdempotencyKey, type JsonResult } from "./jobs";
 import { pauseJob, quarantineJob, releaseQuarantine, resumeJob, workerAction } from "./operator";
 import { ApiProblem, problemResponse, problems, SECURITY_HEADERS } from "./problem";
 import { jobTimeline, listArtifacts, listAudit, listWorkers, policyView, usageReport } from "./readmodels";
 import { RateLimiter } from "./ratelimit";
+import { registryProblem, registryRoutes, type SkillsConfig } from "./registry";
 
 export interface ApiConfig {
   sql: Sql;
@@ -22,12 +24,22 @@ export interface ApiConfig {
   review?: Pick<ReviewPort, "requiredRoles">;
   /** Rollout controls for opt-in auto-merge (kill switch, per-repository opt-in, hold). */
   autoMerge?: AutoMergeController;
+  /** Interactive OIDC login (authorization code + PKCE) and server-side sessions. */
+  login?: OidcLogin;
+  /** v2.2 skill/agent registry: quarantined imports, exact-digest approvals, CAS activation. Routes under /api/v2. */
+  skills?: SkillsConfig;
+  /** Dispatch local mode: one-time browser entry (loopback only). */
+  local?: { entry: LocalBrowserEntry };
   ready?: () => Promise<boolean>;
   log?: (line: Record<string, unknown>) => void;
 }
 
+import type { LocalBrowserEntry } from "./local";
+import { dispatchRoutes } from "./dispatch";
+function withSecurityHeaders(res: Response): Response { for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v); return res; }
 const BASE = "/api/v1";
-const json = (r: JsonResult): Response => new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: { ...(r.body === undefined ? {} : { "content-type": "application/json" }), ...SECURITY_HEADERS, ...(r.headers ?? {}) } });
+const BASE2 = "/api/v2";
+const json = (r: JsonResult): Response => r.raw ? withSecurityHeaders(r.raw) : new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: { ...(r.body === undefined ? {} : { "content-type": "application/json" }), ...SECURITY_HEADERS, ...(r.headers ?? {}) } });
 
 /** Framework-free request handler (Web `Request` -> `Response`); mounted by Bun.serve in server.ts and called directly by tests. */
 export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
@@ -49,6 +61,30 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
     const m = req.method;
+    if (path === `${BASE}/local/enter`) { // one-time code -> cookie session; only exists in Dispatch local mode
+      if (!cfg.local) throw problems.notFound("no such route");
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      return cfg.local.entry.enter(req);
+    }
+    if (path === `${BASE2}/dispatch/browser-code`) { // CLI (local owner bearer token) asks for a one-time dashboard sign-in code
+      if (!cfg.local) throw problems.notFound("no such route");
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      const a = await authn(req);
+      if (a.via !== "bearer" || a.subject !== "dispatch-local-owner") throw problems.forbidden("only the local owner token may request a browser code");
+      return json({ status: 200, body: { code: cfg.local.entry.mint(), expiresInSeconds: 60 } });
+    }
+    if (path.startsWith(`${BASE2}/`)) {
+      const sub = path.slice(BASE2.length);
+      const hit = [...registryRoutes, ...dispatchRoutes].filter((r) => r.pattern.test(sub));
+      if (hit.length === 0) throw problems.notFound("no such route");
+      const route2 = hit.find((r) => r.method === m);
+      if (!route2) throw problems.methodNotAllowed([...new Set(hit.map((r) => r.method))]);
+      const actor = await authn(req); // authenticate before any state is revealed
+      try {
+        const r = await route2.handler({ req, sql: cfg.sql, actor, cfg: cfg.skills, maxBody, mutating: () => mutating(req, actor), key: () => requireIdempotencyKey(req) });
+        return json(r);
+      } catch (e) { const p = registryProblem(e); if (p) throw p; throw e; }
+    }
     if (path === `${BASE}/health/live`) return json({ status: 200, body: { status: "ok" } });
     if (path === `${BASE}/health/ready`) {
       const ok = await (cfg.ready ?? (async () => { await cfg.sql`SELECT 1`; return true; }))().catch(() => false);
@@ -62,15 +98,27 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       if (r.status === "rejected") throw r.reason === "bad-signature" ? problems.unauthorized("invalid webhook signature") : problems.badRequest(`webhook rejected: ${r.reason}`);
       return json({ status: 202, body: { status: r.status } });
     }
+    if (path === `${BASE}/auth/login` || path === `${BASE}/auth/callback` || path === `${BASE}/auth/logout`) {
+      if (!cfg.login) throw new ApiProblem({ status: 503, code: "not-configured", title: "Interactive login is not configured" });
+      if (path.endsWith("/login") || path.endsWith("/callback")) {
+        if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+        return path.endsWith("/login") ? cfg.login.start(req) : cfg.login.callback(req);
+      }
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      const a = await authn(req);
+      if (a.via !== "session") throw problems.badRequest("logout applies to browser sessions");
+      mutating(req, a);
+      return cfg.login.logout(req, a.userId, a.orgId);
+    }
     if (path === `${BASE}/session`) {
       if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
       const a = await authn(req);
       return json({ status: 200, body: { userId: a.userId, role: a.role, via: a.via, csrf: a.csrf ?? null } });
     }
     if (path === `${BASE}/auto-merge` || path === `${BASE}/auto-merge/kill` || path === `${BASE}/auto-merge/disarm` || /^\/api\/v1\/repositories\/[^/]+\/auto-merge$/.test(path)) {
+      const a = await authn(req); // authenticate before revealing configuration state
       if (!cfg.autoMerge) throw new ApiProblem({ status: 503, code: "not-configured", title: "Auto-merge controls are not configured" });
       const ctl = cfg.autoMerge;
-      const a = await authn(req);
       const reason = async () => { const { value } = await readJson(req, maxBody); const r = (value as { reason?: unknown })?.reason; if (typeof r !== "string" || r.length < 1 || r.length > 1000) throw problems.unprocessable("reason (1..1000 characters) is required"); return { reason: r, body: value as Record<string, unknown> }; };
       try {
         if (path === `${BASE}/auto-merge`) {
@@ -247,6 +295,7 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       }
     }
     res.headers.set("x-request-id", requestId);
+    for (const c of pendingCookies.get(req) ?? []) res.headers.append("set-cookie", c); // session id rotation
     return res;
   };
 }

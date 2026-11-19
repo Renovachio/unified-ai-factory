@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unified-ai-factory.local/contracts/v2.2/product-artifact.schema.json",
+  "title": "ProductArtifact v2.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "workspaceId",
+    "kind",
+    "title",
+    "state",
+    "sourceIds",
+    "version"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.2"
+    },
+    "workspaceId": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "meeting",
+        "research",
+        "prd",
+        "epic",
+        "story",
+        "roadmap",
+        "analytics",
+        "decision",
+        "action"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "in_review",
+        "approved",
+        "superseded",
+        "rejected"
+      ]
+    },
+    "sourceIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "body": {
+      "type": "object"
+    },
+    "approvedBy": {
+      "type": "string"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

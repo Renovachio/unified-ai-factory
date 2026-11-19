@@ -7,16 +7,17 @@ export const ROLES = ["viewer", "editor", "operator", "approver", "admin", "secu
 export type Role = (typeof ROLES)[number];
 
 export type Permission =
-  | "job:read" | "job:create" | "job:feedback" | "job:cancel" | "job:resume" | "job:decide" | "job:pause" | "job:quarantine" | "worker:read" | "worker:manage" | "job:quarantine-release" | "audit:read" | "usage:read" | "automerge:read" | "automerge:kill" | "automerge:configure" | "job:hold-auto";
+  | "job:read" | "job:create" | "job:feedback" | "job:cancel" | "job:resume" | "job:decide" | "job:pause" | "job:quarantine" | "worker:read" | "worker:manage" | "job:quarantine-release" | "audit:read" | "usage:read" | "automerge:read" | "automerge:kill" | "automerge:configure" | "job:hold-auto"
+  | "skill:read" | "skill:import" | "skill:disable" | "capability:match" | "approval:request" | "approval:decide" | "activation:write" | "improvement:read" | "improvement:experiment" | "product:write" | "product:handoff";
 
 /** Deny-by-default permission matrix (blueprint section 10 / 14). */
 export const PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
   viewer: new Set(["job:read"]),
-  editor: new Set(["job:read", "job:create", "job:feedback"]),
-  operator: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:pause", "job:quarantine", "worker:read", "worker:manage", "usage:read", "automerge:read", "automerge:kill", "job:hold-auto"]),
-  approver: new Set(["job:read", "job:decide", "job:hold-auto", "automerge:read"]),
-  admin: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:decide", "job:pause", "job:quarantine", "worker:read", "worker:manage", "audit:read", "usage:read", "automerge:read", "automerge:kill", "automerge:configure", "job:hold-auto"]),
-  security_officer: new Set(["job:read", "job:cancel", "job:quarantine", "job:quarantine-release", "worker:read", "worker:manage", "audit:read", "usage:read", "automerge:read", "automerge:kill", "automerge:configure", "job:hold-auto"]),
+  editor: new Set(["job:read", "job:create", "job:feedback", "skill:read", "skill:import", "capability:match", "improvement:read", "product:write"]),
+  operator: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:pause", "job:quarantine", "worker:read", "worker:manage", "usage:read", "automerge:read", "automerge:kill", "job:hold-auto", "skill:read", "skill:import", "skill:disable", "capability:match", "approval:request", "activation:write", "improvement:read", "improvement:experiment", "product:write", "product:handoff"]),
+  approver: new Set(["job:read", "job:decide", "job:hold-auto", "automerge:read", "skill:read", "capability:match", "approval:decide", "improvement:read"]),
+  admin: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:decide", "job:pause", "job:quarantine", "worker:read", "worker:manage", "audit:read", "usage:read", "automerge:read", "automerge:kill", "automerge:configure", "job:hold-auto", "skill:read", "skill:import", "skill:disable", "capability:match", "approval:request", "approval:decide", "activation:write", "improvement:read", "improvement:experiment", "product:write", "product:handoff"]),
+  security_officer: new Set(["job:read", "job:cancel", "job:quarantine", "job:quarantine-release", "worker:read", "worker:manage", "audit:read", "usage:read", "automerge:read", "automerge:kill", "automerge:configure", "job:hold-auto", "skill:read", "skill:disable", "approval:decide", "improvement:read"]),
 };
 
 export interface Actor {
@@ -79,10 +80,11 @@ export class SessionManager implements Authenticator {
     if (secret.length < 32) throw new Error("session secret must be at least 32 characters");
   }
   private sig(body: string) { return createHmac("sha256", this.secret).update(body).digest(); }
-  issue(subject: string, ttlSec = 8 * 3600, now = Date.now()): { cookie: string; csrf: string } {
+  /** `secure: false` is only for the loopback-only local dashboard (plain http://127.0.0.1); every other deployment keeps Secure. */
+  issue(subject: string, ttlSec = 8 * 3600, now = Date.now(), secure = true): { cookie: string; csrf: string } {
     const csrf = b64(crypto.getRandomValues(new Uint8Array(24)));
     const body = b64(JSON.stringify({ sub: subject, exp: Math.floor(now / 1000) + ttlSec, csrf }));
-    return { cookie: `${this.cookieName}=${body}.${b64(this.sig(body))}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${ttlSec}`, csrf };
+    return { cookie: `${this.cookieName}=${body}.${b64(this.sig(body))}; HttpOnly;${secure ? " Secure;" : ""} SameSite=Strict; Path=/; Max-Age=${ttlSec}`, csrf };
   }
   async authenticate(req: Request) {
     const raw = /(?:^|;\s*)factory_session=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1];

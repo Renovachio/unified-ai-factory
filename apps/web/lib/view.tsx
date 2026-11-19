@@ -148,3 +148,48 @@ export function ErrorNote({ error }: { error: { status: number; title: string; d
     </div>
   );
 }
+
+// ---- v2.2: skill/agent registry and improvement backlog views (read-only; never activate anything) ----
+export interface SkillRow { id: string; kind: string; slug: string; version: string; digest: string; state: string; active: boolean; createdAt: string }
+export function SkillsTable({ items }: { items: SkillRow[] }) {
+  if (items.length === 0) return <p className="empty">No skills or agents have been imported. Imports start in quarantine and stay inactive until an independent human approves the exact digest.</p>;
+  return (
+    <table><caption className="sr">Skill and agent versions</caption>
+      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">State</th><th scope="col">Active</th><th scope="col">Digest</th></tr></thead>
+      <tbody>{items.map((s) => (<tr key={s.id}><td>{s.slug} <small>{s.version}</small></td><td>{s.kind}</td><td>{s.state}</td><td>{s.active ? "active" : "inactive"}</td><td><code>{s.digest.slice(7, 19)}</code></td></tr>))}</tbody>
+    </table>
+  );
+}
+export interface ImprovementRow { id: string; state: string; action: string; risk: string; problem: string; hypothesis: string; targetDigest: string; candidateDigest: string | null; comparisonId: string | null; rank: number }
+export function ImprovementsTable({ items }: { items: ImprovementRow[] }) {
+  if (items.length === 0) return <p className="empty">No improvement proposals. The supervisor only proposes; every change needs an independent human approval.</p>;
+  return (
+    <table><caption className="sr">Improvement backlog</caption>
+      <thead><tr><th scope="col">Proposal</th><th scope="col">State</th><th scope="col">Risk</th><th scope="col">Problem</th><th scope="col">Rank</th></tr></thead>
+      <tbody>{items.map((p) => (<tr key={p.id}><td><a href={`/improvements/${p.id}`}>{p.id.slice(0, 8)}</a> <small>{p.action}</small></td><td>{p.state}</td><td>{p.risk}</td><td><UntrustedText title="problem" text={p.problem} /></td><td>{p.rank.toFixed(3)}</td></tr>))}</tbody>
+    </table>
+  );
+}
+export interface ComparisonView { id: string; status: string; benchmarkDigest: string; evaluator: string; metrics: Record<string, number>; criticalRegressions: number; sampleSize: number; uncertaintyNotes: string; reasons: string[]; recommendation: string }
+export function ComparisonPanel({ c }: { c: ComparisonView | null }) {
+  if (!c) return <p className="empty">No independent evaluation has been recorded for this proposal.</p>;
+  const m = c.metrics; const f = (k: string) => (m[k] === undefined ? "–" : m[k].toFixed(3));
+  return (
+    <section aria-label="Evaluation comparison">
+      <h3>Evaluation: {c.status} — {c.recommendation === "recommend_approval" ? "approval may be recommended" : "approval NOT recommended"}</h3>
+      <table><caption className="sr">Paired comparison on the same benchmark</caption>
+        <thead><tr><th scope="col">Baseline mean</th><th scope="col">Candidate mean</th><th scope="col">Improvement</th><th scope="col">95% interval</th><th scope="col">Critical regressions</th><th scope="col">Samples</th></tr></thead>
+        <tbody><tr><td>{f("baselineMean")}</td><td>{f("candidateMean")}</td><td>{f("meanImprovement")}</td><td>[{f("ciLow")}, {f("ciHigh")}]</td><td>{c.criticalRegressions}</td><td>{c.sampleSize}</td></tr></tbody>
+      </table>
+      <p>Benchmark <code>{c.benchmarkDigest.slice(7, 19)}</code> · evaluator <code>{c.evaluator}</code></p>
+      <UntrustedText title="limitations" text={c.uncertaintyNotes} />
+      <ul>{c.reasons.map((r, i) => (<li key={i}>{r}</li>))}</ul>
+    </section>
+  );
+}
+/** Candidate diff: shown as inert text with +/- gutters; the diff comes from a candidate package and is untrusted. */
+export function CandidateDiff({ diff }: { diff: string }) {
+  return (
+    <pre aria-label="Candidate diff" className="diff">{diff.split("\n").map((l, i) => (<span key={i} className={l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : ""}>{l}{"\n"}</span>))}</pre>
+  );
+}

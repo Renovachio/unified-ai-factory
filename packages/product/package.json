@@ -1,0 +1,9 @@
+{
+  "name": "@factory/product",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "typecheck": "tsc -p tsconfig.json", "build": "tsc -p tsconfig.json" },
+  "dependencies": { "@factory/db": "workspace:*", "@factory/skills": "workspace:*", "postgres": "4.1.1" }
+}

@@ -125,3 +125,29 @@ describe("task execution", () => {
     expect(out?.status).toBe("succeeded");
   });
 });
+
+describe("runtime selection and enforced isolation at enrollment (ACT-01 / ACT-05)", () => {
+  test("a backend that claims strong isolation but is not enforced is refused (fail closed)", async () => {
+    const liar = { name: "seatbelt" as const, isolation: "strong" as const, wrap: (command: string, args: string[]) => ({ command, args }) };
+    await expect(enrollWorker(cfg({ backend: liar as never }))).rejects.toThrow(/sandbox-not-enforced|self-test failed/);
+  });
+  test("the real backend passes the self-test and enrolls", async () => {
+    expect(await enrollWorker(cfg())).toMatch(/[0-9a-f-]{36}/);
+  });
+  test("selectingExecutor runs only with an eligible runtime and otherwise blocks with a reason (no fallback)", async () => {
+    const { selectingExecutor } = await import("../src/select");
+    const { InferenceSourcePolicy, loadPolicyConfig, loadQualificationRegistry } = await import("@factory/runtimes");
+    const dir = join(import.meta.dir, "../../../config");
+    const policy = new InferenceSourcePolicy(loadPolicyConfig(dir));
+    const cand = { adapterId: "local-model", authMode: "local_model" as const, modelId: "m", promptVersion: "p", toolsetDigest: "t", endpoints: ["http://127.0.0.1:11434"] };
+    let ran = 0;
+    const exec = selectingExecutor((ctx) => ({ role: ctx.lease.role ?? "builder", candidates: [cand], policy, qualification: loadQualificationRegistry(dir), env: {}, sandboxEnforced: true }), async () => { ran++; return { ok: true }; });
+    const j = await job();
+    await enqueueTask(db.sql, { jobId: j, stage: "build", role: "builder" });
+    const out = await runOnce(cfg(), await enrollWorker(cfg()), exec, ["builder"]);
+    expect(out?.status).toBe("failed"); // shipped registry is empty: unqualified for builder
+    expect(ran).toBe(0);
+    const ev = (await readEvents(db.sql, j)).find((e) => e.type === "runtime.selection");
+    expect(ev?.payload).toMatchObject({ selected: null, blockReason: "MODEL_NOT_QUALIFIED" });
+  });
+});

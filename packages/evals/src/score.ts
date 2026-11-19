@@ -50,9 +50,21 @@ export interface BenchmarkResult {
 const rate = (num: number, den: number) => (den === 0 ? 0 : num / den);
 const pct = (xs: number[], p: number) => { if (xs.length === 0) return 0; const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)] as number; };
 
-export function isDetected(out: ReviewOutput | null, defect: { keywords: string[]; file: string }): boolean {
+const SEV_RANK: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
+/**
+ * A seeded defect counts as FOUND only when the reviewer blocks AND a finding of sufficient severity describes the defect class in its text.
+ * v2.1 fix (evaluator leakage): v2.0 also accepted any non-pass finding whose LOCATION was the changed file, so a reviewer that blocked everything
+ * and cited the only file in the diff scored 100% recall without identifying anything. Location alone no longer counts, and security-relevant
+ * defects need a high/critical finding.
+ */
+export function isDetected(out: ReviewOutput | null, defect: { keywords: string[]; file: string; securityRelevant?: boolean }): boolean {
   if (!out || out.verdict === "pass") return false;
-  return out.findings.some((f) => { const t = `${f.summary} ${f.location ?? ""}`.toLowerCase(); return defect.keywords.some((k) => t.includes(k.toLowerCase())) || (f.location ?? "").includes(defect.file); });
+  const minSev = defect.securityRelevant ? 3 : 2;
+  return out.findings.some((f) => {
+    if ((SEV_RANK[f.severity] ?? 0) < minSev) return false;
+    const text = `${f.summary} ${f.remediation ?? ""}`.toLowerCase();
+    return defect.keywords.some((k) => text.includes(k.toLowerCase()));
+  });
 }
 
 /** The factory's own risk pipeline for a task: deterministic floors + the subject's hint (which can only raise). */

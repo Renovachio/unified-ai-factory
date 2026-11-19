@@ -12,6 +12,8 @@ export interface OutboxItem {
 export interface DeliveryResult {
   delivered: number;
   failed: number;
+  /** Rows moved to the dead letter this call (retry budget exhausted). */
+  deadLettered: number;
 }
 
 const backoffSeconds = (attempts: number) => Math.min(300, 2 ** Math.min(attempts, 8));
@@ -24,9 +26,10 @@ const backoffSeconds = (attempts: number) => Math.min(300, 2 ** Math.min(attempt
  */
 export async function deliverOutbox(
   sql: Sql,
-  opts: { destination: string; handler: (item: OutboxItem) => Promise<void>; limit?: number; now?: Date },
+  opts: { destination: string; handler: (item: OutboxItem) => Promise<void>; limit?: number; now?: Date; maxAttempts?: number },
 ): Promise<DeliveryResult> {
-  const result: DeliveryResult = { delivered: 0, failed: 0 };
+  const result: DeliveryResult = { delivered: 0, failed: 0, deadLettered: 0 };
+  const maxAttempts = opts.maxAttempts ?? 10;
   const now = opts.now ?? new Date();
   await sql.begin(async (tx) => {
     // The per-(job,destination) advisory lock serialises consumers on one job so ordering holds across
@@ -52,9 +55,17 @@ export async function deliverOutbox(
         await opts.handler({ outboxId: r.id, eventId: r.event_id, jobId: r.job_id, sequence: Number(r.sequence), type: r.type, attempts: r.attempts });
         await tx`UPDATE outbox SET status = 'delivered', attempts = attempts + 1 WHERE id = ${r.id}`;
         result.delivered++;
-      } catch {
-        const next = new Date(now.getTime() + backoffSeconds(r.attempts + 1) * 1000);
-        await tx`UPDATE outbox SET attempts = attempts + 1, retry_after = ${next} WHERE id = ${r.id}`;
+      } catch (e) {
+        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+        if (r.attempts + 1 >= maxAttempts) {
+          // Dead letter: stop retrying, keep the row and the error for an operator. Later events of this job are NOT delivered ahead of it
+          // silently: the job is blocked for this call, and requeueDeadLetter restores normal ordering.
+          await tx`UPDATE outbox SET attempts = attempts + 1, status = 'failed', dead_at = ${now}, last_error = ${msg} WHERE id = ${r.id}`;
+          result.deadLettered++;
+        } else {
+          const next = new Date(now.getTime() + backoffSeconds(r.attempts + 1) * 1000);
+          await tx`UPDATE outbox SET attempts = attempts + 1, retry_after = ${next}, last_error = ${msg} WHERE id = ${r.id}`;
+        }
         blockedJobs.add(r.job_id);
         result.failed++;
       }
@@ -75,4 +86,19 @@ export class DedupingConsumer {
     this.seen.push(item);
     return true;
   }
+}
+
+export interface DeadLetter { outboxId: string; destination: string; jobId: string; sequence: number; type: string; attempts: number; lastError: string | null; deadAt: Date }
+
+export async function listDeadLetters(sql: Sql, limit = 100): Promise<DeadLetter[]> {
+  const rows = await sql<{ id: string; destination: string; job_id: string; sequence: string; type: string; attempts: number; last_error: string | null; dead_at: Date }[]>`
+    SELECT o.id, o.destination, e.job_id, e.sequence, e.type, o.attempts, o.last_error, o.dead_at FROM outbox o JOIN events e ON e.id = o.event_id
+    WHERE o.status = 'failed' ORDER BY o.dead_at LIMIT ${Math.min(Math.max(limit, 1), 1000)}`;
+  return rows.map((r) => ({ outboxId: r.id, destination: r.destination, jobId: r.job_id, sequence: Number(r.sequence), type: r.type, attempts: r.attempts, lastError: r.last_error, deadAt: r.dead_at }));
+}
+
+/** Operator action after fixing the cause: the row is retried from scratch. Returns false if it was not dead-lettered. */
+export async function requeueDeadLetter(sql: Sql, outboxId: string): Promise<boolean> {
+  const r = await sql`UPDATE outbox SET status = 'pending', attempts = 0, retry_after = NULL, dead_at = NULL WHERE id = ${outboxId} AND status = 'failed' RETURNING id`;
+  return r.length === 1;
 }

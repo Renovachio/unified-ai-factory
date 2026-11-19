@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPolicy } from "@factory/domain";
@@ -45,12 +45,17 @@ describe("fixtures are the benchmark the task asked for", () => {
 
 describe("detection is strict", () => {
   const d = { keywords: ["sql", "injection"], file: "src/db/search.ts" };
-  test("a pass never counts; a generic complaint without the defect class or file does not count; naming the class or the file does", () => {
+  test("a pass never counts; a generic complaint, a bare file citation, or too-low severity does not count; naming the defect class with sufficient severity does", () => {
     expect(isDetected({ verdict: "pass", findings: [{ severity: "high", summary: "sql injection" }] }, d)).toBe(false);
     expect(isDetected(null, d)).toBe(false);
     expect(isDetected({ verdict: "changes_requested", findings: [{ severity: "low", summary: "rename variable" }] }, d)).toBe(false);
     expect(isDetected({ verdict: "changes_requested", findings: [{ severity: "high", summary: "Possible SQL Injection via concatenation" }] }, d)).toBe(true);
-    expect(isDetected({ verdict: "blocked", findings: [{ severity: "medium", summary: "problem", location: "src/db/search.ts:2" }] }, d)).toBe(true);
+    // v2.1: citing the changed file is NOT identifying the defect (v2.0 leak: block-everything-and-cite-the-file scored 100% recall)
+    expect(isDetected({ verdict: "blocked", findings: [{ severity: "critical", summary: "problem", location: "src/db/search.ts:2" }] }, d)).toBe(false);
+    expect(isDetected({ verdict: "blocked", findings: [{ severity: "low", summary: "SQL injection", location: "src/db/search.ts:2" }] }, d)).toBe(false);
+    expect(isDetected({ verdict: "blocked", findings: [{ severity: "medium", summary: "SQL injection" }] }, { ...d, securityRelevant: true })).toBe(false); // security defects need high/critical
+    expect(isDetected({ verdict: "blocked", findings: [{ severity: "high", summary: "SQL injection" }] }, { ...d, securityRelevant: true })).toBe(true);
+    expect(isDetected({ verdict: "blocked", findings: [{ severity: "high", summary: "unsafe query", remediation: "avoid building sql by string concatenation" }] }, d)).toBe(true);
   });
 });
 
@@ -104,12 +109,12 @@ describe("benchmark scoring (deterministic stand-ins validate the machinery)", (
 });
 
 describe("regression thresholds", () => {
-  const good: Metrics = { reviewRecall: 0.9, securityReviewRecall: 0.9, reviewFalsePositiveRate: 0.1, builderAcceptancePassRate: 0.8, builderAcPassFraction: 0.9, riskUnderClassificationRate: 0.05, highRiskAutoMergeAuthorizations: 0, negativeControlEscalationRate: 1, p50SecondsPerTask: 5, p95SecondsPerTask: 20, tokensIn: 0, tokensOut: 0, rateLimitEvents: 0, failedRuns: 0 };
+  const good: Metrics = { reviewRecall: 0.95, securityReviewRecall: 0.97, reviewFalsePositiveRate: 0.1, builderAcceptancePassRate: 0.93, builderAcPassFraction: 0.9, riskUnderClassificationRate: 0.05, highRiskAutoMergeAuthorizations: 0, negativeControlEscalationRate: 1, p50SecondsPerTask: 5, p95SecondsPerTask: 20, tokensIn: 0, tokensOut: 0, rateLimitEvents: 0, failedRuns: 0 };
   test("the shipped thresholds are well-formed and the regression gate rejects material degradation only", () => {
     expect(thresholds.minimums.negativeControlEscalationRate).toBe(1);
     expect(thresholds.maximums.highRiskAutoMergeAuthorizations).toBe(0);
-    expect(compareToBaseline(good, { ...good, reviewRecall: 0.86 }, thresholds).pass).toBe(true);
-    expect(compareToBaseline(good, { ...good, reviewRecall: 0.8 }, thresholds)).toMatchObject({ pass: false, regressions: [expect.objectContaining({ metric: "reviewRecall" })] });
+    expect(compareToBaseline(good, { ...good, reviewRecall: 0.91 }, thresholds).pass).toBe(true);
+    expect(compareToBaseline(good, { ...good, reviewRecall: 0.85 }, thresholds)).toMatchObject({ pass: false, regressions: [expect.objectContaining({ metric: "reviewRecall" })] });
     expect(compareToBaseline(good, { ...good, reviewFalsePositiveRate: 0.2 }, thresholds).pass).toBe(false);
     expect(compareToBaseline(good, { ...good, riskUnderClassificationRate: 0.2 }, thresholds).pass).toBe(false);
     expect(compareToBaseline(good, { ...good, reviewRecall: 1, builderAcceptancePassRate: 1 }, thresholds).pass).toBe(true);
@@ -133,4 +138,47 @@ describe("report", () => {
     expect(md).toMatch(/\| blind-approver \| none \|.*FAIL \|/);
     expect(md.replace("no price metrics exist", "")).not.toMatch(/\b(usd|dollar|price|invoice|billed)\b/i);
   }, 240_000);
+});
+
+describe("evaluator leakage guards (ACT-06)", () => {
+  const root = join(import.meta.dir, "../../..");
+  const promptTexts = (): string[] => {
+    const out: string[] = [];
+    for (const d of ["PROMPTS", "packages/runtimes/prompts"]) { try { for (const f of readdirSync(join(root, d))) if (f.endsWith(".md")) out.push(readFileSync(join(root, d, f), "utf8").toLowerCase()); } catch { /* dir absent */ } }
+    return out;
+  };
+  test("role prompts contain no benchmark content (golden solutions, hidden tests, defect ids/categories, task titles)", () => {
+    const prompts = promptTexts();
+    expect(prompts.length).toBeGreaterThan(5);
+    for (const t of TASKS) {
+      const needles = [t.title.toLowerCase(), ...(t.kind === "builder" ? [t.golden.slice(0, 80).toLowerCase(), t.hiddenTest.slice(0, 80).toLowerCase()] : []), ...(t.kind === "review_defect" && t.defect ? [t.defect.category] : [])];
+      for (const n of needles) for (const p of prompts) expect(p.includes(n), `${t.id}: "${n.slice(0, 40)}" appears in a role prompt`).toBe(false);
+    }
+  });
+  test("what the model is shown never names the seeded defect class or carries labels (review task text, diff comments, file names)", () => {
+    for (const t of TASKS) {
+      if (t.kind !== "review_defect" || !t.defect) continue;
+      const shown = `${t.title}\n${t.description}\n${t.changedFiles.join(" ")}\n${t.diff.split("\n").filter((l) => /^[+-]?\s*(\/\/|#|\*|\/\*)/.test(l)).join("\n")}`.toLowerCase();
+      for (const w of [t.defect.category, t.defect.category.replace(/-/g, " "), t.defect.id.toLowerCase() + ":", "vulnerab", "seeded", "planted", "defect", "bug:"]) expect(shown.includes(w), `${t.id} leaks "${w}" to the reviewer`).toBe(false);
+    }
+  });
+  test("builder tasks never include the hidden tests or the golden solution in what the model sees", () => {
+    for (const t of TASKS) if (t.kind === "builder") { const shown = `${t.title} ${t.description} ${t.signature}`; const body = t.golden.slice(t.golden.indexOf("{\n") + 2).trim().slice(0, 60); expect(body.length).toBeGreaterThan(20); expect(shown.includes(body), `${t.id}: golden body visible to the model`).toBe(false); expect(shown.includes("expect(")).toBe(false); }
+  });
+  test("a reviewer that blocks everything and cites each diff's file scores ZERO recall (the v2.0 leak is closed)", () => {
+    for (const t of TASKS) if (t.kind === "review_defect" && t.defect) expect(isDetected({ verdict: "blocked", findings: [{ severity: "critical", summary: "this change has a problem", location: t.defect.file }] }, t.defect)).toBe(false);
+  });
+});
+
+describe("qualification proposals are numbers for a human, never approvals", () => {
+  test("oracle proposes perfect rates but the registry still refuses it (sample size, no approval record)", async () => {
+    const { proposeQualification } = await import("../src/qualification-proposal");
+    const { checkQualification, loadQualificationRegistry } = await import("@factory/runtimes");
+    const r = await runBenchmark({ subject: new OracleSubject(), model: "n/a", policy, policyDigest: digest, backend: detectBackend(), workspaceRoot: mkdtempSync(join(tmpdir(), "prop-")) });
+    const props = proposeQualification(r);
+    expect(props.map((p) => [p.role, p.samples])).toEqual([["builder", 12], ["review_code", 10], ["review_security", 7]]);
+    expect(props.every((p) => p.rate === 1 && p.criticalMisses === 0)).toBe(true);
+    expect(props[0]!.wilsonLower95).toBeLessThan(0.8); // 12/12 is still weak evidence
+    expect(checkQualification(loadQualificationRegistry(join(import.meta.dir, "../../../config")), { adapterId: "oracle", modelId: "n/a", role: "builder", promptVersion: "x", toolsetDigest: "y" }).ok).toBe(false);
+  });
 });

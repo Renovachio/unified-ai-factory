@@ -8,7 +8,8 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   const jar = await cookies();
   const h = await headers();
   const cookie = jar.getAll().map((c) => `${c.name}=${c.value}`).join("; ");
-  const res = await fetch(`${base}/api/v1${path}`, {
+  const url = path.startsWith("/v2/") ? `${base}/api${path}` : `${base}/api/v1${path}`; // v2.2 routes live under /api/v2
+  const res = await fetch(url, {
     method: init.method ?? "GET", cache: "no-store",
     headers: {
       ...(cookie ? { cookie } : {}), ...(h.get("authorization") ? { authorization: h.get("authorization") as string } : {}),

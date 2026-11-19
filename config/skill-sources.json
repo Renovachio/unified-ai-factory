@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "note": "Discovery CANDIDATES only (v2.2 docs/DISCOVERY_SOURCES.md). Not endorsements or install authorisations. Every source ships DISABLED; enabling one is an operator decision recorded here. Entries from any source are 'unverified' until fetched into quarantine, scanned and license-reviewed.",
+  "sources": [
+    { "id": "local-user-roots", "kind": "local", "enabled": false, "trustTier": "user", "uri": "file://approved-roots", "network": [] },
+    { "id": "project-claude-skills", "kind": "local", "enabled": false, "trustTier": "project", "uri": "file://.claude/skills", "network": [] },
+    { "id": "user-archives", "kind": "upload", "enabled": false, "trustTier": "user", "uri": "upload://", "network": [] },
+    { "id": "agentskills-io", "kind": "catalog", "enabled": false, "trustTier": "community", "uri": "https://agentskills.io/", "network": ["agentskills.io"] },
+    { "id": "anthropics-skills", "kind": "git", "enabled": false, "trustTier": "vendor", "uri": "https://github.com/anthropics/skills", "network": ["github.com", "api.github.com", "raw.githubusercontent.com"] },
+    { "id": "pm-skills", "kind": "git", "enabled": false, "trustTier": "community", "uri": "https://github.com/product-on-purpose/pm-skills", "network": ["github.com", "api.github.com", "raw.githubusercontent.com"] },
+    { "id": "product-management-agent", "kind": "git", "enabled": false, "trustTier": "community", "uri": "https://github.com/calikasten/product-management-agent", "network": ["github.com", "api.github.com", "raw.githubusercontent.com"] }
+  ]
+}
