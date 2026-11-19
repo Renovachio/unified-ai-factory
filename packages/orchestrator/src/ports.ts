@@ -22,9 +22,20 @@ export interface ScmPort {
 export interface GatePort {
   run(job: JobCtx, headSha: string, baseSha: string): Promise<{ verdict: "pass" | "fail" | "error"; configDigest: string; resultsDigest: string; failureClass?: string }>;
 }
+export interface ReviewFinding { severity: "low" | "medium" | "high" | "critical"; summary: string; location?: string | undefined; remediation?: string | undefined }
+export interface ReviewRunResult {
+  /** `invalid` = no usable report (crash, schema violation, wrong SHA, wrong role): it can NEVER count as a pass. */
+  verdict: "pass" | "changes_requested" | "blocked" | "invalid";
+  findingsDigest: string;
+  findings?: ReviewFinding[] | undefined;
+  reviewerRunId?: string | undefined;
+  reason?: string | undefined;
+}
 export interface ReviewPort {
-  requiredRoles(job: JobCtx): string[];
-  run(job: JobCtx, role: string, headSha: string): Promise<{ verdict: "pass" | "changes_requested" | "blocked"; findingsDigest: string }>;
+  requiredRoles(job: JobCtx): string[] | Promise<string[]>;
+  /** Human-auditable reasons for the routing decision (recorded with the transition). */
+  routingReasons?(job: JobCtx): Promise<string[]>;
+  run(job: JobCtx, role: string, headSha: string): Promise<ReviewRunResult>;
 }
 export interface PolicyPort {
   evaluate(job: JobCtx, headSha: string): Promise<{ risk: RiskLevel; eligible: boolean; reasons: string[]; policyDigest: string }>;

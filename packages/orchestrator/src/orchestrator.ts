@@ -9,6 +9,9 @@ import type { IntakeHandler, JobCtx, Ports, SpecHandler } from "./ports";
 
 /** Automated fix attempts allowed per gate-failure class (blueprint section 5). */
 export const MAX_FIXES_PER_CLASS = 2;
+/** Attempts to obtain a usable report from the same reviewer for the same SHA before the job stops for a human. */
+export const MAX_REVIEW_INVALID = 2;
+export const REVIEW_CONCURRENCY = 2;
 /** Failure classes that indicate tampering or an untrustworthy gate: no automated retry, straight to a human. */
 export const ESCALATE_IMMEDIATELY_CLASSES: readonly string[] = ["manifest-mismatch", "checks-tampered", "head-mismatch"];
 
@@ -55,7 +58,7 @@ export class Orchestrator {
     const q = tx as Sql;
     const job = await this.load(jobId, tx);
     const [j2] = await q<{ policy_digest: string | null; spec_digest: string | null }[]>`SELECT policy_digest, spec_digest FROM jobs WHERE id = ${jobId}`;
-    const roles = this.o.ports.review.requiredRoles(job).slice().sort();
+    const roles = [...(await this.o.ports.review.requiredRoles(job))].sort();
     const common = { repoId: job.repositoryId, policyDigest: j2?.policy_digest ?? "none", reviewerSetDigest: digestOf(roles), artifactDigest: j2?.spec_digest ?? "none", policyVersion: "1" };
     const [gate] = await q<{ head_sha: string; base_sha: string; gate_config_digest: string; verdict: string }[]>`
       SELECT head_sha, base_sha, gate_config_digest, verdict FROM gate_results WHERE job_id = ${jobId} AND verdict = 'pass' ORDER BY created_at DESC LIMIT 1`;
@@ -207,19 +210,36 @@ export class Orchestrator {
   private async review(job: JobCtx): Promise<TickResult> {
     if (!job.headSha) return this.fail(job, "review-without-candidate");
     const head = job.headSha;
-    const roles = this.o.ports.review.requiredRoles(job);
-    const results: Array<{ role: string; verdict: string; findingsDigest: string }> = [];
-    for (const role of roles) {
-      const r = await this.o.ports.review.run(job, role, head);
-      results.push({ role, ...r });
-      await this.hit(`after-port:review.${role}`);
+    const roles = await this.o.ports.review.requiredRoles(job);
+    const results: Array<{ role: string } & import("./ports").ReviewRunResult> = [];
+    // Reviewers are independent read-only sessions; run at most REVIEW_CONCURRENCY at a time.
+    for (let i = 0; i < roles.length; i += REVIEW_CONCURRENCY) {
+      const batch = roles.slice(i, i + REVIEW_CONCURRENCY);
+      const got = await Promise.all(batch.map(async (role) => ({ role, ...(await this.o.ports.review.run(job, role, head)) })));
+      results.push(...got);
+      for (const g of got) await this.hit(`after-port:review.${g.role}`);
     }
+    const invalid = results.filter((r) => r.verdict === "invalid");
+    if (invalid.length) {
+      // A missing/garbled/wrong-SHA report never counts as a pass: hold and retry a bounded number of times, then stop for a human.
+      for (const r of invalid) {
+        const [c] = await this.o.sql<{ c: number }[]>`SELECT count(*)::int AS c FROM events WHERE job_id = ${job.id} AND type = 'review.invalid' AND payload_redacted->>'head_sha' = ${head} AND payload_redacted->>'role' = ${r.role}`;
+        if ((c?.c ?? 0) + 1 > MAX_REVIEW_INVALID) return this.fail(job, `review-unavailable:${r.role}`);
+        await appendEvent(this.o.sql, { jobId: job.id, type: "review.invalid", source: "orchestrator", payload: { role: r.role, head_sha: head, reason: r.reason ?? "invalid report", attempt: (c?.c ?? 0) + 1 } });
+      }
+      return { state: job.state, action: "waiting", detail: `review-invalid:${invalid.map((r) => r.role).join(",")}` };
+    }
+    if (results.some((r) => r.verdict === "blocked")) return this.fail(job, "review-blocked");
+    const reasons = (await this.o.ports.review.routingReasons?.(job)) ?? [];
     const write = async (tx: Q) => {
       for (const r of results) {
-        await (tx as Sql)`INSERT INTO review_results (job_id, head_sha, reviewer_role, verdict, findings_digest)
-          SELECT ${job.id}, ${head}, ${r.role}, ${r.verdict}, ${r.findingsDigest}
+        await (tx as Sql)`INSERT INTO review_results (job_id, head_sha, reviewer_role, reviewer_run_id, verdict, findings_digest)
+          SELECT ${job.id}, ${head}, ${r.role}, ${r.reviewerRunId ?? null}, ${r.verdict}, ${r.findingsDigest}
           WHERE NOT EXISTS (SELECT 1 FROM review_results WHERE job_id = ${job.id} AND head_sha = ${head} AND reviewer_role = ${r.role} AND findings_digest = ${r.findingsDigest})`;
       }
+      await appendEvent(tx, { jobId: job.id, type: "review.routed", source: "orchestrator", payload: { head_sha: head, roles, reasons } });
+      for (const r of results.filter((x) => x.verdict === "changes_requested"))
+        await appendEvent(tx, { jobId: job.id, type: "review.changes_requested", source: "orchestrator", payload: { round: job.round, head_sha: head, role: r.role, findings: (r.findings ?? []).slice(0, 30) } });
     };
     const allPass = results.every((r) => r.verdict === "pass");
     return this.move(job, allPass ? "PREMERGE" : "REWORK", { reviews: results.map((r) => `${r.role}:${r.verdict}`) }, write);
