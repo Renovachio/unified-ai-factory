@@ -262,7 +262,7 @@ export class Orchestrator {
     await this.hit("after-port:policy.evaluate");
     const pr = await this.o.ports.scm.ensureDraftPr(job, head);
     await this.hit("after-port:scm.ensureDraftPr");
-    return this.move(job, "AWAITING_HUMAN", { policy: pol.policyDigest, pr: pr.prNumber }, async (tx) => {
+    const record = async (tx: Q) => {
       const q = tx as Sql;
       await this.ratchetRisk(tx, job.id, pol.risk);
       const [rr] = await q<{ risk: RiskLevel }[]>`SELECT risk FROM jobs WHERE id = ${job.id}`;
@@ -271,7 +271,20 @@ export class Orchestrator {
       await q`INSERT INTO policy_decisions (job_id, head_sha, policy_digest, risk, eligible, reasons)
         SELECT ${job.id}, ${head}, ${pol.policyDigest}, ${risk}, ${pol.eligible && (risk === "LOW" || risk === "MEDIUM")}, ${q.json(pol.reasons as never)}
         WHERE NOT EXISTS (SELECT 1 FROM policy_decisions WHERE job_id = ${job.id} AND head_sha = ${head} AND policy_digest = ${pol.policyDigest})`;
-      await appendEvent(q, { jobId: job.id, type: "approval.requested", source: "orchestrator", payload: { head_sha: head, pr_number: pr.prNumber, reasons: pol.reasons } });
+    };
+    // Unattended path: policy says eligible AND a privileged coordinator exists. The coordinator still re-validates everything freshly
+    // (and the rollout controls) before merging; if anything is off, mergeStep sends the job to a human. HIGH/CRITICAL are never eligible.
+    if (pol.eligible && this.o.merge) {
+      await this.o.sql.begin(async (tx) => {
+        await record(tx);
+        await appendEvent(tx, { jobId: job.id, type: "auto_merge.eligible", source: "orchestrator", payload: { head_sha: head, pr_number: pr.prNumber, reasons: pol.reasons } });
+      });
+      await this.hit("after-record:auto-merge");
+      return this.mergeStep(job);
+    }
+    return this.move(job, "AWAITING_HUMAN", { policy: pol.policyDigest, pr: pr.prNumber }, async (tx) => {
+      await record(tx);
+      await appendEvent(tx, { jobId: job.id, type: "approval.requested", source: "orchestrator", payload: { head_sha: head, pr_number: pr.prNumber, reasons: pol.reasons } });
     });
   }
 

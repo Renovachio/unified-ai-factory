@@ -30,6 +30,9 @@
         "@factory/telemetry": "workspace:*",
         "jose": "6.2.18",
       },
+      "devDependencies": {
+        "@factory/evals": "workspace:*",
+      },
     },
     "apps/runner": {
       "name": "@factory/runner",
@@ -67,6 +70,7 @@
       "devDependencies": {
         "@factory/api": "workspace:*",
         "@factory/checks": "workspace:*",
+        "@factory/evals": "workspace:*",
         "@factory/intake": "workspace:*",
         "@factory/orchestrator": "workspace:*",
         "@factory/runner": "workspace:*",

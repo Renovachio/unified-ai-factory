@@ -7,3 +7,4 @@ export * from "./mock-ports";
 export * from "./builder";
 export * from "./snapshot";
 export * from "./decisions";
+export * from "./auto-merge";

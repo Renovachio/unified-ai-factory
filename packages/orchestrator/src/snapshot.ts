@@ -36,10 +36,11 @@ export async function loadJobSnapshot(q: Q, review: Pick<ReviewPort, "requiredRo
   const gateB: EvidenceBinding | undefined = gate ? { ...common, headSha: gate.head_sha, baseSha: gate.base_sha, gateConfigDigest: gate.gate_config_digest } : undefined;
   const revs = job.head_sha ? await sql<{ reviewer_role: string; head_sha: string }[]>`SELECT DISTINCT reviewer_role, head_sha FROM review_results WHERE job_id = ${jobId} AND verdict = 'pass' AND head_sha = ${job.head_sha}` : [];
   const [ap] = await sql<{ binding: EvidenceBinding }[]>`SELECT binding FROM approvals WHERE job_id = ${jobId} AND decision = 'approve' ORDER BY created_at DESC LIMIT 1`;
+  const [pd] = job.head_sha ? await sql<{ eligible: boolean }[]>`SELECT eligible FROM policy_decisions WHERE job_id = ${jobId} AND head_sha = ${job.head_sha} ORDER BY created_at DESC LIMIT 1` : [];
   return {
     state: job.state, version: job.version, risk: job.risk, headSha: job.head_sha ?? undefined, gate: gateB, current,
     reviews: current ? revs.map((r) => ({ role: r.reviewer_role, binding: { ...current, headSha: r.head_sha } })) : [],
-    requiredReviewers: roles, ...(ap && Object.keys(ap.binding ?? {}).length ? { approval: ap.binding } : {}),
+    requiredReviewers: roles, ...(ap && Object.keys(ap.binding ?? {}).length ? { approval: ap.binding } : {}), autoMergeEligible: pd?.eligible === true,
     round: job.current_round, maxRounds: job.max_rounds, pausedAt: job.paused_at?.toISOString(),
   };
 }

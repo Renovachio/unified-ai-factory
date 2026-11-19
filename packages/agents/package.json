@@ -23,6 +23,7 @@
     "@factory/scheduler": "workspace:*",
     "@factory/scm": "workspace:*",
     "@factory/checks": "workspace:*",
-    "@factory/api": "workspace:*"
+    "@factory/api": "workspace:*",
+    "@factory/evals": "workspace:*"
   }
 }

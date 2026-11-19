@@ -31,6 +31,13 @@ describe("stale SHA / evidence invalidation", () => {
   test("fresh approval allows MERGING", () => {
     expect(code(() => assertTransition(job(), "MERGING"))).toBeUndefined();
   });
+  test("unattended MERGING needs policy-recorded eligibility, and is impossible for HIGH/CRITICAL", () => {
+    expect(code(() => assertTransition(job({ approval: undefined, autoMergeEligible: true }), "MERGING"))).toBeUndefined();
+    expect(code(() => assertTransition(job({ approval: undefined, autoMergeEligible: false }), "MERGING"))).toBe("no-approval");
+    expect(code(() => assertTransition(job({ approval: undefined }), "MERGING"))).toBe("no-approval");
+    for (const risk of ["HIGH", "CRITICAL"] as const) expect(code(() => assertTransition(job({ approval: undefined, autoMergeEligible: true, risk }), "MERGING")), risk).toBe("no-approval");
+    expect(code(() => assertTransition(job({ approval: undefined, autoMergeEligible: true, current: bind({ headSha: H2 }) }), "MERGING"))).toBe("stale-gate");
+  });
   test("missing approval blocks MERGING", () => {
     expect(code(() => assertTransition(job({ approval: undefined }), "MERGING"))).toBe("no-approval");
   });

@@ -1,6 +1,6 @@
 import type { Sql } from "@factory/db";
 import { evaluatePolicy, type PolicyConfig, type PolicyDecision, type RiskLevel, type UncertaintySignal } from "@factory/domain";
-import type { PolicyPort, ReviewPort } from "@factory/orchestrator";
+import type { AutoMergeController, PolicyPort, ReviewPort } from "@factory/orchestrator";
 
 interface Store { get(digest: string): Buffer }
 
@@ -11,6 +11,8 @@ export interface PolicyPortDeps {
   policyDigest: string;
   review: Pick<ReviewPort, "requiredRoles">;
   calibrated?: boolean;
+  /** Rollout controls (kill switch, opt-in, rate limits, breaker). They can only REMOVE auto-merge eligibility. */
+  autoMerge?: AutoMergeController;
 }
 
 /** Re-evaluates the policy for a job's exact head from DURABLE evidence (candidates, gates, reviews), never from agent claims. */
@@ -42,15 +44,21 @@ export async function evaluateJobPolicy(d: PolicyPortDeps, job: { id: string; re
   if (!intake) signals.add("intake-unclassified");
   const [jr] = await d.sql<{ risk: RiskLevel; risk_classified: boolean }[]>`SELECT risk, risk_classified FROM jobs WHERE id = ${job.id}`;
   const [gate] = await d.sql<{ verdict: string }[]>`SELECT verdict FROM gate_results WHERE job_id = ${job.id} AND head_sha = ${headSha} AND verdict = 'pass' LIMIT 1`;
-  const roles = await d.review.requiredRoles({ id: job.id, repositoryId: job.repositoryId, state: (job.state ?? "PREMERGE") as never, version: job.version ?? 0, risk: (job.risk ?? "CRITICAL") as RiskLevel, headSha: job.headSha ?? headSha, baseSha: job.baseSha ?? null, round: job.round ?? 0, maxRounds: job.maxRounds ?? 3, prNumber: job.prNumber ?? null });
+  const roles = await d.review.requiredRoles({ id: job.id, repositoryId: job.repositoryId, state: (job.state ?? "PREMERGE") as never, version: job.version ?? 0, risk: (job.risk ?? jr?.risk ?? "CRITICAL") as RiskLevel, headSha: job.headSha ?? headSha, baseSha: job.baseSha ?? null, round: job.round ?? 0, maxRounds: job.maxRounds ?? 3, prNumber: job.prNumber ?? null });
   const passed = await d.sql<{ reviewer_role: string }[]>`SELECT DISTINCT reviewer_role FROM review_results WHERE job_id = ${job.id} AND head_sha = ${headSha} AND verdict = 'pass'`;
-  return evaluatePolicy({
+  const calibrated = d.autoMerge ? await d.autoMerge.calibrated(job.repositoryId) : (d.calibrated ?? false);
+  const decision = evaluatePolicy({
     policy: d.policy, policyDigest: d.policyDigest, changedFiles: have ? [...files] : null,
     ...(intake?.floor ? { textFloor: intake.floor as RiskLevel } : {}), ...(specFloor ? { specFloor } : {}),
     ...(jr?.risk_classified ? { currentRisk: jr.risk } : {}), uncertainty: [...signals],
     gate: { passed: !!gate, boundToHead: !!gate }, reviews: { allRequiredPassed: roles.every((r) => passed.some((p) => p.reviewer_role === r)) },
-    ...(d.calibrated ? { calibrated: true } : {}),
+    ...(calibrated ? { calibrated: true } : {}),
   });
+  if (decision.autoMergeEligible && d.autoMerge) {
+    const c = await d.autoMerge.evaluate({ id: job.id, repositoryId: job.repositoryId, headSha, risk: decision.risk, changedFiles: have ? [...files] : null });
+    if (!c.allowed) return { ...decision, autoMergeEligible: false, requiresHumanApproval: true, blockers: [...decision.blockers, ...c.reasons.map((r) => `auto-merge control: ${r}`)] };
+  }
+  return decision;
 }
 
 /** Orchestrator PolicyPort built on `evaluateJobPolicy`. */

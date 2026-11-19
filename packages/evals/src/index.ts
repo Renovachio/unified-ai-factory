@@ -3,3 +3,4 @@ export * from "./subjects";
 export * from "./score";
 export * from "./thresholds";
 export * from "./report";
+export * from "./pilot";

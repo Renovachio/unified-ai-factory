@@ -5,10 +5,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { readEvents } from "@factory/db";
-import { loadPolicy } from "@factory/domain";
+import { loadPolicy, policyDigest as digestOfPolicy, type PolicyConfig } from "@factory/domain";
 import { buildContextManifest, createIntakeHandler, registerIntakeSchema } from "@factory/intake";
 import {
-  agentTaskExecutor, builderTaskExecutor, composeExecutors, currentEvidenceBinding, FileArtifactStore, loadJobSnapshot, mockPorts, Orchestrator, recordDecision, type BuilderRuntime,
+  agentTaskExecutor, builderTaskExecutor, composeExecutors, currentEvidenceBinding, FileArtifactStore, loadJobSnapshot, type AutoMergeController, mockPorts, Orchestrator, recordDecision, type BuilderRuntime,
 } from "@factory/orchestrator";
 import { enrollWorker, runOnce, type RunnerConfig } from "@factory/runner";
 import { MockAdapter, SchemaRegistry, type AgentRunRequest } from "@factory/runtimes";
@@ -45,7 +45,7 @@ beforeAll(async () => {
   const root = mkdtempSync(join(tmpdir(), "mrj-remote-"));
   remote = join(root, "remote.git"); const seed = join(root, "seed");
   mkdirSync(seed); sh(root, "init", "--bare", "-b", "main", remote); sh(seed, "init", "-b", "main");
-  for (const [p, c] of Object.entries({ "src/search.ts": "v1\n", "package.json": "{}\n", ".github/workflows/ci.yml": "name: ci\n" })) { mkdirSync(dirname(join(seed, p)), { recursive: true }); writeFileSync(join(seed, p), c); }
+  for (const [p, c] of Object.entries({ "src/search.ts": "v1\n", "package.json": "{}\n", "docs/guide.md": "guide\n", ".github/workflows/ci.yml": "name: ci\n" })) { mkdirSync(dirname(join(seed, p)), { recursive: true }); writeFileSync(join(seed, p), c); }
   sh(seed, "add", "."); sh(seed, "commit", "-m", "base"); sh(seed, "push", remote, "main");
   baseSha = sh(seed, "rev-parse", "HEAD");
   fake = new FakeGitHub(publicKey).start();
@@ -60,14 +60,15 @@ export interface CoordOpts { gateOk?: boolean; review?: ReturnType<typeof create
 export interface Env { jobId: string; orch: Orchestrator; reviewPort: ReturnType<typeof createReviewPort>; coordinator: (o?: CoordOpts) => MergeCoordinator; requiredChecks: string[] }
 
 /** Runs the whole pipeline to AWAITING_HUMAN against the fake GitHub (real draft PR creation). */
-export async function prepare(o: { files?: string[]; script?: string; creator?: string } = {}): Promise<{ jobId: string; head: string; base: string; version: number; env: Env }> {
+export async function prepare(o: { files?: string[]; script?: string; creator?: string; description?: string; policy?: PolicyConfig; auto?: AutoMergeController; hold?: boolean; stopAt?: string } = {}): Promise<{ jobId: string; head: string; base: string; version: number; state: string; env: Env }> {
   fake.refs.set("main", baseSha);
   fake.mergeCalls = 0;
   fake.mergeFault = undefined;
   fake.protectBase = false;
   const files = o.files ?? ["src/search.ts"];
-  const [req] = await db.sql`INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) VALUES (${repo}, 'api', ${"e" + n++}, 'x', 'feature', 'Search', 'Users can search the job list by free text and the page updates without a reload.') RETURNING id`;
+  const [req] = await db.sql`INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) VALUES (${repo}, 'api', ${"e" + n++}, 'x', 'feature', 'Search', ${o.description ?? "Users can search the job list by free text and the page updates without a reload."}) RETURNING id`;
   const jobId = (await db.sql`INSERT INTO jobs (request_id, repository_id, created_by) VALUES (${req!.id}, ${repo}, ${(o.creator ?? U.requester) as string}) RETURNING id`)[0]!.id as string;
+  if (o.hold && o.auto) await o.auto.holdJob("op", org, jobId, "operator hold");
   const out = (r: AgentRunRequest): unknown => {
     if (r.role.startsWith("review_")) return { reviewerRole: r.role.replace("review_", ""), candidateSha: r.candidateSha, verdict: "pass", findings: [] };
     switch (r.role) {
@@ -86,28 +87,32 @@ export async function prepare(o: { files?: string[]; script?: string; creator?: 
   const gh = github();
   const scmPort = createGitScmPort({ sql: db.sql, github: gh, repoFor: async () => ({ repo: { owner: "o", name: "r" }, baseBranch: "main" }) });
   const base = mockPorts();
-  const polDeps = { sql: db.sql, store, policy, policyDigest: POLICY_DIGEST, review: reviewPort };
+  const usedPolicy = o.policy ?? policy;
+  const polDeps = { sql: db.sql, store, policy: usedPolicy, policyDigest: o.policy ? digestOfPolicy(o.policy) : POLICY_DIGEST, review: reviewPort, ...(o.auto ? { autoMerge: o.auto } : {}) };
   const coordinator = (over: CoordOpts = {}) => new MergeCoordinator({
     sql: db.sql, github: gh, repoFor: async () => ({ ...(await repoFor()), requiredChecks: over.requiredChecks ?? [] }),
     snapshot: (q, id) => loadJobSnapshot(q, over.review ?? reviewPort, id), currentBinding: (id) => currentEvidenceBinding(db.sql, over.review ?? reviewPort, id),
     freshDecision: (j) => evaluateJobPolicy({ ...polDeps, ...(over.policyDigest ? { policyDigest: over.policyDigest } : {}), review: over.review ?? reviewPort }, j, j.headSha),
+    ...(o.auto ? { onAutoMergeFailure: async (j: { repositoryId: string; detail: string }) => o.auto?.trip(j.repositoryId, `post-merge failure: ${j.detail}`) } : {}),
     verifyGate: async () => ((over.gateOk ?? true) ? { ok: true, reasons: [] } : { ok: false, reasons: ["signature-invalid"] }),
     ...(over.now ? { now: over.now } : {}),
   });
   const orch = new Orchestrator({
     sql: db.sql, ports: { ...base, review: reviewPort, policy: { evaluate: async (j, h) => { const d = await evaluateJobPolicy(polDeps, j, h); return { risk: d.risk, eligible: d.autoMergeEligible, reasons: [...d.reasons, ...d.blockers.map((b) => `blocker: ${b}`)], policyDigest: d.policyDigest }; } }, scm: { ...scmPort, prepare: async () => ({ baseSha }), commitCandidate: candidateScm(db.sql).commitCandidate } },
     intake: createIntakeHandler({ sql: db.sql, store }), spec: createSpecHandler({ sql: db.sql, store }), merge: coordinator(),
+    ...(o.stopAt ? { fault: (p: string) => { if (p === o.stopAt) throw new Error("__stop__"); } } : {}),
   });
   const w = await enrollWorker(cfg());
   const exec = composeExecutors(agent, build);
   for (let i = 0; i < 300; i++) {
-    const t = await orch.tick(jobId);
-    if (t.action === "awaiting-human") break;
+    let t;
+    try { t = await orch.tick(jobId); } catch (e) { if (String(e).includes("__stop__")) break; throw e; }
+    if (t.action === "awaiting-human" || ["MERGED", "POSTMERGE_MONITOR", "DONE"].includes(t.state)) break;
     if (["terminal", "awaiting-info"].includes(t.action)) throw new Error(`pipeline stopped: ${JSON.stringify(t)}`);
     if (t.action === "enqueued" || t.action === "waiting") await runOnce(cfg(), w, exec);
   }
-  const [j] = await db.sql`SELECT head_sha, base_sha, version, pr_number FROM jobs WHERE id=${jobId}`;
-  return { jobId, head: j!.head_sha, base: j!.base_sha, version: j!.version, env: { jobId, orch, reviewPort, coordinator, requiredChecks: [] } };
+  const [j] = await db.sql`SELECT head_sha, base_sha, version, pr_number, state FROM jobs WHERE id=${jobId}`;
+  return { jobId, head: j!.head_sha, base: j!.base_sha, version: j!.version, state: j!.state as string, env: { jobId, orch, reviewPort, coordinator, requiredChecks: [] } };
 }
 export const approve = async (p: Awaited<ReturnType<typeof prepare>>, who: string, over: Partial<Parameters<typeof recordDecision>[2]> = {}) => {
   const [j] = await db.sql`SELECT version, policy_digest FROM jobs WHERE id=${p.jobId}`;

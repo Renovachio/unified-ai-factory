@@ -14,3 +14,11 @@ export async function decide(form: FormData): Promise<void> {
   });
   redirect(`/jobs/${encodeURIComponent(id)}${r.ok ? "" : `?error=${encodeURIComponent(r.error.detail ?? r.error.title)}`}`);
 }
+
+/** Engage the global auto-merge kill switch (any operator). Releasing it is deliberately NOT offered here: it needs an administrator through the API. */
+export async function killAutoMerge(form: FormData): Promise<void> {
+  const session = await api<{ csrf: string | null }>("/session");
+  if (!session.ok) redirect(`/auto-merge?error=${encodeURIComponent(session.error.title)}`);
+  const r = await api("/auto-merge/kill", { method: "POST", csrf: session.data.csrf ?? undefined, body: { reason: String(form.get("reason") ?? "") } });
+  redirect(`/auto-merge${r.ok ? "" : `?error=${encodeURIComponent(r.error.detail ?? r.error.title)}`}`);
+}

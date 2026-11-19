@@ -25,6 +25,8 @@ export interface MergeDeps {
   verifyGate: (q: { jobId: string; headSha: string; baseSha: string; manifestDigest: string }) => Promise<{ ok: boolean; reasons: string[] }>;
   mergeMethod?: "squash" | "merge" | "rebase";
   now?: () => number;
+  /** Called when a post-merge health check fails for an AUTO-merged job (circuit breaker). */
+  onAutoMergeFailure?: (j: { jobId: string; repositoryId: string; detail: string }) => Promise<void>;
 }
 
 interface JobRow { id: string; repository_id: string; state: string; version: number; head_sha: string | null; base_sha: string | null; pr_number: number | null; created_by: string | null; risk: string }
@@ -89,6 +91,8 @@ export class MergeCoordinator {
       })
       : { allowed: false, blockers: ["cannot assess approvals without a current binding"], validApprovers: [] as string[] };
     blockers.push(...assessed.blockers);
+    // Make the reason visible when an UNATTENDED merge was expected but a rollout control (kill switch, hold, breaker, limits) withdrew it.
+    if (assessed.validApprovers.length === 0 && decision.requiresHumanApproval) blockers.push(...decision.blockers.filter((b) => b.startsWith("auto-merge control:")));
     // A merge nobody validly approved is an incident, not a retry.
     if (pr.merged && blockers.length) next = "QUARANTINED";
     // Only "waiting for CI" blockers keep the job in place; any other blocker needs a human / rework / quarantine.
@@ -121,7 +125,8 @@ export class MergeCoordinator {
 
     const head = job.head_sha as string;
     const method = this.d.mergeMethod ?? "squash";
-    const insertIntent = (q: Q) => (q as Sql)`INSERT INTO merge_intents (job_id, repository_id, pr_number, head_sha, status, merge_method) VALUES (${jobId}, ${job.repository_id}, ${job.pr_number}, ${head}, 'pending', ${method}) ON CONFLICT (repository_id, pr_number, head_sha) DO NOTHING`;
+    const auto = ev.approvers.length === 0; // merged without any human approval => automatic merge (only reachable when policy + controls allow it)
+    const insertIntent = (q: Q) => (q as Sql)`INSERT INTO merge_intents (job_id, repository_id, pr_number, head_sha, status, merge_method, auto) VALUES (${jobId}, ${job.repository_id}, ${job.pr_number}, ${head}, 'pending', ${method}, ${auto}) ON CONFLICT (repository_id, pr_number, head_sha) DO NOTHING`;
     if (job.state === "PREMERGE") {
       try {
         // State change + unique merge intent commit together, and the domain guard re-checks the approval binding inside the same transaction.
@@ -192,6 +197,8 @@ export class MergeCoordinator {
         await tx`UPDATE jobs SET last_error_code = 'postmerge-failed' WHERE id = ${jobId}`;
         await appendEvent(tx, { jobId, type: "postmerge.failed", source: "merge-coordinator", payload: { detail: r.detail } });
       });
+      const [mi] = await this.d.sql<{ auto: boolean }[]>`SELECT auto FROM merge_intents WHERE job_id = ${jobId} AND status = 'merged' LIMIT 1`;
+      if (mi?.auto) await this.d.onAutoMergeFailure?.({ jobId, repositoryId: job.repository_id, detail: r.detail }); // trip the repository's circuit breaker
     }
   }
 }

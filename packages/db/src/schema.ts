@@ -214,6 +214,7 @@ export const mergeIntents = pgTable("merge_intents", {
   githubMergeSha: text("github_merge_sha"),
   reason: text("reason"),
   mergeMethod: text("merge_method").notNull().default("squash"),
+  auto: boolean("auto").notNull().default(false),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -303,4 +304,28 @@ export const candidates = pgTable("candidates", {
   descriptorDigest: text("descriptor_digest").notNull(),
   filesChanged: integer("files_changed").notNull(),
   createdAt: created(),
+});
+
+export const autoMergeGlobal = pgTable("auto_merge_global", {
+  id: integer("id").primaryKey().default(1),
+  killSwitch: boolean("kill_switch").notNull().default(true),
+  reason: text("reason"),
+  setBy: text("set_by"),
+  setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const autoMergeRepoControls = pgTable("auto_merge_repo_controls", {
+  repositoryId: uuid("repository_id").primaryKey().references(() => repositories.id),
+  enabled: boolean("enabled").notNull().default(false),
+  enabledBy: text("enabled_by"),
+  enabledOn: timestamp("enabled_on", { withTimezone: true }),
+  signoff: jsonb("signoff"),
+  signoffDigest: text("signoff_digest"),
+  allowedRisks: text("allowed_risks").array().notNull(),
+  allowedPathGlobs: text("allowed_path_globs").array().notNull(),
+  maxPerDay: integer("max_per_day").notNull().default(3),
+  cooldownMinutes: integer("cooldown_minutes").notNull().default(30),
+  trippedAt: timestamp("tripped_at", { withTimezone: true }),
+  tripReason: text("trip_reason"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

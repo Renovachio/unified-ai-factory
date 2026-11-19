@@ -20,5 +20,8 @@
     "jose": "6.2.18",
     "@factory/intake": "workspace:*",
     "@factory/orchestrator": "workspace:*"
+  },
+  "devDependencies": {
+    "@factory/evals": "workspace:*"
   }
 }
