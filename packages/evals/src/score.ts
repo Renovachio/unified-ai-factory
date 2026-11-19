@@ -59,7 +59,7 @@ const SEV_RANK: Record<string, number> = { low: 1, medium: 2, high: 3, critical:
  */
 export function isDetected(out: ReviewOutput | null, defect: { keywords: string[]; file: string; securityRelevant?: boolean }): boolean {
   if (!out || out.verdict === "pass") return false;
-  const minSev = defect.securityRelevant ? SEV_RANK.high! : SEV_RANK.medium!;
+  const minSev = defect.securityRelevant ? 3 : 2;
   return out.findings.some((f) => {
     if ((SEV_RANK[f.severity] ?? 0) < minSev) return false;
     const text = `${f.summary} ${f.remediation ?? ""}`.toLowerCase();

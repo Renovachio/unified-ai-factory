@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPolicy } from "@factory/domain";
@@ -141,9 +141,6 @@ describe("report", () => {
 });
 
 describe("evaluator leakage guards (ACT-06)", () => {
-  const { TASKS } = require("../src/fixtures") as typeof import("../src/fixtures");
-  const { readdirSync, readFileSync } = require("node:fs") as typeof import("node:fs");
-  const { join } = require("node:path") as typeof import("node:path");
   const root = join(import.meta.dir, "../../..");
   const promptTexts = (): string[] => {
     const out: string[] = [];
