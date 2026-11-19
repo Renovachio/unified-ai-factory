@@ -36,6 +36,16 @@ export interface SubscriptionCliOptions {
   promptsDir?: string;
   rateLimitPattern?: RegExp;
   versionCacheMs?: number;
+  /** Extract the model text (and CLI-reported usage) from the CLI's stdout. Default: a single JSON envelope with a string `result`. */
+  parseOutput?: (stdout: string) => { text: string; usage?: { inputTokens?: number; outputTokens?: number } };
+}
+
+function defaultParseOutput(stdout: string): { text: string; usage?: { inputTokens?: number; outputTokens?: number } } {
+  try {
+    const env = JSON.parse(stdout.trim()) as { result?: unknown; usage?: { input_tokens?: number; output_tokens?: number } };
+    const usage = env.usage ? { ...(env.usage.input_tokens !== undefined ? { inputTokens: env.usage.input_tokens } : {}), ...(env.usage.output_tokens !== undefined ? { outputTokens: env.usage.output_tokens } : {}) } : undefined;
+    return { text: typeof env.result === "string" ? env.result : stdout, ...(usage ? { usage } : {}) };
+  } catch { return { text: stdout }; }
 }
 
 const DEFAULT_RATE_LIMIT = /(rate[ -]?limit|usage limit|quota|limit reached|too many requests|try again (later|in|at))/i;
@@ -147,13 +157,9 @@ export class SubscriptionCliAdapter extends BaseRunAdapter {
       if (r.exitCode !== 0) return await ctx.finish({ exitStatus: "failed", failureCode: `exit-${r.exitCode}` }, "agent.failed", { code: `exit-${r.exitCode}` });
       if (r.outputTruncated) return await ctx.finish({ exitStatus: "failed", failureCode: "output-too-large" }, "agent.failed", { code: "output-too-large" });
 
-      let text = r.stdout;
-      let usage: { inputTokens?: number; outputTokens?: number } | undefined;
-      try {
-        const env = JSON.parse(r.stdout.trim()) as { result?: unknown; usage?: { input_tokens?: number; output_tokens?: number } };
-        if (typeof env.result === "string") text = env.result;
-        if (env.usage) usage = { ...(env.usage.input_tokens !== undefined ? { inputTokens: env.usage.input_tokens } : {}), ...(env.usage.output_tokens !== undefined ? { outputTokens: env.usage.output_tokens } : {}) };
-      } catch { /* not an envelope: treat stdout as the model text */ }
+      const extracted = (this.o.parseOutput ?? defaultParseOutput)(r.stdout);
+      const text = extracted.text;
+      const usage = extracted.usage;
       try {
         const parsed = parseRoleOutput(req.role, extractJsonObject(text), { maxBytes: req.maxOutputBytes, expectedSha: req.candidateSha, schemaUri: req.outputSchemaUri, schemas: this.o.schemas });
         await seq.emit("agent.artifact", { role: req.role });

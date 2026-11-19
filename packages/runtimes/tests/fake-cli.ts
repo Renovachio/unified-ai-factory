@@ -6,7 +6,7 @@ import type { MockBehavior } from "../src/mock";
 export type CliBehavior = MockBehavior | "envdump" | "argvdump";
 
 /** A fake "official CLI" (POSIX sh) that behaves like a print-mode CLI: prompt on stdin, JSON envelope on stdout. */
-export function makeFakeCli(behavior: CliBehavior, name = "fakecli"): string {
+export function makeFakeCli(behavior: CliBehavior, name = "fakecli", format: "envelope" | "jsonl" = "envelope"): string {
   const dir = mkdtempSync(join(tmpdir(), "fakecli-"));
   const path = join(dir, name);
   const script = `#!/bin/sh
@@ -15,7 +15,9 @@ input=$(cat)
 sha=$(printf '%s' "$input" | sed -n 's/.*candidateSha MUST equal exactly \\([a-f0-9]\\{40\\}\\).*/\\1/p' | head -1)
 role=$(printf '%s' "$input" | sed -n 's/^role: \\(.*\\)$/\\1/p' | head -1)
 esc() { sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | tr '\\n' ' '; }
-emit() { printf '{"type":"result","result":"%s","usage":{"input_tokens":11,"output_tokens":7}}\\n' "$(printf '%s' "$1" | esc)"; }
+${format === "jsonl"
+    ? `emit() { printf '{"type":"thread.started"}\\n{"type":"item.completed","text":"%s"}\\n{"type":"turn.completed","usage":{"input_tokens":11,"output_tokens":7}}\\n' "$(printf '%s' "$1" | esc)"; }`
+    : `emit() { printf '{"type":"result","result":"%s","usage":{"input_tokens":11,"output_tokens":7}}\\n' "$(printf '%s' "$1" | esc)"; }`}
 review() { printf '{"reviewerRole":"%s","candidateSha":"%s","verdict":"pass","findings":[]}' "\${role#review_}" "$1"; }
 case "${behavior}" in
   slow) sleep 30 & wait ;;

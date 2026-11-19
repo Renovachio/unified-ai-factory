@@ -1,0 +1,7 @@
+{
+  "adapter": "codex",
+  "executable": "/usr/local/bin/codex",
+  "installed": false,
+  "at": "2026-11-19T02:33:25.862Z",
+  "shippedConfigProbe": "n/a (codex adapter probe is covered in tests)"
+}

@@ -9,3 +9,4 @@ export * from "./local-model";
 export * from "./cli";
 export * from "./claude-code";
 export * from "./router";
+export * from "./codex";
