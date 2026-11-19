@@ -2,8 +2,8 @@
 
 - **Status:** ACCEPTED_FAKE_CLI_BLOCKED_LIVE
 - **Date:** 2026-11-19
-- **Candidate SHA:** 7717e33af18c8c1fa3a6ee3950e108d9578b42bd (branch dev/agt-002)
-- **GitHub CI on candidate SHA:** completed failure https://github.com/Renovachio/unified-ai-factory/actions/runs/44443954603
+- **Candidate SHA:** a5f76e086508fadc77a0d662957bb62eaa4ddb47 (branch dev/agt-002)
+- **GitHub CI on candidate SHA:** completed success https://github.com/Renovachio/unified-ai-factory/actions/runs/44444561452
 - **Test totals:**  804 pass  0 fail 
 - **Accepted by:** operator, via instruction to continue following the plan to completion (2026-11-18); no separate human code review has occurred.
 
@@ -19,19 +19,8 @@
 | `bun run build` | 0 |
 
 ## Files changed in this task
-- `apps/web/tsconfig.tsbuildinfo`
-- `docs/adr/0002-subscription-cli-provider-terms-decision.md`
-- `docs/third-party/provider-terms/README.md`
-- `packages/runtimes/src/claude-code.ts`
-- `packages/runtimes/src/cli.ts`
-- `packages/runtimes/src/index.ts`
-- `packages/runtimes/src/output.ts`
-- `packages/runtimes/src/router.ts`
-- `packages/runtimes/src/testing/contract-suite.ts`
-- `packages/runtimes/tests/cli.test.ts`
-- `packages/runtimes/tests/fake-cli.ts`
-- `packages/sandboxes/src/process.ts`
-- `scripts/live-cli-probe.ts`
+- `packages/sandboxes/src/backends.ts`
+- `packages/sandboxes/tests/adversarial.test.ts`
 
 ## Notes
 - **Provider-terms decision (documented): NOT APPROVED — the adapter ships DISABLED.** `docs/adr/0002-subscription-cli-provider-terms-decision.md` records that the agent cannot accept or interpret a provider's terms, lists exactly what an operator must do (record approval in `config/provider-terms.json`, allowlist executable+version, verify flags, supply an auth-mode probe, review credential-exposure), and `docs/third-party/provider-terms/README.md` is the operator register (all rows "NOT REVIEWED — BLOCKED").
@@ -43,3 +32,4 @@
 - Limits / blocked: **live subscription execution is BLOCKED pending the operator's terms decision**; the default argv (`-p --output-format json ...`) is unverified against the installed version; the auth-mode probe must be supplied by the operator; the real CLI's tool/permission behaviour inside the sandbox (it needs its login state) is unverified, as is behaviour of a tool-using builder via the CLI.
 - Shared changes: `runSandboxed` gained `stdin` and `onOutput`; `extractJsonObject` shared helper.
 - Next: AGT-003 (Codex adapter, same base).
+- Fix from the first Linux CI run: under bubblewrap the read-only binds (e.g. the CLI's directory under /tmp) were placed BEFORE `--tmpfs /tmp` and were therefore hidden; `--tmpfs` is now mounted first (unit-tested).
