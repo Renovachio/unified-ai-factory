@@ -13,7 +13,7 @@ This is a specification package. No engineering work orders have been implemente
 | SCH-001 | ACCEPTED | evidence/SCH-001/report.md | operator (continue-plan instruction) |
 | RUN-001 | ACCEPTED | evidence/RUN-001/report.md | operator (continue-plan instruction) |
 | SCM-001 | ACCEPTED_MOCK_ONLY | evidence/SCM-001/report.md | operator (continue-plan instruction) |
-| AGT-001 | NOT_STARTED | — | — |
+| AGT-001 | ACCEPTED | evidence/AGT-001/report.md | operator (continue-plan instruction) |
 | AGT-002 | NOT_STARTED | — | — |
 | AGT-003 | NOT_STARTED | — | — |
 | AGT-004 | NOT_STARTED | — | — |
