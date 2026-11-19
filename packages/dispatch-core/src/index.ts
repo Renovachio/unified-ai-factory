@@ -5,3 +5,4 @@ export * from "./lock";
 export * from "./state";
 export * from "./env";
 export * from "./services";
+export * from "./intent/index";

@@ -4,11 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "main": "src/main.ts",
-  "scripts": { "typecheck": "tsc -p tsconfig.json", "build": "tsc -p tsconfig.json" },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@factory/dispatch-core": "workspace:*",
     "@factory/db": "workspace:*",
     "@factory/api": "workspace:*",
-    "postgres": "4.1.1"
+    "postgres": "4.1.1",
+    "@factory/dispatch-client": "workspace:*"
   }
 }

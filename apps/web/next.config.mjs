@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const standalone = process.env.DISPATCH_STANDALONE === "1";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true, poweredByHeader: false,
+  reactStrictMode: true, transpilePackages: ["@factory/dispatch-core"], poweredByHeader: false,
   ...(standalone ? { output: "standalone", outputFileTracingRoot: join(dirname(fileURLToPath(import.meta.url)), "../..") } : {}),
 };
 export default nextConfig;

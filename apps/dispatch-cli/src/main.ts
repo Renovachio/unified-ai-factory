@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
+import { runRepl } from "./repl/repl";
+import { getSummary } from "./launcher/api";
 import { cmdDoctor, cmdMigrate, cmdStart, cmdStatus, cmdStop, launchBrowser, startFactory } from "./commands/lifecycle";
 import { cmdServe } from "./commands/serve";
 import { makeCtx } from "./launcher/context";
-import { color, HEADER, sym } from "./render";
+import { HEADER, safe, sym } from "./render";
 import { DISPATCH_VERSION } from "./version";
 
 export const HELP = `${HEADER()}
@@ -38,7 +40,19 @@ export async function main(argv: string[]): Promise<number> {
   const r = await startFactory(c);
   if (!r.ok) { console.error(`\n${sym.fail()} Factory failed to start. Run \`dispatch doctor\`, fix the cause, then run \`dispatch\` again.`); return 1; }
   if (!noBrowser && c.cfg.browser.open) await launchBrowser(c, r.services);
-  console.log(color.dim("(interactive prompt arrives with DSP-03)"));
+  const stopFlow = async (io: { out(s: string): void; ask(p: string): Promise<string> }) => {
+    const st = await c.lifecycle.status(); const api = st.services.find((x) => x.name === "api"); let inFlight = 0;
+    if (api?.state === "ready") { const sm = await getSummary(c.cfg, c.paths); if (!sm.ok) return { stopped: false, message: `${sym.fail()} Cannot determine active jobs (${safe(sm.error)}); not shutting down.` }; inFlight = sm.data.jobs.inFlight; }
+    if (inFlight > 0) { io.out(`${sym.warn()} ${inFlight} job(s) are in flight; shutting down interrupts them.`); if ((await io.ask("Type “shutdown” to stop the factory anyway: ")).trim().toLowerCase() !== "shutdown") return { stopped: false, message: "Not stopped." }; }
+    else if ((await io.ask("Stop the whole factory? Type “shutdown” to confirm: ")).trim().toLowerCase() !== "shutdown") return { stopped: false, message: "Not stopped." };
+    const r = await c.lifecycle.stop({ confirmed: true, activeJobs: inFlight });
+    return { stopped: true, message: r.results.length ? r.results.map((x) => `${x.name}: ${x.action}`).join(", ") : "Nothing owned by Dispatch was running." };
+  };
+  const result = await runRepl(c, {
+    openDashboard: async () => { const st = await c.lifecycle.status(); await launchBrowser(c, st.services); return ""; },
+    shutdown: stopFlow,
+  });
+  void result; // both ending a session (detach) and a confirmed shutdown exit cleanly
   return 0;
 }
 

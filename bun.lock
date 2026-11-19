@@ -44,6 +44,7 @@
       "dependencies": {
         "@factory/api": "workspace:*",
         "@factory/db": "workspace:*",
+        "@factory/dispatch-client": "workspace:*",
         "@factory/dispatch-core": "workspace:*",
         "postgres": "4.1.1",
       },
@@ -63,6 +64,7 @@
       "name": "@factory/web",
       "version": "0.0.0",
       "dependencies": {
+        "@factory/dispatch-core": "workspace:*",
         "next": "16.4.6",
         "react": "19.3.1",
         "react-dom": "19.3.1",

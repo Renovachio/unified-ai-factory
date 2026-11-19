@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { signOut } from "./actions";
 
-export const metadata = { title: "Unified AI Factory", description: "Operator dashboard" };
+export const metadata = { title: "Dispatch", description: "Operator dashboard" };
 
 const NAV = [["/", "Overview"], ["/jobs", "Jobs"], ["/inbox", "Inbox"], ["/workers", "Workers"], ["/policies", "Policies"], ["/usage", "Usage & capacity"], ["/skills", "Skills & agents"], ["/improvements", "Improvements"], ["/auto-merge", "Auto-merge"], ["/audit", "Audit"]] as const;
 

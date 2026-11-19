@@ -1,5 +1,7 @@
 // Dispatch v2.3 interaction layer, API side. Additive: every route sits under /api/v2/dispatch, uses the existing authentication, RBAC and tenant scoping,
 // and reads or calls the existing job/approval services. Nothing here is a second orchestrator.
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Sql } from "@factory/db";
 import { require_, type Actor } from "./auth";
 import { problems } from "./problem";
@@ -76,7 +78,68 @@ async function* feedStream(sql: Sql, actor: Actor, start: number, signal: AbortS
 }
 const parseCursor = (v: string | null): number => { if (v === null || v === "") return 0; const n = Number(v); if (!Number.isInteger(n) || n < 0) throw problems.badRequest("cursor must be a non-negative integer"); return n; };
 
+// ---- read views for projects, approvals, capabilities and model readiness (DSP-06/07/08) ----
+const configDir = () => process.env.DISPATCH_CONFIG_DIR ?? join(process.cwd(), "config");
+function readConfig(name: string): Record<string, unknown> | null { try { const f = join(configDir(), name); return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as Record<string, unknown>) : null; } catch { return null; } }
+
+export async function listProjects(sql: Sql, actor: Actor) {
+  const rows = await sql<{ id: string; provider: string; owner: string; name: string; total: string; active: string; waiting: string }[]>`
+    SELECT r.id, r.provider, r.owner, r.name, count(j.id) AS total, count(j.id) FILTER (WHERE j.state = ANY(${[...IN_FLIGHT_STATES]})) AS active, count(j.id) FILTER (WHERE j.state = ANY(${[...WAITING_STATES]})) AS waiting
+    FROM repositories r LEFT JOIN jobs j ON j.repository_id = r.id WHERE r.organization_id = ${actor.orgId} GROUP BY r.id ORDER BY r.owner, r.name LIMIT 200`;
+  return rows.map((r) => ({ id: r.id, name: `${r.owner}/${r.name}`, provider: r.provider, jobs: { total: Number(r.total), active: Number(r.active), waitingOnHuman: Number(r.waiting) } }));
+}
+
+export async function approvalsInbox(sql: Sql, actor: Actor) {
+  const jobs = await sql<{ id: string; repo: string; version: number; title: string; updated_at: Date }[]>`
+    SELECT j.id, r.owner || '/' || r.name AS repo, j.version, q.title, j.updated_at FROM jobs j JOIN repositories r ON r.id = j.repository_id JOIN requests q ON q.id = j.request_id
+    WHERE r.organization_id = ${actor.orgId} AND j.state = ANY(${[...WAITING_STATES]}) ORDER BY j.updated_at DESC LIMIT 100`;
+  const caps = await sql<{ id: string; operation: string; kind: string; slug: string; version: string; target_digest: string; permission_digest: string; expires_at: Date }[]>`
+    SELECT a.id, a.operation, v.kind, v.slug, v.version, a.target_digest, a.permission_digest, a.expires_at FROM approval_requests a JOIN skill_versions v ON v.id = a.version_id
+    WHERE a.organization_id = ${actor.orgId} AND a.expires_at > now() AND NOT EXISTS (SELECT 1 FROM approval_decisions d WHERE d.request_id = a.id) ORDER BY a.created_at DESC LIMIT 100`;
+  return {
+    items: [
+      ...jobs.map((j) => ({ id: j.id, type: "job-decision" as const, project: j.repo, revision: j.version, title: { text: j.title, trust: "untrusted" as const }, at: j.updated_at.toISOString() })),
+      ...caps.map((c) => ({ id: c.id, type: "capability-approval" as const, operation: c.operation, capability: `${c.kind}:${c.slug}@${c.version}`, digest: c.target_digest, permissionDigest: c.permission_digest, expiresAt: c.expires_at.toISOString() })),
+    ],
+  };
+}
+
+/** Skills and agents. Only versions that are ACTIVE are "approved capabilities"; everything else is a labelled proposal/candidate and can never be activated without an exact-digest approval. */
+export async function listCapabilities(sql: Sql, actor: Actor, category: "skills" | "agents") {
+  const kind = category === "skills" ? "skill" : "agent";
+  const rows = await sql<{ id: string; slug: string; version: string; digest: string; state: string; active: boolean; manifest: Record<string, unknown> }[]>`
+    SELECT v.id, v.slug, v.version, v.digest, v.state, (a.active_version_id = v.id) AS active, v.manifest FROM skill_versions v
+    LEFT JOIN registry_active a ON a.organization_id = v.organization_id AND a.workspace_id = v.workspace_id AND a.kind = v.kind AND a.slug = v.slug
+    WHERE v.organization_id = ${actor.orgId} AND v.kind = ${kind} ORDER BY v.created_at DESC LIMIT 200`;
+  const roles = (m: Record<string, unknown>) => (Array.isArray(m.roles) ? (m.roles as unknown[]).filter((x) => typeof x === "string") : []);
+  return { items: rows.map((r) => ({ id: r.id, slug: r.slug, version: r.version, digest: r.digest, state: r.state, status: r.active ? "approved-active" : "proposal", ...(kind === "agent" ? { roles: roles(r.manifest) } : {}) })) };
+}
+
+/** Model/runtime readiness. Three DISTINCT facts, never conflated: available (a runtime is configured), qualified (an approved, unexpired role qualification exists), authorized (provider terms approved / local-only policy). */
+export function modelReadiness() {
+  const allow = readConfig("runtime-allowlist.json"); const quals = readConfig("model-qualification.json"); const terms = readConfig("provider-terms.json"); const pol = readConfig("inference-policy.json");
+  const execs = Array.isArray(allow?.executables) ? (allow.executables as Array<Record<string, unknown>>) : []; const q = Array.isArray(quals?.qualifications) ? (quals.qualifications as Array<Record<string, unknown>>) : [];
+  const approvals = Array.isArray(terms?.approvals) ? (terms.approvals as Array<Record<string, unknown>>) : [];
+  return {
+    configLoaded: allow !== null && quals !== null && terms !== null && pol !== null,
+    policy: { allowedInferenceModes: pol?.allowedInferenceModes ?? [], modelApiBillingEnabled: pol?.modelApiBillingEnabled ?? false },
+    available: execs.map((e) => ({ id: String(e.id ?? e.path ?? "runtime"), path: String(e.path ?? "") })),
+    qualified: q.map((x) => ({ role: String(x.role ?? ""), model: String(x.modelId ?? x.model ?? ""), runtime: String(x.runtime ?? ""), expiresAt: x.expiresAt ?? null })),
+    authorizedProviders: approvals.map((a) => String(a.provider ?? a.runtime ?? "")),
+    summary: { available: execs.length, qualified: q.length, authorized: approvals.length },
+    note: execs.length === 0 ? "No runtime is configured: nothing can run model work." : q.length === 0 ? "No model is qualified for any critical role." : undefined,
+  };
+}
+
 export const dispatchRoutes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
+  { method: "GET", pattern: /^\/dispatch\/projects$/, handler: async ({ sql, actor }) => { require_(actor, "job:read"); return { status: 200, body: { items: await listProjects(sql, actor) } }; } },
+  { method: "GET", pattern: /^\/dispatch\/approvals$/, handler: async ({ sql, actor }) => { require_(actor, "job:read"); return { status: 200, body: await approvalsInbox(sql, actor) }; } },
+  { method: "GET", pattern: /^\/dispatch\/capabilities$/, handler: async ({ req, sql, actor }) => {
+    require_(actor, "skill:read"); const c = new URL(req.url).searchParams.get("category");
+    if (c === "models") return { status: 200, body: modelReadiness() };
+    if (c !== "skills" && c !== "agents") throw problems.badRequest("category must be skills, agents or models");
+    return { status: 200, body: await listCapabilities(sql, actor, c) };
+  } },
   { method: "GET", pattern: /^\/dispatch\/snapshot$/, handler: async ({ sql, actor }) => { require_(actor, "job:read"); return { status: 200, body: await snapshot(sql, actor) }; } },
   { method: "GET", pattern: /^\/dispatch\/events$/, handler: async ({ req, sql, actor }) => {
     require_(actor, "job:read"); const q = new URL(req.url).searchParams;

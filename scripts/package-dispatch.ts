@@ -23,6 +23,7 @@ run("bun", ["build", "--compile", join(root, "apps/dispatch-cli/src/main.ts"), "
 chmodSync(join(pkg, "bin/dispatch"), 0o755);
 console.log("3/4 migrations + installer");
 cpSync(join(root, "migrations"), join(pkg, "migrations"), { recursive: true });
+cpSync(join(root, "config"), join(pkg, "config"), { recursive: true }); // read-only policy/qualification config shown by /models
 for (const f of ["install.sh", "uninstall.sh"]) { cpSync(join(root, "packaging/dispatch", f), join(pkg, f)); chmodSync(join(pkg, f), 0o755); }
 writeFileSync(join(pkg, "VERSION"), DISPATCH_VERSION + "\n");
 console.log("4/4 checksums + tarball");
