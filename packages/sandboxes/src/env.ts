@@ -8,7 +8,7 @@ export class PolicyViolation extends Error {
   }
 }
 
-const FORBIDDEN_NAME = /(API_?KEY|_TOKEN$|^TOKEN$|SECRET|PASSWORD|CREDENTIAL|^AWS_|^AZURE_|^GOOGLE_|^GCP_|^GH_|^GITHUB_|^ANTHROPIC_|^OPENAI_|^GEMINI_|^MISTRAL_|^COHERE_|SSH_AUTH_SOCK|^DOCKER_|^KUBECONFIG$|^NPM_CONFIG_|_BASE_URL$)/i;
+const FORBIDDEN_NAME = /(API_?KEY|_TOKEN$|^TOKEN$|SECRET|PASSWORD|CREDENTIAL|^AWS_|^AZURE_|^GOOGLE_|^GCP_|^GH_|^GITHUB_|^ANTHROPIC_|^OPENAI_|^GEMINI_|^MISTRAL_|^COHERE_|SSH_AUTH_SOCK|^DATABASE_URL$|^PG[A-Z]+$|_DSN$|^SESSION_|^DOCKER_|^KUBECONFIG$|^NPM_CONFIG_|_BASE_URL$)/i;
 
 /** Names of variables that must never reach a runtime or a sandbox. */
 export function forbiddenEnvNames(env: Readonly<Record<string, string | undefined>>): string[] {

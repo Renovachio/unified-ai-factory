@@ -48,3 +48,10 @@ Plan: `Unified_AI_Software_Factory_v2.1_Hardening_Operational_Activation.md` (au
   evidence: evidence/ACT-04/report.md
   blockers: [OIDC provider configuration, browser-level E2E]
 ```
+
+```yaml
+- work_package: ACT-05
+  status: in_progress   # macOS-verified; Linux in CI only; deployment-level separation not provisioned
+  evidence: evidence/ACT-05/report.md
+  blockers: [per-component LOGIN roles and processes, Linux/cloud enforcement evidence]
+```
