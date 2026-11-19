@@ -80,10 +80,11 @@ export class SessionManager implements Authenticator {
     if (secret.length < 32) throw new Error("session secret must be at least 32 characters");
   }
   private sig(body: string) { return createHmac("sha256", this.secret).update(body).digest(); }
-  issue(subject: string, ttlSec = 8 * 3600, now = Date.now()): { cookie: string; csrf: string } {
+  /** `secure: false` is only for the loopback-only local dashboard (plain http://127.0.0.1); every other deployment keeps Secure. */
+  issue(subject: string, ttlSec = 8 * 3600, now = Date.now(), secure = true): { cookie: string; csrf: string } {
     const csrf = b64(crypto.getRandomValues(new Uint8Array(24)));
     const body = b64(JSON.stringify({ sub: subject, exp: Math.floor(now / 1000) + ttlSec, csrf }));
-    return { cookie: `${this.cookieName}=${body}.${b64(this.sig(body))}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${ttlSec}`, csrf };
+    return { cookie: `${this.cookieName}=${body}.${b64(this.sig(body))}; HttpOnly;${secure ? " Secure;" : ""} SameSite=Strict; Path=/; Max-Age=${ttlSec}`, csrf };
   }
   async authenticate(req: Request) {
     const raw = /(?:^|;\s*)factory_session=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1];

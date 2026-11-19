@@ -41,7 +41,7 @@ export function registryProblem(e: unknown): ApiProblem | null {
   return null;
 }
 
-type Handler = (a: { req: Request; sql: Sql; actor: Actor; cfg: SkillsConfig | undefined; maxBody: number; mutating: () => void; key: () => string }) => Promise<JsonResult>;
+export type Handler = (a: { req: Request; sql: Sql; actor: Actor; cfg: SkillsConfig | undefined; maxBody: number; mutating: () => void; key: () => string }) => Promise<JsonResult>;
 
 async function body(req: Request, max: number): Promise<Record<string, unknown>> { const { value } = await readJson(req, max); if (!value || typeof value !== "object" || Array.isArray(value)) throw problems.unprocessable("body must be an object"); return value as Record<string, unknown>; }
 const str = (b: Record<string, unknown>, k: string, re?: RegExp): string => { const v = b[k]; if (typeof v !== "string" || (re && !re.test(v))) throw problems.unprocessable(`${k} is missing or malformed`); return v; };

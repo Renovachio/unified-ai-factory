@@ -93,3 +93,18 @@ Spec in `docs/v2.2/`; branch `dev/v22-sai`. All new execution authority is inact
   evidence: evidence/SAI/report.md
   blockers: [v2.1 gates (NOT READY), no qualified model/runtime, benchmarks below minSamples, no dynamic skill sandbox tests, per-component LOGIN roles not provisioned, T-11/T-30 not live]
 ```
+
+## v2.3 Dispatch (DSP-01..DSP-10)
+
+Spec package: `../dispatch-v2.3`. Branch `dev/v23-dispatch` (on `dev/v22-sai`, which stacks on `dev/v21-act-01`; **nothing is merged to main**). Real authorized-runtime/GitHub gates (G0, G7) depend on v2.1, which is NOT READY (`evidence/V21-RELEASE/report.md`): no live model/provider/GitHub is available, so no real coding pilot has been run. Statuses: `not_started | in_progress | blocked | verified`; `verified` is used only where a check was actually run and its output is recorded in the evidence file.
+
+```yaml
+- work_package: DSP-01
+  status: in_progress   # implemented + packaged-install verified locally; browser open not observed on a display; unsigned
+  evidence: evidence/DSP-01/report.md
+- work_package: DSP-02
+  status: in_progress   # real-process lifecycle verified; no launchd; no worker daemon exists to manage
+  evidence: evidence/DSP-02/report.md
+```
+
+Also fixed while verifying: a v2.2 idempotent-activation race (`packages/skills/src/registry.ts`), found by the full suite.

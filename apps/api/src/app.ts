@@ -28,10 +28,14 @@ export interface ApiConfig {
   login?: OidcLogin;
   /** v2.2 skill/agent registry: quarantined imports, exact-digest approvals, CAS activation. Routes under /api/v2. */
   skills?: SkillsConfig;
+  /** Dispatch local mode: one-time browser entry (loopback only). */
+  local?: { entry: LocalBrowserEntry };
   ready?: () => Promise<boolean>;
   log?: (line: Record<string, unknown>) => void;
 }
 
+import type { LocalBrowserEntry } from "./local";
+import { dispatchRoutes } from "./dispatch";
 const BASE = "/api/v1";
 const BASE2 = "/api/v2";
 const json = (r: JsonResult): Response => new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: { ...(r.body === undefined ? {} : { "content-type": "application/json" }), ...SECURITY_HEADERS, ...(r.headers ?? {}) } });
@@ -56,9 +60,21 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
     const m = req.method;
+    if (path === `${BASE}/local/enter`) { // one-time code -> cookie session; only exists in Dispatch local mode
+      if (!cfg.local) throw problems.notFound("no such route");
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      return cfg.local.entry.enter(req);
+    }
+    if (path === `${BASE2}/dispatch/browser-code`) { // CLI (local owner bearer token) asks for a one-time dashboard sign-in code
+      if (!cfg.local) throw problems.notFound("no such route");
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      const a = await authn(req);
+      if (a.via !== "bearer" || a.subject !== "dispatch-local-owner") throw problems.forbidden("only the local owner token may request a browser code");
+      return json({ status: 200, body: { code: cfg.local.entry.mint(), expiresInSeconds: 60 } });
+    }
     if (path.startsWith(`${BASE2}/`)) {
       const sub = path.slice(BASE2.length);
-      const hit = registryRoutes.filter((r) => r.pattern.test(sub));
+      const hit = [...registryRoutes, ...dispatchRoutes].filter((r) => r.pattern.test(sub));
       if (hit.length === 0) throw problems.notFound("no such route");
       const route2 = hit.find((r) => r.method === m);
       if (!route2) throw problems.methodNotAllowed([...new Set(hit.map((r) => r.method))]);

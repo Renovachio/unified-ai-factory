@@ -38,6 +38,16 @@
         "@factory/evals": "workspace:*",
       },
     },
+    "apps/dispatch-cli": {
+      "name": "@factory/dispatch-cli",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/api": "workspace:*",
+        "@factory/db": "workspace:*",
+        "@factory/dispatch-core": "workspace:*",
+        "postgres": "4.1.1",
+      },
+    },
     "apps/runner": {
       "name": "@factory/runner",
       "version": "0.0.0",
@@ -128,6 +138,13 @@
         "@factory/telemetry": "workspace:*",
         "drizzle-orm": "0.45.4",
         "postgres": "4.1.1",
+      },
+    },
+    "packages/dispatch-core": {
+      "name": "@factory/dispatch-core",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/telemetry": "workspace:*",
       },
     },
     "packages/domain": {
@@ -305,6 +322,10 @@
     "@factory/contracts": ["@factory/contracts@workspace:packages/contracts"],
 
     "@factory/db": ["@factory/db@workspace:packages/db"],
+
+    "@factory/dispatch-cli": ["@factory/dispatch-cli@workspace:apps/dispatch-cli"],
+
+    "@factory/dispatch-core": ["@factory/dispatch-core@workspace:packages/dispatch-core"],
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
 

@@ -77,7 +77,12 @@ export async function activate(sql: Sql, i: Scope & { requestId: string; expecte
     if (!["activate", "upgrade", "rollback"].includes(req.operation)) fail("WRONG_OPERATION", `request is for ${req.operation}`);
     const [dec] = await tx`SELECT * FROM approval_decisions WHERE request_id = ${i.requestId} FOR UPDATE`;
     if (!dec || dec.decision !== "approved") fail("NOT_APPROVED", "no approving decision");
-    if (dec.consumed_at) fail("APPROVAL_CONSUMED", "approval was already used");
+    if (dec.consumed_at) {
+      // A concurrent request with the SAME idempotency key may have won the row lock and committed while we waited: that is a replay, not a reuse.
+      const [again] = await tx`SELECT * FROM registry_log WHERE organization_id = ${i.organizationId} AND idempotency_key = ${i.idempotencyKey}`;
+      if (again && again.approval_request_id === i.requestId) return { revision: again.revision as number, versionId: again.to_version_id as string, replayed: true };
+      fail("APPROVAL_CONSUMED", "approval was already used");
+    }
     if (Date.parse(req.expires_at) <= Date.now()) fail("APPROVAL_EXPIRED", "approval expired before activation");
     const v = await loadVersion(tx, req.version_id);
     if (v.digest !== req.target_digest || v.digest !== dec.presented_digest || v.permission_digest !== req.permission_digest || v.permission_digest !== dec.presented_permission_digest) fail("DIGEST_MISMATCH", "package or permissions differ from what was approved");
