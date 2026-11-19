@@ -44,6 +44,13 @@ test("bwrap argv: unshares everything, binds only the workspace read-write, re-a
   expect(w.args.join(" ")).toContain("ulimit -t 5");
 });
 
+test("commands run in the requested cwd inside the sandbox (bwrap --chdir)", async () => {
+  const w = new BwrapBackend("/usr/bin/bwrap").wrap("/bin/true", [], { workspaceRoot: ws.root, cwd: ws.repoDir });
+  expect(w.args[w.args.indexOf("--chdir") + 1]).toBe(ws.repoDir);
+  const r = await sh("pwd");
+  expect(r.stdout.trim().replace(/^\/private/, "")).toBe(ws.repoDir.replace(/^\/private/, ""));
+});
+
 test("a real confinement backend is available on this host (suite must not silently weaken)", () => {
   expect(backend.isolation).toBe("strong");
 });

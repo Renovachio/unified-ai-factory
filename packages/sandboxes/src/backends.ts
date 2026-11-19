@@ -6,6 +6,8 @@ export interface WrapContext {
   /** Extra read-only host paths (toolchains) the command legitimately needs. */
   readOnlyPaths?: string[];
   allowNetwork?: false;
+  /** Working directory inside the sandbox (must be within the workspace). Defaults to the workspace root. */
+  cwd?: string;
   /** Scrubbed environment for the command (bwrap clears the environment, so it must be re-applied explicitly). */
   env?: Record<string, string>;
   cpuSeconds?: number;
@@ -82,7 +84,7 @@ export class BwrapBackend implements SandboxBackend {
     const inner = pre ? ["/bin/sh", "-c", `${pre}; exec "$0" "$@"`, command, ...args] : [command, ...args];
     return {
       command: this.bin,
-      args: ["--unshare-all", "--die-with-parent", "--new-session", "--clearenv", ...Object.entries(ctx.env ?? {}).flatMap(([k, v]) => ["--setenv", k, v]), ...ro, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind", ws, ws, "--chdir", ws, ...inner],
+      args: ["--unshare-all", "--die-with-parent", "--new-session", "--clearenv", ...Object.entries(ctx.env ?? {}).flatMap(([k, v]) => ["--setenv", k, v]), ...ro, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind", ws, ws, "--chdir", ctx.cwd ? real(ctx.cwd) : ws, ...inner],
     };
   }
 }

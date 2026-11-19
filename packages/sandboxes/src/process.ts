@@ -46,7 +46,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * a wall-clock timeout and cancellation. On timeout/cancel the whole group is SIGTERM'd then SIGKILL'd.
  */
 export async function runSandboxed(opts: RunOptions): Promise<RunResult> {
-  const ctx: WrapContext = { workspaceRoot: opts.workspaceRoot, env: opts.env };
+  const ctx: WrapContext = { workspaceRoot: opts.workspaceRoot, env: opts.env, cwd: opts.cwd };
   if (opts.readOnlyPaths) ctx.readOnlyPaths = opts.readOnlyPaths;
   if (opts.cpuSeconds) ctx.cpuSeconds = opts.cpuSeconds;
   if (opts.maxFileBytes) ctx.maxFileBytes = opts.maxFileBytes;
