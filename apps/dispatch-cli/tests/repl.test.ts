@@ -14,7 +14,7 @@ import { Session } from "../src/repl/session";
 let db: Awaited<ReturnType<typeof createTestDb>>; let server: ReturnType<typeof Bun.serve>; let base = ""; let org = ""; let repoId = ""; let home = ""; let n = 0;
 const TOKEN = "r".repeat(48); let calls: string[] = [];
 beforeAll(async () => {
-  process.env.DISPATCH_CONFIG_DIR = join(import.meta.dir, "../../../config");
+  process.env.DISPATCH_CONFIG_DIR = join(import.meta.dir, "../../../config"); process.env.DISPATCH_LOCAL_TOKEN_FILE = "/unused"; // enables local-project routes
   db = await createTestDb(); org = await bootstrapLocalOwner(db.sql); home = mkdtempSync(join(tmpdir(), "dsp-repl-"));
   const sm = new SessionManager("y".repeat(40));
   const api = createApi({ sql: db.sql, rateLimit: { capacity: 100000, refillPerSec: 100000 }, authenticator: new CompositeAuthenticator([new LocalOwnerAuthenticator(TOKEN), sm]), local: { entry: new LocalBrowserEntry(sm, "http://127.0.0.1:3000") } });
@@ -92,8 +92,8 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
     const dead = new DispatchClient({ baseUrl: "http://127.0.0.1:1", headers: () => ({}), timeoutMs: 500 }); const s = Session.open(null, "x"); const msgs: string[] = [];
     const r = await new Executor(dead, s, { out: (m) => msgs.push(m), ask: async () => "" }).execute({ type: "factory.status" }); expect(r.status).toBe("failed"); expect(r.message).toContain("dispatch status");
   });
-  test("project.create is honestly blocked (no repository link), not faked", async () => {
-    const r = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).execute({ type: "project.create", title: "X" }); expect(r).toMatchObject({ status: "blocked", reasonCode: "project-not-linked" });
+  test("project.create intent points to /new <folder>, not faked", async () => {
+    const r = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).execute({ type: "project.create", title: "X" }); expect(r).toMatchObject({ status: "blocked", reasonCode: "use-folder" });
   });
 
   test("/dispatch <request> creates a job in the active project; the text is stored verbatim as untrusted data, not run", async () => {
@@ -116,5 +116,22 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
   });
   test("/dispatch with no text shows usage and creates nothing", async () => {
     const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c); const { out } = await session(["/dispatch", "/exit"]); expect(out).toContain("Usage: /dispatch <request>"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before);
+  });
+
+  test("/new <folder> registers a local folder (no GitHub), makes it active, is idempotent, and /dispatch then works", async () => {
+    const dir = join(home, "my-notes"); (await import("node:fs")).mkdirSync(join(dir, ".git"), { recursive: true });
+    const a = await session([`/new ${dir}`, `/new ${dir}`, "/projects", "/dispatch draft the intro", "/exit"]);
+    expect(a.out).toContain("Added: my-notes"); expect(a.out).toContain("Already added: my-notes"); expect(a.out).toContain("Request created");
+    const rows = await db.sql`SELECT provider, owner, local_path FROM repositories WHERE name = 'my-notes'`; expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ provider: "local", local_path: (await import("node:fs")).realpathSync(dir) });
+    expect((await db.sql`SELECT count(*) AS c FROM jobs j JOIN repositories r ON r.id = j.repository_id WHERE r.name = 'my-notes'`)[0]?.c).toBe("1");
+  });
+  test("dangerous or invalid folders are refused with the reason and nothing is registered", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c);
+    const { out } = await session(["/new /", "/new /etc", "/new ~", "/new /no/such/folder", `/new ${join(home, "..", "..")}`, "/exit"]);
+    expect(out).toContain("refusing"); expect(out).toContain("no such folder"); expect(Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c)).toBe(before);
+  });
+  test("the DB refuses a local project without a path and a github one with a path", async () => {
+    await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'local', 'zz', 'local', 'zz')`).rejects.toThrow();
+    await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name, local_path) VALUES (${org}, 'github', 'zy', 'o', 'n', '/x')`).rejects.toThrow();
   });
 });

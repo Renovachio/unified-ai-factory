@@ -29,6 +29,7 @@ export const repositories = pgTable("repositories", {
   baseBranch: text("base_branch").notNull().default("main"),
   policyId: text("policy_id"),
   installationId: text("installation_id"),
+  localPath: text("local_path"),
   createdAt: created(),
 });
 

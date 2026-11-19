@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { StateBadge, short, when } from "./view";
 
 export interface SummaryView { jobs: { inFlight: number; waitingOnHuman: number; total: number }; approvals: { pending: number; jobDecisions: number; capabilityApprovals: number }; projects: number; workers: { active: number } }
-export interface ProjectView { id: string; name: string; provider: string; jobs: { total: number; active: number; waitingOnHuman: number } }
+export interface ProjectView { id: string; name: string; provider: string; path?: string; jobs: { total: number; active: number; waitingOnHuman: number } }
 export interface SnapshotJob { id: string; projectId: string; project: string; state: string; revision: number; risk: string; prNumber: number | null; title: { text: string; trust: "untrusted" }; paused: boolean; updatedAt: string }
 export type ApprovalItem = { id: string; type: "job-decision"; project: string; revision: number; title: { text: string }; at: string } | { id: string; type: "capability-approval"; operation: string; capability: string; digest: string; permissionDigest: string; expiresAt: string };
 export interface ModelsView { configLoaded: boolean; policy: { allowedInferenceModes: string[]; modelApiBillingEnabled: boolean }; available: Array<{ id: string; path: string }>; qualified: Array<{ role: string; model: string; runtime: string; expiresAt: string | null }>; authorizedProviders: string[]; summary: { available: number; qualified: number; authorized: number }; note?: string }
@@ -21,11 +21,11 @@ export function HealthPanel({ s }: { s: SummaryView }) {
 }
 
 export function ProjectsTable({ items }: { items: ProjectView[] }) {
-  if (items.length === 0) return <p className="empty">No projects yet. A project is a linked repository; linking needs the GitHub App, which is not configured on this machine.</p>;
+  if (items.length === 0) return <p className="empty">No projects yet. In the terminal, add a folder on this machine with {"/new <folder>"} (no GitHub needed), or link a GitHub repository.</p>;
   return (
     <table><caption className="sr">Projects</caption>
       <thead><tr><th scope="col">Project</th><th scope="col">Source</th><th scope="col">Active</th><th scope="col">Waiting on you</th><th scope="col">Total jobs</th></tr></thead>
-      <tbody>{items.map((p) => (<tr key={p.id}><td><a href={`/projects/${encodeURIComponent(p.id)}`}>{p.name}</a></td><td>{p.provider}</td><td>{p.jobs.active}</td><td>{p.jobs.waitingOnHuman}</td><td>{p.jobs.total}</td></tr>))}</tbody>
+      <tbody>{items.map((p) => (<tr key={p.id}><td><a href={`/projects/${encodeURIComponent(p.id)}`}>{p.name}</a>{p.path ? <small className="note"> {p.path}</small> : null}</td><td>{p.provider === "local" ? "local folder" : p.provider}</td><td>{p.jobs.active}</td><td>{p.jobs.waitingOnHuman}</td><td>{p.jobs.total}</td></tr>))}</tbody>
     </table>
   );
 }

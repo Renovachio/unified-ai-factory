@@ -42,7 +42,7 @@ export function buildSpecs(cfg: DispatchConfig, paths: DispatchPaths, env: Recor
     },
     start: async (marker): Promise<Started> => {
       ensureSecret(paths.token, 32); const sessionFile = join(paths.secrets, "session-secret"); ensureSecret(sessionFile, 32);
-      const e = childEnv(env, { DATABASE_URL: databaseUrl(cfg, paths), PORT: String(cfg.ports.api), HOST: cfg.host, DISPATCH_LOCAL_TOKEN_FILE: paths.token, DISPATCH_SESSION_SECRET_FILE: sessionFile, DISPATCH_DASHBOARD_URL: dashboardUrl(cfg), ALLOWED_ORIGINS: dashboardUrl(cfg), ...(configDir(env) ? { DISPATCH_CONFIG_DIR: configDir(env) as string } : {}) });
+      const e = childEnv(env, { DATABASE_URL: databaseUrl(cfg, paths), PORT: String(cfg.ports.api), HOST: cfg.host, DISPATCH_LOCAL_TOKEN_FILE: paths.token, DISPATCH_SESSION_SECRET_FILE: sessionFile, DISPATCH_DASHBOARD_URL: dashboardUrl(cfg), ALLOWED_ORIGINS: dashboardUrl(cfg), DISPATCH_HOME: paths.home, ...(configDir(env) ? { DISPATCH_CONFIG_DIR: configDir(env) as string } : {}) });
       const m = `--dispatch-instance=${marker}`;
       const { pid } = spawnDetached(self.cmd, [...self.prefix, "__serve", "api", m], e, join(paths.logs, "api.log"));
       await new Promise((r) => setTimeout(r, 200)); const id = processIdentity(pid);

@@ -22,6 +22,7 @@
         "@factory/capabilities": "workspace:*",
         "@factory/contracts": "workspace:*",
         "@factory/db": "workspace:*",
+        "@factory/dispatch-core": "workspace:*",
         "@factory/domain": "workspace:*",
         "@factory/improvements": "workspace:*",
         "@factory/intake": "workspace:*",

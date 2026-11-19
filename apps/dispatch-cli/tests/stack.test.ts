@@ -65,11 +65,18 @@ describe("real managed stack (DSP-01/02 integration)", () => {
     const url = `postgres://dispatch@localhost/dispatch?host=${encodeURIComponent(c.paths.pgSocket)}&port=54329`;
     const r0 = await startFactory(makeCtx({ create: true, env: env() }), { quiet: true }); expect(r0.ok).toBe(true);
     const { default: postgres } = await import("postgres"); const sql = postgres(url, { max: 1 });
-    await sql`DELETE FROM schema_migrations WHERE version = '0013'`; await sql.end();
+    // Simulate a database from before 0013: undo 0013 with its own down script, then forget it (a bare row delete would leave its columns behind).
+    await sql.unsafe(readFileSync(join(import.meta.dir, "../../../migrations/0013_outbox_dead_letter.down.sql"), "utf8")); await sql`DELETE FROM schema_migrations WHERE version = '0013'`; await sql.end();
     await makeCtx({ create: false, env: env() }).lifecycle.stop({ confirmed: true, activeJobs: 0 });
     const r = await startFactory(makeCtx({ create: true, env: env() }), { quiet: true });
     expect(r.ok).toBe(false); expect(r.services.find((s) => s.name === "postgres")).toMatchObject({ state: "failed", detail: expect.stringMatching(/pending migration.*dispatch migrate/) });
     expect(r.services.find((s) => s.name === "api")!.detail).toMatch(/not started/);
+    // The upgrade path must not be circular: the database stays up after the refusal, so the explicit migrate works, and the next start succeeds.
+    const { schemaState, runMigrations } = await import("../src/launcher/postgres");
+    const st0 = await schemaState(url); expect(st0.pending).toEqual(["0013"]);
+    expect(await runMigrations(url)).toEqual(["0013"]);
+    const r2 = await startFactory(makeCtx({ create: true, env: env() }), { quiet: true }); expect(r2.ok).toBe(true);
+    apiPid = readState(c.paths.state)!.services.api!.pid!;
   });
   test("stop with in-flight jobs requires confirmation; confirmed stop leaves no process, listener or lock behind", async () => {
     const c = makeCtx({ create: false, env: env() });
@@ -80,4 +87,9 @@ describe("real managed stack (DSP-01/02 integration)", () => {
     expect((await fetch(`http://127.0.0.1:${apiPort}/api/v1/health/live`).catch(() => null))).toBeNull();
     expect(() => readFileSync(c.paths.lock)).toThrow();
   });
+});
+
+test("schemaState does not turn an unreachable database into 'everything pending'", async () => {
+  const { schemaState } = await import("../src/launcher/postgres");
+  await expect(schemaState("postgres://dispatch@localhost/dispatch?host=%2Ftmp%2Fnope-nope&port=54329")).rejects.toThrow();
 });

@@ -1,5 +1,6 @@
 import { bindingFor, ConfirmationStore, DESTRUCTIVE, type Intent } from "@factory/dispatch-core";
 import { ApiError, OutcomeUnknown, StaleRevision, type DispatchClient, type JobView, type Summary } from "@factory/dispatch-client";
+import { resolve as resolvePath } from "node:path";
 import type { Session } from "./session";
 
 export interface Io { out(s: string): void; ask(prompt: string): Promise<string> }
@@ -57,7 +58,7 @@ export class Executor {
         if (!hit) return blocked("not-found", `No visible project “${i.projectId.slice(0, 60)}”. Try /projects.`);
         this.session.setProject(hit.id, hit.name); return done(`Active project: ${hit.name}`);
       }
-      case "project.create": return blocked("project-not-linked", "Creating a project requires linking a repository, which needs the GitHub App (not configured here). Use the dashboard once a repository is connected.");
+      case "project.create": return blocked("use-folder", "Add a project with /new <folder> (a local folder) instead.");
       case "job.create": return this.createJob(await this.activeProject() ?? i.projectId, i.request);
       case "job.pause": case "job.resume": case "job.cancel": return this.jobAction(i);
       case "approval.review": return this.reviewApproval(i.approvalId);
@@ -66,13 +67,25 @@ export class Executor {
     }
   }
 
+  /** `/new <folder>` / `/project add <folder>`: register a local folder as a project (validated by the API) and make it the active project. */
+  async addLocalProject(path: string): Promise<Outcome> {
+    try {
+      const abs = path.trim().startsWith("~") || path.trim().startsWith("/") ? path.trim() : resolvePath(process.cwd(), path.trim());
+      const r = await this.c.send<{ id: string; name: string; path: string; created: boolean; isGit: boolean }>(this.c.mutation("POST", "/api/v2/dispatch/projects", { path: abs }));
+      this.session.setProject(r.id, r.name);
+      return done(`${r.created ? "Added" : "Already added"}: ${r.name} (${r.path})${r.isGit ? "" : "\nNote: this folder is not a git repository. Requests can be recorded, but changes to it will not be tracked until it is one."}\nActive project: ${r.name}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 422) return blocked("folder-refused", e.detail ?? e.title);
+      return this.explain(e);
+    }
+  }
   /** `/dispatch <request>`: pick the project (active one; else the only one; else ask), then create the request through the normal idempotent job API. */
   async submitRequest(text: string): Promise<Outcome> {
     try {
       let pid = await this.activeProject();
       if (!pid) {
         const ps = (await this.c.get<{ items: Array<{ id: string; name: string }> }>("/api/v2/dispatch/projects")).items;
-        if (ps.length === 0) return blocked("no-project", "There is no project to put this request in yet. A project is a linked repository, which needs the GitHub App (not configured here), so nothing was created.");
+        if (ps.length === 0) return blocked("no-project", "There is no project to put this request in yet, so nothing was created. Point me at a folder with /project add <folder> (or `dispatch --project <folder> <request>`); a GitHub repository is not required.");
         if (ps.length > 1) return { status: "needs-input", message: `Which project? Choose one with /project use <id|owner/name>, then repeat the request:\n${ps.slice(0, 8).map((p) => `  ${p.id.slice(0, 8)}  ${p.name}`).join("\n")}` };
         const only = ps[0]; if (!only) return blocked("no-project", "No project."); pid = only.id; this.session.setProject(only.id, only.name);
       }

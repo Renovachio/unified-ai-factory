@@ -14,7 +14,7 @@ describe("intent schema is strict and fails closed (DSP-04)", () => {
 describe("slash commands (COMMANDS.md)", () => {
   test("every documented command parses to a typed intent, a local action or a usage hint; none is treated as text", () => {
     const seen = new Set<string>();
-    for (const c of COMMANDS) { const line = c.usage.replace("<id>", "x1").replace("<jobId>", "j1").replace("<title>", "T").replace("<request>", "do a thing").replace("[clear]", "").replace("use x1", "use x1").trim(); const p = parseLine(line); seen.add(c.name); expect(p.kind === "text" || p.kind === "unknown").toBe(false); }
+    for (const c of COMMANDS) { const line = c.usage.replace("<id>", "x1").replace("<jobId>", "j1").replace("<folder>", "~/code/x").replace("<request>", "do a thing").replace("[clear]", "").replace("use x1", "use x1").trim(); const p = parseLine(line); seen.add(c.name); expect(p.kind === "text" || p.kind === "unknown").toBe(false); }
     expect(seen.size).toBe(20);
   });
   test("argument handling: /project use, /new, pause/resume/cancel/approve map to the right intents; malformed arguments give usage, not execution", () => {
@@ -22,7 +22,7 @@ describe("slash commands (COMMANDS.md)", () => {
     expect(parseLine("/project use acme/clip")).toMatchObject({ intent: { type: "project.select", projectId: "acme/clip" } });
     for (const bad of ["../x", "a/../b", "/etc", "a//b", "a/b/c", ".hidden/x", "a b/c"]) expect(parseLine(`/project use ${bad}`).kind).toBe("usage");
     expect(parseLine("/project p-1").kind).toBe("usage"); expect(parseLine("/project use").kind).toBe("usage");
-    expect(parseLine("/new Clipboard sync")).toMatchObject({ intent: { type: "project.create", title: "Clipboard sync" } });
+    expect(parseLine("/new ~/code/my notes")).toEqual({ kind: "local-project", path: "~/code/my notes" }); expect(parseLine("/project add ../x y")).toEqual({ kind: "local-project", path: "../x y" }); expect(parseLine("/new").kind).toBe("usage");
     expect(parseLine("/cancel j1")).toMatchObject({ intent: { type: "job.cancel", jobId: "j1" } }); expect(parseLine("/pause j1;id").kind).toBe("usage"); expect(parseLine("/cancel").kind).toBe("usage");
     expect(parseLine("/approve a1")).toMatchObject({ intent: { type: "approval.review", approvalId: "a1" } }); expect(parseLine("/context clear")).toMatchObject({ command: "context-clear" }); expect(parseLine("/exit now").kind).toBe("usage");
     expect(parseLine("/STATUS")).toMatchObject({ intent: { type: "factory.status" } });

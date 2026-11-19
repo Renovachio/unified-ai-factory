@@ -24,7 +24,8 @@ export const databaseUrl = (cfg: DispatchConfig, paths: DispatchPaths): string =
 /** Schema state of a reachable database: never mutates. */
 export async function schemaState(url: string): Promise<{ applied: string[]; pending: string[]; unknown: string[] }> {
   const sql = postgres(url, { max: 1, onnotice: () => undefined, connect_timeout: 3 });
-  try { const applied = await appliedVersions(sql).catch(() => [] as string[]); const known = loadMigrations(migrationsDir()).map((m) => m.version); return { applied, pending: known.filter((v) => !applied.includes(v)), unknown: applied.filter((v) => !known.includes(v)) }; } finally { await sql.end({ timeout: 1 }); }
+  try { // Only a MISSING table means "no migrations yet"; a connection failure must surface (it is not "everything pending").
+    const applied = await appliedVersions(sql).catch((e: { code?: string }) => { if (e?.code === "42P01") return [] as string[]; throw e; }); const known = loadMigrations(migrationsDir()).map((m) => m.version); return { applied, pending: known.filter((v) => !applied.includes(v)), unknown: applied.filter((v) => !known.includes(v)) }; } finally { await sql.end({ timeout: 1 }); }
 }
 
 /** Explicit, additive migration (the only place migrations run from the launcher); returns the versions applied. */

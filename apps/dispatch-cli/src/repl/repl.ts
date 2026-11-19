@@ -38,7 +38,7 @@ export class Lines {
   close() { this.rl.close(); }
 }
 
-export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; client?: DispatchClient; initialRequest?: string } = {}): Promise<ReplResult> {
+export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; client?: DispatchClient; initialRequest?: string; initialFolder?: string } = {}): Promise<ReplResult> {
   const output = opts.output ?? process.stdout;
   let client: DispatchClient;
   try { client = opts.client ?? makeClient(c); } catch (e) { output.write(`${sym.fail()} ${(e as Error).message}\n`); return "detached"; }
@@ -53,7 +53,10 @@ export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.R
   const ex = new Executor(client, session, io);
   const show = (o: Outcome) => say(o.status === "completed" ? o.message : `${o.status === "failed" ? sym.fail() : sym.warn()} ${o.message}`);
   say(color.dim("Type /dispatch <request> to make a request, /help for commands. /exit leaves the factory running; /shutdown stops it."));
-  if (opts.initialRequest) show(await ex.submitRequest(opts.initialRequest));
+  let folderOk = true;
+  if (opts.initialFolder) { const o = await ex.addLocalProject(opts.initialFolder); show(o); folderOk = o.status === "completed"; }
+  if (opts.initialRequest && !folderOk) say("The request was not created because the folder was not added.");
+  else if (opts.initialRequest) show(await ex.submitRequest(opts.initialRequest));
   for (;;) {
     const raw = await lines.next(session.data.activeProjectName ? `dispatch [${safe(session.data.activeProjectName).slice(0, 24)}]> ` : "dispatch> ");
     if (raw === null) { say("\nDetached; the factory keeps running."); lines.close(); return "detached"; }
@@ -66,6 +69,7 @@ export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.R
         show(await ex.execute(r.intent)); break;
       }
       case "unknown": say(`Unknown command ${safe(p.input.split(" ")[0] ?? "")}.${p.suggestions.length ? ` Did you mean ${p.suggestions.join(", ")}?` : ""} Try /help.`); break;
+      case "local-project": show(await ex.addLocalProject(p.path)); break;
       case "request": show(await ex.submitRequest(p.text)); break;
       case "usage": say(`Usage: ${p.usage}`); break;
       case "intent": show(await ex.execute(p.intent)); break;

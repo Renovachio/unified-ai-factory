@@ -7,9 +7,9 @@ export interface CommandInfo { name: string; usage: string; summary: string; exa
 export const COMMANDS: readonly CommandInfo[] = [
   { name: "dispatch", usage: "/dispatch <request>", summary: "Create a new request in the active project", example: "/dispatch add dark mode to settings" },
   { name: "help", usage: "/help", summary: "List commands and examples" },
-  { name: "new", usage: "/new <title>", summary: "Create a project through a validated flow", example: "/new Clipboard sync" },
+  { name: "new", usage: "/new <folder>", summary: "Add a local folder as a project (no GitHub needed)", example: "/new ~/code/notes" },
   { name: "projects", usage: "/projects", summary: "List projects in your authorized scope" },
-  { name: "project", usage: "/project use <id>", summary: "Set the active project" },
+  { name: "project", usage: "/project use <id>", summary: "Set the active project (/project add <folder> adds a local folder)" },
   { name: "jobs", usage: "/jobs", summary: "List active, queued and recent jobs" },
   { name: "status", usage: "/status", summary: "Factory health, capability readiness and job summary" },
   { name: "models", usage: "/models", summary: "Available vs qualified vs authorized model runtimes" },
@@ -31,6 +31,7 @@ export type Parsed =
   | { kind: "intent"; intent: Intent; viaCommand: string }
   | { kind: "local"; command: "help" | "exit" | "shutdown" | "dashboard" | "context" | "context-clear" | "projects" | "models" | "skills" | "agents" | "approvals" | "logs"; arg?: string }
   | { kind: "request"; text: string }
+  | { kind: "local-project"; path: string }
   | { kind: "usage"; command: string; usage: string }
   | { kind: "unknown"; input: string; suggestions: string[] }
   | { kind: "text"; text: string };
@@ -60,8 +61,8 @@ export function parseLine(line: string): Parsed {
     case "jobs": return arg === "" ? { kind: "intent", intent: { type: "job.list" }, viaCommand: name } : usage();
     case "status": return arg === "" ? { kind: "intent", intent: { type: "factory.status" }, viaCommand: name } : usage();
     case "dispatch": return arg === "" || arg.length > MAX_TEXT ? usage() : { kind: "request", text: arg };
-    case "new": return arg === "" || arg.length > 200 ? usage() : { kind: "intent", intent: { type: "project.create", title: arg }, viaCommand: name };
-    case "project": { const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && (ID_RE.test(pid) || PROJECT_REF_RE.test(pid)) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
+    case "new": return arg === "" || arg.length > 1024 ? usage() : { kind: "local-project", path: arg };
+    case "project": { const add = /^add\s+(.+)$/i.exec(arg)?.[1]?.trim(); if (add && add.length <= 1024) return { kind: "local-project", path: add }; const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && (ID_RE.test(pid) || PROJECT_REF_RE.test(pid)) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
     case "pause": case "resume": case "cancel": return id() ? { kind: "intent", intent: { type: `job.${name}`, jobId: arg }, viaCommand: name } : usage();
     case "approve": return id() ? { kind: "intent", intent: { type: "approval.review", approvalId: arg }, viaCommand: name } : usage();
     case "logs": return id() ? { kind: "local", command: "logs", arg } : usage();

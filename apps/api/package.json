@@ -23,7 +23,8 @@
     "@factory/telemetry": "workspace:*",
     "jose": "6.2.18",
     "@factory/intake": "workspace:*",
-    "@factory/orchestrator": "workspace:*"
+    "@factory/orchestrator": "workspace:*",
+    "@factory/dispatch-core": "workspace:*"
   },
   "devDependencies": {
     "@factory/evals": "workspace:*"
