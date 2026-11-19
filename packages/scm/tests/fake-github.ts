@@ -1,7 +1,8 @@
 import { createPublicKey, createVerify } from "node:crypto";
 
 export interface Req { method: string; path: string; perms?: Record<string, string> | undefined }
-interface Pr { number: number; html_url: string; draft: boolean; state: string; merged: boolean; head: { sha: string; ref: string }; base: { ref: string } }
+interface Pr { number: number; node_id: string; html_url: string; draft: boolean; state: string; merged: boolean; merge_commit_sha: string | null; head: { sha: string; ref: string }; base: { ref: string } }
+export interface FakeCheck { name: string; status: string; conclusion: string | null }
 
 /** Minimal in-memory GitHub REST API (just what the factory uses), served over real HTTP. */
 export class FakeGitHub {
@@ -11,6 +12,13 @@ export class FakeGitHub {
   readonly tokens = new Map<string, { perms: Record<string, string>; repos: string[] }>();
   private faults: Array<{ re: RegExp; status: number; count: number }> = [];
   onBeforeCreatePr: (() => void) | undefined;
+  readonly checks = new Map<string, FakeCheck[]>();
+  mergeCalls = 0;
+  /** "timeout-after-merge": the merge happens but the response is a 504; "error-before-merge": 502 and nothing merged. */
+  mergeFault: "timeout-after-merge" | "error-before-merge" | undefined;
+  /** Simulates branch protection refusing the merge. */
+  protectBase = false;
+  private mergeN = 0;
   private server!: ReturnType<typeof Bun.serve>;
   private n = 0;
   constructor(private readonly publicKeyPem: string) {}
@@ -19,10 +27,12 @@ export class FakeGitHub {
   stop() { this.server.stop(true); }
   failNext(re: RegExp, status: number, count = 1) { this.faults.push({ re, status, count }); }
   addPr(head: string, sha: string, draft = false): Pr {
-    const pr: Pr = { number: this.prs.length + 1, html_url: `https://github.com/o/r/pull/${this.prs.length + 1}`, draft, state: "open", merged: false, head: { sha, ref: head }, base: { ref: "main" } };
+    const pr: Pr = { number: this.prs.length + 1, node_id: `PR_${this.prs.length + 1}`, html_url: `https://github.com/o/r/pull/${this.prs.length + 1}`, draft, state: "open", merged: false, merge_commit_sha: null, head: { sha, ref: head }, base: { ref: "main" } };
     this.prs.push(pr);
     return pr;
   }
+  movePrHead(number: number, sha: string) { const p = this.prs.find((x) => x.number === number); if (p) { p.head.sha = sha; this.refs.set(p.head.ref, sha); } }
+  externalMerge(number: number, sha = "ee".repeat(20)) { const p = this.prs.find((x) => x.number === number); if (p) { p.merged = true; p.state = "closed"; p.merge_commit_sha = sha; this.refs.set(p.base.ref, sha); } }
   private json(status: number, body: unknown) { return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }); }
 
   private async handle(req: Request): Promise<Response> {
@@ -52,6 +62,14 @@ export class FakeGitHub {
     record.perms = t.perms;
     const can = (perm: string, level: "read" | "write") => t.perms[perm] === "write" || (level === "read" && t.perms[perm] === "read");
 
+    if (path === "/graphql" && req.method === "POST") {
+      if (!can("pull_requests", "write")) return this.json(403, { message: "Resource not accessible by integration" });
+      const b = (await req.json()) as { variables: { id: string } };
+      const pr = this.prs.find((x) => x.node_id === b.variables.id);
+      if (!pr) return this.json(200, { errors: [{ message: "not found" }] });
+      pr.draft = false;
+      return this.json(200, { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } });
+    }
     if (path === "/repos/o/r" && req.method === "GET") return this.json(200, { id: 42, default_branch: "main" });
     const ref = /^\/repos\/o\/r\/git\/ref\/heads\/(.+)$/.exec(path);
     if (ref && req.method === "GET") { const sha = this.refs.get(decodeURIComponent(ref[1] as string)); return sha ? this.json(200, { object: { sha } }) : this.json(404, { message: "Not Found" }); }
@@ -76,6 +94,25 @@ export class FakeGitHub {
       if (!sha) return this.json(422, { message: "head invalid" });
       return this.json(201, this.addPr(b.head, sha, b.draft));
     }
+    const mg = /^\/repos\/o\/r\/pulls\/(\d+)\/merge$/.exec(path);
+    if (mg && req.method === "PUT") {
+      this.mergeCalls++;
+      if (!(can("contents", "write") && can("pull_requests", "write"))) return this.json(403, { message: "Resource not accessible by integration" });
+      const pr = this.prs.find((x) => x.number === Number(mg[1]));
+      const b = (await req.json()) as { sha: string };
+      if (!pr) return this.json(404, { message: "Not Found" });
+      if (this.mergeFault === "error-before-merge") return this.json(502, { message: "Bad Gateway" });
+      if (pr.state !== "open" || pr.merged) return this.json(405, { message: "Pull Request is not mergeable" });
+      if (pr.draft) return this.json(405, { message: "Draft pull requests cannot be merged" });
+      if (this.protectBase) return this.json(405, { message: "Required status checks are expected" });
+      if (b.sha !== pr.head.sha) return this.json(409, { message: "Head branch was modified. Review and try the merge again." });
+      const sha = (++this.mergeN).toString(16).padStart(8, "0").repeat(5);
+      pr.merged = true; pr.state = "closed"; pr.merge_commit_sha = sha; this.refs.set(pr.base.ref, sha);
+      if (this.mergeFault === "timeout-after-merge") return this.json(504, { message: "Gateway Timeout" });
+      return this.json(200, { merged: true, sha });
+    }
+    const cr = /^\/repos\/o\/r\/commits\/([a-f0-9]{40})\/check-runs$/.exec(path);
+    if (cr && req.method === "GET") return this.json(200, { check_runs: (this.checks.get(cr[1] as string) ?? []).map((c) => ({ ...c, head_sha: cr[1] })) });
     const prn = /^\/repos\/o\/r\/pulls\/(\d+)$/.exec(path);
     if (prn && req.method === "GET") { const p = this.prs.find((x) => x.number === Number(prn[1])); return p ? this.json(200, p) : this.json(404, { message: "Not Found" }); }
     return this.json(404, { message: "Not Found" });

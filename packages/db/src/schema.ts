@@ -200,6 +200,7 @@ export const approvals = pgTable("approvals", {
   decision: text("decision").notNull(),
   reason: text("reason"),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
+  binding: jsonb("binding").notNull().default({}),
   createdAt: created(),
 });
 
@@ -211,6 +212,8 @@ export const mergeIntents = pgTable("merge_intents", {
   headSha: text("head_sha").notNull(),
   status: text("status").notNull().default("pending"),
   githubMergeSha: text("github_merge_sha"),
+  reason: text("reason"),
+  mergeMethod: text("merge_method").notNull().default("squash"),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

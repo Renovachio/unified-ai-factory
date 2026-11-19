@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { sseResponse, type Sql } from "@factory/db";
 import { answerQuestions, FeedbackRejected } from "@factory/intake";
+import { DecisionRejected, recordDecision, type ReviewPort } from "@factory/orchestrator";
 import { receiveGitHubWebhook } from "@factory/scm";
 import { assertCsrf, require_, resolveActor, type Actor, type Authenticator } from "./auth";
 import { readJson, readRaw } from "./body";
@@ -15,6 +16,8 @@ export interface ApiConfig {
   maxBodyBytes?: number;
   githubWebhookSecret?: string;
   rateLimit?: { capacity: number; refillPerSec: number };
+  /** Needed by POST /jobs/:id/decisions to rebuild the current evidence binding (reviewer routing). */
+  review?: Pick<ReviewPort, "requiredRoles">;
   ready?: () => Promise<boolean>;
   log?: (line: Record<string, unknown>) => void;
 }
@@ -99,6 +102,30 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       requireIdempotencyKey(req);
       const { value } = await readJson(req, maxBody);
       return json(await cancelJob(cfg.sql, actor, id, value));
+    }
+    if (seg.length === 2 && seg[1] === "decisions") {
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      require_(actor, "job:decide"); mutating(req, actor);
+      const key = requireIdempotencyKey(req);
+      if (!cfg.review) throw new ApiProblem({ status: 503, code: "not-configured", title: "Decisions are not configured" });
+      const { value } = await readJson(req, maxBody);
+      const b = value as Record<string, unknown>;
+      const allowed = new Set(["decision", "headSha", "baseSha", "policyDigest", "expectedVersion", "reason"]);
+      if (!b || typeof b !== "object" || Object.keys(b).some((k) => !allowed.has(k)) || !["approve", "reject", "rework"].includes(b.decision as string) || typeof b.headSha !== "string" || typeof b.baseSha !== "string" || typeof b.policyDigest !== "string" || !Number.isInteger(b.expectedVersion) || (b.reason !== undefined && typeof b.reason !== "string"))
+        throw problems.unprocessable("body must be {decision: approve|reject|rework, headSha, baseSha, policyDigest, expectedVersion, reason?}");
+      await getJob(cfg.sql, actor, id);
+      try {
+        const r = await recordDecision(cfg.sql, cfg.review, { jobId: id, orgId: actor.orgId, actorId: actor.userId, idempotencyKey: key, decision: b.decision as "approve" | "reject" | "rework", headSha: b.headSha, baseSha: b.baseSha, policyDigest: b.policyDigest, expectedVersion: b.expectedVersion as number, reason: b.reason as string | undefined });
+        return json({ status: 202, body: { decisionId: r.decisionId, state: r.state, version: r.version }, headers: { etag: `"${r.version}"`, ...(r.replayed ? { "idempotency-replayed": "true" } : {}) } });
+      } catch (e) {
+        if (e instanceof DecisionRejected) {
+          if (e.code === "validation") throw problems.unprocessable(e.message);
+          if (e.code === "not-found") throw problems.notFound(e.message);
+          if (e.code === "self-approval") throw problems.forbidden(e.message);
+          throw new ApiProblem({ status: 409, code: e.code, title: "Conflict", detail: e.message, ...(e.detail ? { extra: e.detail } : {}) });
+        }
+        throw e;
+      }
     }
     if (seg.length === 2 && seg[1] === "feedback") {
       if (m !== "POST") throw problems.methodNotAllowed(["POST"]);

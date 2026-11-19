@@ -62,8 +62,15 @@ paths:
       security: [{ userSession: [] }]
       parameters:
         - { in: path, name: jobId, required: true, schema: { type: string } }
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string } }
+      description: Persists a human decision bound to head/base/policy digest and the full evidence binding. Never merges by itself.
       responses:
         '202': { description: SHA-bound approval recorded; not merged }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
   /jobs/{jobId}/events/stream:
     get:
       operationId: streamJobEvents
@@ -72,6 +79,15 @@ paths:
         - { in: path, name: jobId, required: true, schema: { type: string } }
       responses:
         '200': { description: Reconnectable event stream }
+  /jobs/{jobId}/feedback:
+    post:
+      operationId: answerQuestions
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Answer recorded; intake resumes }
+        '409': { $ref: '#/components/responses/Problem' }
   /jobs/{jobId}/events:
     get:
       operationId: listJobEvents

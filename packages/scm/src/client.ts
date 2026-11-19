@@ -13,9 +13,12 @@ export const FACTORY_BRANCH = /^factory\/[A-Za-z0-9_-]{1,80}$/;
 const PrSchema = z.object({
   number: z.number().int().positive(),
   html_url: z.string().url(),
+  node_id: z.string().optional(),
   draft: z.boolean().optional(),
   state: z.string(),
   merged: z.boolean().optional(),
+  merge_commit_sha: z.string().regex(/^[a-f0-9]{40}$/).nullable().optional(),
+  mergeable_state: z.string().optional(),
   head: z.object({ sha: z.string().regex(/^[a-f0-9]{40}$/), ref: z.string() }),
   base: z.object({ ref: z.string(), sha: z.string().regex(/^[a-f0-9]{40}$/).optional() }),
 });
@@ -33,9 +36,13 @@ export interface GitHubClientOptions {
 
 export interface Repo { owner: string; name: string }
 
+const CheckRunsSchema = z.object({ check_runs: z.array(z.object({ name: z.string(), status: z.string(), conclusion: z.string().nullable(), head_sha: z.string().regex(/^[a-f0-9]{40}$/) })) });
+export interface CheckRun { name: string; status: string; conclusion: string | null; headSha: string }
+export type MergeCallResult = { merged: true; sha: string } | { merged: false; status: number; message: string };
+
 /**
- * Deliberately narrow surface: read repo/refs/PRs, create factory/* branches, create draft PRs.
- * There is no method to change branch protection, default branches, merge, or delete anything.
+ * Deliberately narrow surface: read repo/refs/PRs/checks, create factory/* branches, create draft PRs, and (merge credential only)
+ * merge a pull request at an EXACT head SHA. There is no method to change branch protection, rulesets, default branches, or delete anything.
  */
 export class GitHubClient {
   private readonly base: string;
@@ -47,7 +54,7 @@ export class GitHubClient {
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
-  private async request(role: TokenRole, repo: Repo, method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
+  private async request(role: TokenRole, repo: Repo, method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
     const retries = method === "GET" ? (this.o.maxGetRetries ?? 3) : 0; // only reads are retried blindly
     for (let attempt = 0; ; attempt++) {
       let res: Response | undefined;
@@ -128,5 +135,37 @@ export class GitHubClient {
     if (r.status === 422) return { alreadyExists: true };
     if (r.status !== 201) this.fail(r.status, r.json);
     return { pr: PrSchema.parse(r.json) };
+  }
+
+  async getCheckRuns(repo: Repo, sha: string): Promise<CheckRun[]> {
+    if (!/^[a-f0-9]{40}$/.test(sha)) throw new GitHubApiError(0, "invalid sha");
+    const r = await this.request("read", repo, "GET", `/repos/${repo.owner}/${repo.name}/commits/${sha}/check-runs?per_page=100`);
+    if (r.status !== 200) this.fail(r.status, r.json);
+    return CheckRunsSchema.parse(r.json).check_runs.map((c) => ({ name: c.name, status: c.status, conclusion: c.conclusion, headSha: c.head_sha }));
+  }
+
+  /**
+   * Merge at EXACTLY `sha` (GitHub refuses with 409 if the head moved). Uses the separate `merge` credential. Never forces, never bypasses
+   * protections: a refusal (405/409/422) is returned as a definitive `merged: false`; transport errors/5xx throw (outcome UNKNOWN: caller must
+   * reconcile against the authoritative PR before any retry).
+   */
+  async mergePullRequest(repo: Repo, number: number, input: { sha: string; method: "squash" | "merge" | "rebase" }): Promise<MergeCallResult> {
+    if (!/^[a-f0-9]{40}$/.test(input.sha)) throw new GitHubApiError(0, "merge requires the exact 40-hex head sha");
+    const r = await this.request("merge", repo, "PUT", `/repos/${repo.owner}/${repo.name}/pulls/${number}/merge`, { sha: input.sha, merge_method: input.method });
+    if (r.status === 200) {
+      const j = z.object({ merged: z.boolean(), sha: z.string().regex(/^[a-f0-9]{40}$/) }).parse(r.json);
+      return j.merged ? { merged: true, sha: j.sha } : { merged: false, status: 200, message: "not merged" };
+    }
+    if (r.status === 405 || r.status === 409 || r.status === 422) return { merged: false, status: r.status, message: typeof r.json === "object" && r.json && "message" in r.json ? String((r.json as { message: unknown }).message) : "refused" };
+    this.fail(r.status, r.json);
+  }
+
+  /** Draft -> ready for review (GraphQL). Done by the merge coordinator only, after a human approval; uses the merge credential. */
+  async markPullRequestReady(repo: Repo, nodeId: string): Promise<boolean> {
+    if (!/^[A-Za-z0-9_=-]{1,100}$/.test(nodeId)) throw new GitHubApiError(0, "invalid node id");
+    const r = await this.request("merge", repo, "POST", "/graphql", { query: "mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}", variables: { id: nodeId } });
+    if (r.status !== 200) this.fail(r.status, r.json);
+    const j = z.object({ data: z.object({ markPullRequestReadyForReview: z.object({ pullRequest: z.object({ isDraft: z.boolean() }) }) }).optional(), errors: z.array(z.unknown()).optional() }).parse(r.json);
+    return j.data?.markPullRequestReadyForReview.pullRequest.isDraft === false;
   }
 }

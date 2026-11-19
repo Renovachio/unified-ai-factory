@@ -23,6 +23,7 @@
         "@factory/db": "workspace:*",
         "@factory/domain": "workspace:*",
         "@factory/intake": "workspace:*",
+        "@factory/orchestrator": "workspace:*",
         "@factory/sandboxes": "workspace:*",
         "@factory/scheduler": "workspace:*",
         "@factory/scm": "workspace:*",
@@ -64,6 +65,7 @@
         "zod": "4.6.7",
       },
       "devDependencies": {
+        "@factory/api": "workspace:*",
         "@factory/checks": "workspace:*",
         "@factory/intake": "workspace:*",
         "@factory/orchestrator": "workspace:*",

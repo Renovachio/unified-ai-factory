@@ -18,6 +18,7 @@
     "@factory/scm": "workspace:*",
     "@factory/telemetry": "workspace:*",
     "jose": "6.2.18",
-    "@factory/intake": "workspace:*"
+    "@factory/intake": "workspace:*",
+    "@factory/orchestrator": "workspace:*"
   }
 }

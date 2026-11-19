@@ -52,7 +52,7 @@ export function builderTaskExecutor(d: BuilderDeps): TaskExecutor {
     mkdirSync(ctx.workspace.repoDir, { recursive: true });
     await fetchWorkspaceRepo({ repoDir: ctx.workspace.repoDir, remoteUrl: remote.url, sha: parent, ...(token ? { token } : {}), ...(remote.allowLocalRemote ? { allowLocalRemote: true } : {}) });
 
-    const feedback = (await d.sql<{ type: string; payload_redacted: unknown }[]>`SELECT type, payload_redacted FROM events WHERE job_id = ${jobId} AND type IN ('gate.failed','review.changes_requested') ORDER BY sequence`).map((e) => ({ type: e.type, ...(e.payload_redacted as object) }));
+    const feedback = (await d.sql<{ type: string; payload_redacted: unknown }[]>`SELECT type, payload_redacted FROM events WHERE job_id = ${jobId} AND type IN ('gate.failed','review.changes_requested','human.changes_requested') ORDER BY sequence`).map((e) => ({ type: e.type, ...(e.payload_redacted as object) }));
     const r = await d.runtime.edit(ctx, { role, jobId, round, feedback, scope });
     if (!r.ok) return { ok: false, payload: { error: "runtime-failed", note: r.note } };
 
