@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "note": "Executables adapters may launch. Paths must be absolute; versions are matched by regex. Empty = no external CLI may run.",
+  "executables": [],
+  "allowedEndpointHosts": ["127.0.0.1", "localhost", "::1"],
+  "deniedEndpointHosts": ["api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com", "aiplatform.googleapis.com", "api.mistral.ai", "api.cohere.com", "openrouter.ai", "api.together.xyz", "api.groq.com", "api.x.ai"]
+}

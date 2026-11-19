@@ -1,0 +1,5 @@
+{
+  "version": "1.0",
+  "note": "Operator-maintained register of provider terms approvals for subscription CLI automation. Empty = every subscription adapter is BLOCKED. An entry must cite the exact terms reviewed and the automation pattern approved.",
+  "approvals": []
+}

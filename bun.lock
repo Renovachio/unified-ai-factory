@@ -69,6 +69,17 @@
       "name": "@factory/domain",
       "version": "0.0.0",
     },
+    "packages/runtimes": {
+      "name": "@factory/runtimes",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/contracts": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+    },
     "packages/sandboxes": {
       "name": "@factory/sandboxes",
       "version": "0.0.0",
@@ -133,6 +144,8 @@
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
 
     "@factory/runner": ["@factory/runner@workspace:apps/runner"],
+
+    "@factory/runtimes": ["@factory/runtimes@workspace:packages/runtimes"],
 
     "@factory/sandboxes": ["@factory/sandboxes@workspace:packages/sandboxes"],
 
