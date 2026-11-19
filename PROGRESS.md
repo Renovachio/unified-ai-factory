@@ -105,6 +105,9 @@ Spec package: `../dispatch-v2.3`. Branch `dev/v23-dispatch` (on `dev/v22-sai`, w
 - work_package: DSP-02
   status: in_progress   # real-process lifecycle verified; no launchd; no worker daemon exists to manage
   evidence: evidence/DSP-02/report.md
+- work_package: DSP-05
+  status: in_progress   # client+sync+feed verified against real API/Postgres; not yet wired into REPL/dashboard
+  evidence: evidence/DSP-05/report.md
 ```
 
 Also fixed while verifying: a v2.2 idempotent-activation race (`packages/skills/src/registry.ts`), found by the full suite.

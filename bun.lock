@@ -140,6 +140,10 @@
         "postgres": "4.1.1",
       },
     },
+    "packages/dispatch-client": {
+      "name": "@factory/dispatch-client",
+      "version": "0.0.0",
+    },
     "packages/dispatch-core": {
       "name": "@factory/dispatch-core",
       "version": "0.0.0",
@@ -324,6 +328,8 @@
     "@factory/db": ["@factory/db@workspace:packages/db"],
 
     "@factory/dispatch-cli": ["@factory/dispatch-cli@workspace:apps/dispatch-cli"],
+
+    "@factory/dispatch-client": ["@factory/dispatch-client@workspace:packages/dispatch-client"],
 
     "@factory/dispatch-core": ["@factory/dispatch-core@workspace:packages/dispatch-core"],
 

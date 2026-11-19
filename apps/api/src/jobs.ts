@@ -10,7 +10,7 @@ import { ApiProblem, problems } from "./problem";
 export const MAX_DESCRIPTION_BYTES = 100_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export interface JsonResult { status: number; body?: unknown; headers?: Record<string, string> }
+export interface JsonResult { status: number; body?: unknown; headers?: Record<string, string>; /** A pre-built streaming response (SSE); security headers are added by the router. */ raw?: Response }
 
 export const requireIdempotencyKey = (req: Request): string => {
   const k = req.headers.get("idempotency-key");

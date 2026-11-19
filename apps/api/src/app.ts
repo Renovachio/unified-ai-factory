@@ -36,9 +36,10 @@ export interface ApiConfig {
 
 import type { LocalBrowserEntry } from "./local";
 import { dispatchRoutes } from "./dispatch";
+function withSecurityHeaders(res: Response): Response { for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v); return res; }
 const BASE = "/api/v1";
 const BASE2 = "/api/v2";
-const json = (r: JsonResult): Response => new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: { ...(r.body === undefined ? {} : { "content-type": "application/json" }), ...SECURITY_HEADERS, ...(r.headers ?? {}) } });
+const json = (r: JsonResult): Response => r.raw ? withSecurityHeaders(r.raw) : new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: { ...(r.body === undefined ? {} : { "content-type": "application/json" }), ...SECURITY_HEADERS, ...(r.headers ?? {}) } });
 
 /** Framework-free request handler (Web `Request` -> `Response`); mounted by Bun.serve in server.ts and called directly by tests. */
 export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
