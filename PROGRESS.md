@@ -28,4 +28,4 @@ This is a specification package. No engineering work orders have been implemente
 | OBS-001 | ACCEPTED | evidence/OBS-001/report.md | operator (continue-plan instruction) |
 | CLD-001 | ACCEPTED_SIMULATED_PROVIDER_OPT_IN_OFF | evidence/CLD-001/report.md | operator (continue-plan instruction) |
 | EVAL-001 | ACCEPTED | evidence/EVAL-001/report.md | operator (continue-plan instruction) |
-| AUTO-001 | NOT_STARTED | — | — |
+| AUTO-001 | ACCEPTED_INERT_BY_DEFAULT | evidence/AUTO-001/report.md | operator (continue-plan instruction) |
