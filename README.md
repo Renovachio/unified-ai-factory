@@ -2,7 +2,7 @@
 
 A Bun/TypeScript monorepo that takes a request through intake, spec, build, gates, review, policy and a guarded merge, with a human approving by default. All 25 work orders in `MASTER_PLAN.md` are implemented. Original implementation only; upstream source code is not included.
 
-**Status: built and CI-green, not production-ready.** Nothing has run against a real GitHub App, subscription CLI, cloud provider or pilot data. Per-task status and its caveats are in `PROGRESS.md`; open operator actions and known limits are in `docs/operator/OPEN_ACTIONS.md`. "Accepted" there means the operator told the agent to continue the plan, not that an independent human reviewed the code.
+**Status: built and CI-green, not production-ready.** Nothing has run against a real GitHub App, subscription CLI, cloud provider or pilot data. The v2.3 `dispatch` command and its limits are described below. Per-task status and its caveats are in `PROGRESS.md`; open operator actions and known limits are in `docs/operator/OPEN_ACTIONS.md`. "Accepted" there means the operator told the agent to continue the plan, not that an independent human reviewed the code.
 
 ## Quick start
 ```sh
@@ -41,7 +41,29 @@ Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual
 Skill/agent registry, paired evaluation, improvement supervisor and PM artifacts exist behind `/api/v2` and dashboard pages `/skills`, `/improvements`. No skill is active, all discovery sources are disabled, and the supervisor can only propose. v2.1 gates are NOT READY (`evidence/V21-RELEASE/report.md`); v2.2 status and gaps: `evidence/SAI/report.md`, operations: `docs/operator/SKILLS_AND_IMPROVEMENT.md`.
 
 ## Dispatch (v2.3): one command
-`dispatch` starts or attaches to the factory, opens the dashboard and gives you a prompt with slash commands (`/help`, `/jobs`, `/status`, `/models`, `/pause`, `/cancel`, `/exit`, ...). Build and install: `bun scripts/package-dispatch.ts`, then `./install.sh` from `dist/dispatch-*/`. It manages a private local PostgreSQL, the API and the dashboard; it never uses metered model APIs. A real coding pilot is still **blocked** (no qualified model, worker daemon or GitHub App): see `evidence/DSP-10/report.md` and `docs/dispatch/`.
+`dispatch` is the interaction and lifecycle layer over the factory (it is not a second orchestrator): the existing API, RBAC, approvals and job state machine stay authoritative.
+
+```sh
+bun install
+bun scripts/package-dispatch.ts            # builds dist/dispatch-<ver>-darwin-arm64/ (+ .tar.gz, SHA256SUMS)
+cd dist/dispatch-2.3.0-darwin-arm64 && ./install.sh   # no sudo; installs to ~/Library/Application Support/Dispatch, links ~/.local/bin/dispatch
+dispatch doctor                            # read-only diagnosis
+dispatch                                   # start or attach, open the dashboard, enter the prompt
+```
+Needs macOS (Apple silicon) and PostgreSQL 17 (`brew install postgresql@17`); Bun is not needed at run time. Dispatch runs its own private Postgres (unix socket only), the API and the dashboard, all on 127.0.0.1.
+
+| Command | Meaning |
+|---|---|
+| `dispatch` / `--no-browser` | start or attach (idempotent, lock-protected), open the dashboard, enter the prompt |
+| `dispatch start` / `status` / `doctor` | start missing services / report real health / diagnose without changing anything |
+| `dispatch stop [--yes]` / `migrate` | stop only services Dispatch owns, warning about in-flight jobs / apply pending migrations explicitly |
+| `/help /jobs /status /projects /project use /models /skills /agents /approvals /approve /pause /resume /cancel /logs /dashboard /context /exit /shutdown` | inside the prompt; `/exit` detaches and leaves jobs running |
+
+Plain sentences work only for a fixed phrase set ("show my jobs", "list models"); anything else is refused until a qualified, authorized model interpreter exists (none does). Model output can only propose typed intents; destructive actions need a typed confirmation bound to the revision you saw.
+
+**Pieces:** `packages/dispatch-core` (config, paths, process identity, lifecycle, intent router), `packages/dispatch-client` (typed client, SSE sync with cursor/dedupe/gap reconcile/backoff), `apps/dispatch-cli` (launcher + prompt), `apps/api/src/{local,dispatch}.ts` (local owner auth, one-time browser sign-in, snapshot/events/projects/approvals/capabilities views), dashboard pages (`/`, `/projects`, `/approvals`, `/models`, `/diagnostics`, `/logs`, `/help`), `apps/dispatch-menubar` (optional Swift menu bar), `scripts/{package-dispatch,dispatch-pilot}.ts`, `packaging/dispatch/`.
+
+**Status:** local verification passed (`bun run ci`: 1236 tests, 0 failures; packaged install exercised from a clean shell). **Not released:** the real authorized coding pilot is BLOCKED (no configured runtime, qualified model, provider-terms approval, worker daemon or GitHub App), so no draft PR has been produced. Also unverified: a real browser/accessibility pass, a human TTY session, the menu-bar GUI; unsigned, macOS arm64 only, no launchd supervision. Per-task detail: `PROGRESS.md`, `evidence/DSP-01..10/report.md`. Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Check pilot gates: `DISPATCH_HOME=... bun scripts/dispatch-pilot.ts`.
 
 ## Try it locally
 `bun run demo` starts a throwaway Postgres, seeds **synthetic** data through the real API (one active skill, one awaiting approval, one rejected hostile archive, one improvement proposal), and serves the API on `127.0.0.1:8787` and the dashboard on `127.0.0.1:3000` (first page load compiles for ~30 s; add `--no-web` for the API only). Pick an identity at `http://127.0.0.1:8787/demo/login`, then open `/skills` and `/improvements`. The demo authenticator lives only in `scripts/demo.ts`, is loopback-only, and must never be reused in a deployment. `bun scripts/diagnostics.ts` (with `DATABASE_URL`) prints a redacted health snapshot.
