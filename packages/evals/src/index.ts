@@ -4,3 +4,5 @@ export * from "./score";
 export * from "./thresholds";
 export * from "./report";
 export * from "./pilot";
+export * from "./tool-subject";
+export * from "./qualification-proposal";

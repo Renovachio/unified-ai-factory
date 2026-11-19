@@ -55,3 +55,10 @@ Plan: `Unified_AI_Software_Factory_v2.1_Hardening_Operational_Activation.md` (au
   evidence: evidence/ACT-05/report.md
   blockers: [per-component LOGIN roles and processes, Linux/cloud enforcement evidence]
 ```
+
+```yaml
+- work_package: ACT-06
+  status: blocked   # mechanisms done; dataset too small (<30/role) and no qualified model
+  evidence: evidence/ACT-06/report.md
+  blockers: [dataset expansion + held-out split, candidate models, operator approval]
+```

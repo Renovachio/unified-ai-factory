@@ -12,6 +12,7 @@
     "@factory/db": "workspace:*",
     "@factory/sandboxes": "workspace:*",
     "@factory/scheduler": "workspace:*",
-    "@factory/domain": "workspace:*"
+    "@factory/domain": "workspace:*",
+    "@factory/runtimes": "workspace:*"
   }
 }

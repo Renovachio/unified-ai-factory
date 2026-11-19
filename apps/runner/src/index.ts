@@ -1,6 +1,6 @@
 import { type Sql } from "@factory/db";
 import {
-  assertEnvAllowed, buildSandboxEnv, createWorkspace, PolicyViolation, runSandboxed, teardownWorkspace,
+  assertEnvAllowed, buildSandboxEnv, createWorkspace, PolicyViolation, runSandboxed, teardownWorkspace, verifySandboxEnforcement,
   type RunResult, type SandboxBackend, type TeardownReport, type Workspace,
 } from "@factory/sandboxes";
 import { claimTask, completeTask, heartbeatTask, registerWorker, reportTaskEvent, StaleLeaseError, type TaskLease } from "@factory/scheduler";
@@ -31,6 +31,11 @@ export function assertRunnerEligible(cfg: Pick<RunnerConfig, "backend" | "proces
 
 export async function enrollWorker(cfg: RunnerConfig): Promise<string> {
   assertRunnerEligible(cfg);
+  // Fail closed: claiming "strong" isolation is not enough; prove (network + host read/write denial) before this worker may take any task.
+  if (cfg.backend.isolation === "strong") {
+    const rep = await verifySandboxEnforcement(cfg.backend);
+    if (!rep.enforced) throw new PolicyViolation("sandbox-not-enforced", `sandbox self-test failed: ${rep.checks.filter((c) => !c.ok).map((c) => `${c.name} (${c.detail})`).join("; ")}`);
+  }
   return registerWorker(cfg.sql, {
     organizationId: cfg.organizationId,
     mode: "local",

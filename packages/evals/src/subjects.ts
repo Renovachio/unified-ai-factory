@@ -3,7 +3,7 @@ import type { AgentRuntimeAdapter, AgentRunRequest } from "@factory/runtimes";
 import { taskById, type BuilderTask, type ControlTask, type EvalTask, type ReviewTask, type RiskName } from "./fixtures";
 
 /** Verdict a subject (a role/model route) gives for a review task. */
-export interface ReviewOutput { verdict: "pass" | "changes_requested" | "blocked"; findings: Array<{ severity: "low" | "medium" | "high" | "critical"; summary: string; location?: string | undefined }> }
+export interface ReviewOutput { verdict: "pass" | "changes_requested" | "blocked"; findings: Array<{ severity: "low" | "medium" | "high" | "critical"; summary: string; location?: string | undefined; remediation?: string | undefined }> }
 export interface Timing { ms: number; tokensIn?: number; tokensOut?: number; rateLimited?: boolean }
 export interface Timed<T> { value: T | null; error?: string; timing: Timing }
 
