@@ -70,13 +70,14 @@ export async function cmdStop(args: string[]): Promise<number> {
 
 export async function cmdMigrate(args: string[]): Promise<number> {
   const c = makeCtx({ create: false }); const url = databaseUrl(c.cfg, c.paths);
-  const st = await schemaState(url).catch((e: Error) => { console.error(`${sym.fail()} cannot reach the database: ${safe(e.message)}`); return null; });
+  const st = await schemaState(url).catch((e: Error) => { console.error(`${sym.fail()} cannot reach the database (${safe(e.message)}).${c.cfg.postgres.mode === "managed" ? " Run `dispatch start` first: it brings the database up even when migrations are pending, then run `dispatch migrate`." : ""}`); return null; });
   if (!st) return 1;
   if (st.unknown.length) { console.error(`${sym.fail()} the database has migrations this Dispatch does not know (${st.unknown.join(", ")}). Upgrade Dispatch; migrating is refused.`); return 1; }
   if (st.pending.length === 0) { console.log(`${sym.ok()} schema is current (${st.applied.at(-1)}).`); return 0; }
   console.log(`Pending migrations (additive, reversible): ${st.pending.join(", ")}`);
   if (!args.includes("--yes") && !(await confirm("Apply them to the database now?"))) { console.log("Not applied. Re-run with --yes to confirm."); return 2; }
-  const done = await runMigrations(url); console.log(`${sym.ok()} applied ${done.join(", ") || "nothing"}`); return 0;
+  const done = await runMigrations(url).catch((e: Error) => { console.error(`${sym.fail()} migration failed and was rolled back: ${safe(e.message)}`); return null; }); if (!done) return 1;
+  console.log(`${sym.ok()} applied ${done.join(", ") || "nothing"}`); return 0;
 }
 
 export async function cmdDoctor(): Promise<number> {

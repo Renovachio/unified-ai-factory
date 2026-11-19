@@ -1,14 +1,15 @@
 import type { Intent } from "./schema";
-import { ID_RE, PROJECT_REF_RE } from "./schema";
+import { ID_RE, MAX_TEXT, PROJECT_REF_RE } from "./schema";
 
 /** Versioned command table. Unknown slash commands are returned as `unknown`: they are never forwarded to a model or a shell. */
 export const COMMAND_TABLE_VERSION = 1;
 export interface CommandInfo { name: string; usage: string; summary: string; example?: string }
 export const COMMANDS: readonly CommandInfo[] = [
+  { name: "dispatch", usage: "/dispatch <request>", summary: "Create a new request in the active project", example: "/dispatch add dark mode to settings" },
   { name: "help", usage: "/help", summary: "List commands and examples" },
-  { name: "new", usage: "/new <title>", summary: "Create a project through a validated flow", example: "/new Clipboard sync" },
+  { name: "new", usage: "/new <folder>", summary: "Add a local folder as a project (no GitHub needed)", example: "/new ~/code/notes" },
   { name: "projects", usage: "/projects", summary: "List projects in your authorized scope" },
-  { name: "project", usage: "/project use <id>", summary: "Set the active project" },
+  { name: "project", usage: "/project use <id>", summary: "Set the active project (/project add <folder> adds a local folder)" },
   { name: "jobs", usage: "/jobs", summary: "List active, queued and recent jobs" },
   { name: "status", usage: "/status", summary: "Factory health, capability readiness and job summary" },
   { name: "models", usage: "/models", summary: "Available vs qualified vs authorized model runtimes" },
@@ -29,6 +30,8 @@ export const COMMANDS: readonly CommandInfo[] = [
 export type Parsed =
   | { kind: "intent"; intent: Intent; viaCommand: string }
   | { kind: "local"; command: "help" | "exit" | "shutdown" | "dashboard" | "context" | "context-clear" | "projects" | "models" | "skills" | "agents" | "approvals" | "logs"; arg?: string }
+  | { kind: "request"; text: string }
+  | { kind: "local-project"; path: string }
   | { kind: "usage"; command: string; usage: string }
   | { kind: "unknown"; input: string; suggestions: string[] }
   | { kind: "text"; text: string };
@@ -57,12 +60,23 @@ export function parseLine(line: string): Parsed {
       return arg === "" ? { kind: "local", command: name } : usage();
     case "jobs": return arg === "" ? { kind: "intent", intent: { type: "job.list" }, viaCommand: name } : usage();
     case "status": return arg === "" ? { kind: "intent", intent: { type: "factory.status" }, viaCommand: name } : usage();
-    case "new": return arg === "" || arg.length > 200 ? usage() : { kind: "intent", intent: { type: "project.create", title: arg }, viaCommand: name };
-    case "project": { const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && (ID_RE.test(pid) || PROJECT_REF_RE.test(pid)) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
+    case "dispatch": return arg === "" || arg.length > MAX_TEXT ? usage() : { kind: "request", text: arg };
+    case "new": return arg === "" || arg.length > 1024 ? usage() : { kind: "local-project", path: arg };
+    case "project": { const add = /^add\s+(.+)$/i.exec(arg)?.[1]?.trim(); if (add && add.length <= 1024) return { kind: "local-project", path: add }; const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && (ID_RE.test(pid) || PROJECT_REF_RE.test(pid)) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
     case "pause": case "resume": case "cancel": return id() ? { kind: "intent", intent: { type: `job.${name}`, jobId: arg }, viaCommand: name } : usage();
     case "approve": return id() ? { kind: "intent", intent: { type: "approval.review", approvalId: arg }, viaCommand: name } : usage();
     case "logs": return id() ? { kind: "local", command: "logs", arg } : usage();
     case "context": return arg === "" ? { kind: "local", command: "context" } : arg.toLowerCase() === "clear" ? { kind: "local", command: "context-clear" } : usage();
   }
   return usage();
+}
+
+/** Subcommands of the shell program. `dispatch <words>` is a request, so a one-word typo of a subcommand must be refused rather than become a job. */
+export const SHELL_SUBCOMMANDS = ["start", "status", "doctor", "stop", "migrate", "help"] as const;
+export function shellRequestText(args: string[]): { ok: true; text: string } | { ok: false; error: string } {
+  const text = args.join(" ").trim();
+  if (text === "") return { ok: false, error: "empty request" };
+  if (text.length > MAX_TEXT) return { ok: false, error: `request is longer than ${MAX_TEXT} characters` };
+  if (args.length === 1) { const w = text.toLowerCase(); const near = [...SHELL_SUBCOMMANDS].map((c) => ({ c, d: lev(w, c) })).filter((x) => x.d <= 2).sort((a, b) => a.d - b.d)[0]?.c; if (near) return { ok: false, error: `“${text.slice(0, 30)}” looks like a mistyped command. Did you mean \`dispatch ${near}\`? (To make it a request, write a full sentence.)` }; }
+  return { ok: true, text };
 }

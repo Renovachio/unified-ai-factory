@@ -2,8 +2,10 @@
 // and reads or calls the existing job/approval services. Nothing here is a second orchestrator.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { validateLocalFolder } from "@factory/dispatch-core";
 import type { Sql } from "@factory/db";
 import { require_, type Actor } from "./auth";
+import { readJson } from "./body";
 import { problems } from "./problem";
 import type { Handler } from "./registry";
 
@@ -83,10 +85,24 @@ const configDir = () => process.env.DISPATCH_CONFIG_DIR ?? join(process.cwd(), "
 function readConfig(name: string): Record<string, unknown> | null { try { const f = join(configDir(), name); return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as Record<string, unknown>) : null; } catch { return null; } }
 
 export async function listProjects(sql: Sql, actor: Actor) {
-  const rows = await sql<{ id: string; provider: string; owner: string; name: string; total: string; active: string; waiting: string }[]>`
-    SELECT r.id, r.provider, r.owner, r.name, count(j.id) AS total, count(j.id) FILTER (WHERE j.state = ANY(${[...IN_FLIGHT_STATES]})) AS active, count(j.id) FILTER (WHERE j.state = ANY(${[...WAITING_STATES]})) AS waiting
+  const rows = await sql<{ id: string; provider: string; owner: string; name: string; local_path: string | null; total: string; active: string; waiting: string }[]>`
+    SELECT r.id, r.provider, r.owner, r.name, r.local_path, count(j.id) AS total, count(j.id) FILTER (WHERE j.state = ANY(${[...IN_FLIGHT_STATES]})) AS active, count(j.id) FILTER (WHERE j.state = ANY(${[...WAITING_STATES]})) AS waiting
     FROM repositories r LEFT JOIN jobs j ON j.repository_id = r.id WHERE r.organization_id = ${actor.orgId} GROUP BY r.id ORDER BY r.owner, r.name LIMIT 200`;
-  return rows.map((r) => ({ id: r.id, name: `${r.owner}/${r.name}`, provider: r.provider, jobs: { total: Number(r.total), active: Number(r.active), waitingOnHuman: Number(r.waiting) } }));
+  return rows.map((r) => ({ id: r.id, name: r.provider === "local" ? r.name : `${r.owner}/${r.name}`, provider: r.provider, ...(r.local_path ? { path: r.local_path } : {}), jobs: { total: Number(r.total), active: Number(r.active), waitingOnHuman: Number(r.waiting) } }));
+}
+
+/** Register a folder on this machine as a project. Only in Dispatch local mode (single-user, loopback): a server-side path means nothing, and is dangerous, in a hosted deployment. */
+export async function addLocalProject(sql: Sql, actor: Actor, path: string, dispatchHome?: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!process.env.DISPATCH_LOCAL_TOKEN_FILE) throw problems.notFound("no such route");
+  const f = validateLocalFolder(path, dispatchHome ? { dispatchHome } : {});
+  if (!f.ok) throw problems.unprocessable(f.reason);
+  const [existing] = await sql<{ id: string; name: string }[]>`SELECT id, name FROM repositories WHERE provider = 'local' AND external_id = ${f.id} AND organization_id = ${actor.orgId}`;
+  if (existing) return { status: 200, body: { id: existing.id, name: existing.name, path: f.path, created: false, isGit: f.isGit } };
+  const [row] = await sql<{ id: string }[]>`INSERT INTO repositories (organization_id, provider, external_id, owner, name, local_path) VALUES (${actor.orgId}, 'local', ${f.id}, 'local', ${f.name}, ${f.path})
+    ON CONFLICT (provider, external_id) DO NOTHING RETURNING id`;
+  if (!row) throw problems.conflict("duplicate-project", "that folder is already registered by another organisation");
+  await sql`INSERT INTO audit_entries (organization_id, actor, action, resource, result, digest) VALUES (${actor.orgId}, ${actor.userId}, 'project.add_local', ${`project:${row.id}`}, 'ok', ${f.id})`;
+  return { status: 201, body: { id: row.id, name: f.name, path: f.path, created: true, isGit: f.isGit } };
 }
 
 export async function approvalsInbox(sql: Sql, actor: Actor) {
@@ -133,6 +149,12 @@ export function modelReadiness() {
 
 export const dispatchRoutes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   { method: "GET", pattern: /^\/dispatch\/projects$/, handler: async ({ sql, actor }) => { require_(actor, "job:read"); return { status: 200, body: { items: await listProjects(sql, actor) } }; } },
+  { method: "POST", pattern: /^\/dispatch\/projects$/, handler: async ({ req, sql, actor, mutating, key, maxBody }) => {
+    require_(actor, "job:create"); mutating(); key();
+    const { value } = await readJson(req, maxBody);
+    const path = (value as { path?: unknown } | null)?.path; if (typeof path !== "string") throw problems.unprocessable("body must be {path: string}");
+    return addLocalProject(sql, actor, path, process.env.DISPATCH_HOME);
+  } },
   { method: "GET", pattern: /^\/dispatch\/approvals$/, handler: async ({ sql, actor }) => { require_(actor, "job:read"); return { status: 200, body: await approvalsInbox(sql, actor) }; } },
   { method: "GET", pattern: /^\/dispatch\/capabilities$/, handler: async ({ req, sql, actor }) => {
     require_(actor, "skill:read"); const c = new URL(req.url).searchParams.get("category");

@@ -14,7 +14,7 @@ import { Session } from "../src/repl/session";
 let db: Awaited<ReturnType<typeof createTestDb>>; let server: ReturnType<typeof Bun.serve>; let base = ""; let org = ""; let repoId = ""; let home = ""; let n = 0;
 const TOKEN = "r".repeat(48); let calls: string[] = [];
 beforeAll(async () => {
-  process.env.DISPATCH_CONFIG_DIR = join(import.meta.dir, "../../../config");
+  process.env.DISPATCH_CONFIG_DIR = join(import.meta.dir, "../../../config"); process.env.DISPATCH_LOCAL_TOKEN_FILE = "/unused"; // enables local-project routes
   db = await createTestDb(); org = await bootstrapLocalOwner(db.sql); home = mkdtempSync(join(tmpdir(), "dsp-repl-"));
   const sm = new SessionManager("y".repeat(40));
   const api = createApi({ sql: db.sql, rateLimit: { capacity: 100000, refillPerSec: 100000 }, authenticator: new CompositeAuthenticator([new LocalOwnerAuthenticator(TOKEN), sm]), local: { entry: new LocalBrowserEntry(sm, "http://127.0.0.1:3000") } });
@@ -27,9 +27,9 @@ const client = () => new DispatchClient({ baseUrl: base, headers: () => ({ autho
 const ctx = () => ({ paths: { home }, cfg: {}, env: {} }) as unknown as Ctx;
 async function seedJob(title: string, repo = repoId): Promise<string> { return (await db.sql`WITH q AS (INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) VALUES (${repo}, 'api', ${"s" + n++}, 'x', 'feature', ${title}, 'd') RETURNING id) INSERT INTO jobs (request_id, repository_id) SELECT id, ${repo} FROM q RETURNING id`)[0]?.id as string; }
 const hooks = (log: string[] = [], stopAnswer = false): ReplHooks => ({ openDashboard: async () => "dashboard opened", shutdown: async (io) => { const a = await io.ask("Type “shutdown”: "); log.push(a); return a === "shutdown" || stopAnswer ? { stopped: true, message: "stopped" } : { stopped: false, message: "Not stopped." }; } });
-async function session(lines: string[], h = hooks()): Promise<{ out: string; result: string }> {
+async function session(lines: string[], h = hooks(), extra: { initialRequest?: string } = {}): Promise<{ out: string; result: string }> {
   const input = new PassThrough(); const output = new PassThrough(); let out = ""; output.on("data", (d) => (out += String(d)));
-  const p = runRepl(ctx(), h, { input, output, client: client() }); for (const l of lines) input.write(l + "\n"); input.end(); const result = await p; return { out, result };
+  const p = runRepl(ctx(), h, { input, output, client: client(), ...extra }); for (const l of lines) input.write(l + "\n"); input.end(); const result = await p; return { out, result };
 }
 
 describe("interactive REPL against the real API (DSP-03/06/08)", () => {
@@ -92,7 +92,46 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
     const dead = new DispatchClient({ baseUrl: "http://127.0.0.1:1", headers: () => ({}), timeoutMs: 500 }); const s = Session.open(null, "x"); const msgs: string[] = [];
     const r = await new Executor(dead, s, { out: (m) => msgs.push(m), ask: async () => "" }).execute({ type: "factory.status" }); expect(r.status).toBe("failed"); expect(r.message).toContain("dispatch status");
   });
-  test("project.create is honestly blocked (no repository link), not faked", async () => {
-    const r = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).execute({ type: "project.create", title: "X" }); expect(r).toMatchObject({ status: "blocked", reasonCode: "project-not-linked" });
+  test("project.create intent points to /new <folder>, not faked", async () => {
+    const r = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).execute({ type: "project.create", title: "X" }); expect(r).toMatchObject({ status: "blocked", reasonCode: "use-folder" });
+  });
+
+  test("/dispatch <request> creates a job in the active project; the text is stored verbatim as untrusted data, not run", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session([`/project use ${repoId.slice(0, 8)}`, "/dispatch add dark mode; rm -rf / /cancel everything", "/exit"]);
+    expect(out).toContain("Request created: job"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before + 1);
+    const r = (await db.sql`SELECT description FROM requests ORDER BY created_at DESC LIMIT 1`)[0]; expect(r?.description).toBe("add dark mode; rm -rf / /cancel everything");
+  });
+  test("with exactly one project and none selected, /dispatch uses it; the shell form (initialRequest) does the same, then the prompt is usable", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session(["/context", "/exit"], hooks(), { initialRequest: "write the release notes" });
+    expect(out).toContain("Request created: job"); expect(out).toContain("Active project: acme/clip"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before + 1);
+  });
+  test("with several projects and none selected it asks which one and creates nothing; with no project it says so", async () => {
+    const [o] = await db.sql`SELECT id FROM organizations WHERE name = 'Dispatch (local)'`; const [r2] = await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${o?.id}, 'github', 'second', 'acme', 'other') RETURNING id`;
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session(["/context clear", "/dispatch do something", "/exit"]); expect(out).toContain("Which project?"); expect(out).toContain("acme/other"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before);
+    await db.sql`DELETE FROM repositories WHERE id = ${r2?.id}`;
+    const none = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).submitRequest("x"); expect(none.status === "completed" || none.status === "blocked").toBe(true);
+  });
+  test("/dispatch with no text shows usage and creates nothing", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c); const { out } = await session(["/dispatch", "/exit"]); expect(out).toContain("Usage: /dispatch <request>"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before);
+  });
+
+  test("/new <folder> registers a local folder (no GitHub), makes it active, is idempotent, and /dispatch then works", async () => {
+    const dir = join(home, "my-notes"); (await import("node:fs")).mkdirSync(join(dir, ".git"), { recursive: true });
+    const a = await session([`/new ${dir}`, `/new ${dir}`, "/projects", "/dispatch draft the intro", "/exit"]);
+    expect(a.out).toContain("Added: my-notes"); expect(a.out).toContain("Already added: my-notes"); expect(a.out).toContain("Request created");
+    const rows = await db.sql`SELECT provider, owner, local_path FROM repositories WHERE name = 'my-notes'`; expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ provider: "local", local_path: (await import("node:fs")).realpathSync(dir) });
+    expect((await db.sql`SELECT count(*) AS c FROM jobs j JOIN repositories r ON r.id = j.repository_id WHERE r.name = 'my-notes'`)[0]?.c).toBe("1");
+  });
+  test("dangerous or invalid folders are refused with the reason and nothing is registered", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c);
+    const { out } = await session(["/new /", "/new /etc", "/new ~", "/new /no/such/folder", `/new ${join(home, "..", "..")}`, "/exit"]);
+    expect(out).toContain("refusing"); expect(out).toContain("no such folder"); expect(Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c)).toBe(before);
+  });
+  test("the DB refuses a local project without a path and a github one with a path", async () => {
+    await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'local', 'zz', 'local', 'zz')`).rejects.toThrow();
+    await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name, local_path) VALUES (${org}, 'github', 'zy', 'o', 'n', '/x')`).rejects.toThrow();
   });
 });

@@ -16,7 +16,7 @@ describe("home: health, projects, jobs, approvals (DSP-07)", () => {
     expect(html(<HealthPanel s={sum()} />)).toContain('role="status"');
   });
   test("empty states explain what to do; tables have captions and scoped headers", () => {
-    expect(html(<ProjectsTable items={[]} />)).toContain("GitHub App");
+    expect(html(<ProjectsTable items={[]} />)).toContain("/new &lt;folder&gt;");
     expect(html(<ActiveJobsTable items={[]} />)).toContain("No jobs");
     const t = html(<ProjectsTable items={[{ id: "p1", name: "acme/clip", provider: "github", jobs: { total: 3, active: 1, waitingOnHuman: 1 } }]} />);
     expect(t).toContain("<caption"); expect(t).toContain('scope="col"'); expect(t).toContain('href="/projects/p1"');
@@ -68,7 +68,7 @@ describe("command box only navigates", () => {
     expect(routeCommand("list skills")).toEqual({ to: "/skills" }); expect(routeCommand("/status")).toEqual({ to: "/" }); expect(routeCommand("/logs abc12345")).toEqual({ to: "/logs?job=abc12345" }); expect(routeCommand("/project use p-1")).toEqual({ to: "/projects/p-1" });
   });
   test("mutating, destructive, unknown and unrecognised input never execute and never navigate to an attacker-chosen URL", () => {
-    for (const t of ["/cancel j1", "/pause j1", "/resume j1", "/approve a1", "/new Thing"]) expect(routeCommand(t)).toHaveProperty("notice");
+    for (const t of ["/cancel j1", "/pause j1", "/resume j1", "/approve a1", "/new Thing", "/dispatch add dark mode", "/new ~/x"]) expect(routeCommand(t)).toHaveProperty("notice");
     expect(routeCommand("/cancel j1")).toMatchObject({ notice: expect.stringContaining("not run from this box") });
     for (const t of ["/rm -rf /", "https://evil.example", "//evil.example", "javascript:alert(1)", "pause the clipboard job", "stop everything", "/exit", "/shutdown", ""]) expect(routeCommand(t)).toHaveProperty("notice");
     const r = routeCommand("/project use ../../evil"); expect(r).toHaveProperty("notice");

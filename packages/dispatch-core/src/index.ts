@@ -6,3 +6,4 @@ export * from "./state";
 export * from "./env";
 export * from "./services";
 export * from "./intent/index";
+export * from "./localpath";

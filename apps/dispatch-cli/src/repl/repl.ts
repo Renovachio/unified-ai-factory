@@ -8,13 +8,15 @@ import type { Ctx } from "../launcher/context";
 import { Executor, renderSummary, resolveJob, type Io, type Outcome } from "./executor";
 import { Session } from "./session";
 
+export class NoLocalToken extends Error { constructor() { super("no local owner token: the API on this port was not started by this Dispatch install, so the terminal cannot authenticate to it (stop the other process or change the ports in config.json)"); this.name = "NoLocalToken"; } }
 export const LOCAL_ACTOR = "dispatch-local-owner";
 export function makeClient(c: Ctx): DispatchClient {
-  const token = readFileSync(c.paths.token, "utf8").trim();
+  let token: string;
+  try { token = readFileSync(c.paths.token, "utf8").trim(); } catch { throw new NoLocalToken(); }
   return new DispatchClient({ baseUrl: `http://${c.cfg.host}:${c.cfg.ports.api}`, headers: () => ({ authorization: `Bearer ${token}` }), timeoutMs: 8000 });
 }
 
-export const helpText = (): string => ["Commands:", ...COMMANDS.map((c) => `  ${c.usage.padEnd(22)} ${c.summary}`), "", "Or just type what you want, e.g. “show my jobs”, “list models”, “status”. Anything Dispatch can't match deterministically is refused unless a qualified, authorized model interpreter is configured (none is by default).", "Anything starting with “/” is a command and is never sent to a model or a shell."].join("\n");
+export const helpText = (): string => ["Commands:", ...COMMANDS.map((c) => `  ${c.usage.padEnd(22)} ${c.summary}`), "", "Make a request with /dispatch <request>. Or just type what you want, e.g. “show my jobs”, “list models”, “status”. Anything Dispatch can't match deterministically is refused unless a qualified, authorized model interpreter is configured (none is by default).", "Anything starting with “/” is a command and is never sent to a model or a shell."].join("\n");
 
 export interface ReplHooks { openDashboard(): Promise<string>; shutdown(io: Io): Promise<{ stopped: boolean; message: string }>; interpreter?: NlInterpreter }
 export type ReplResult = "detached" | "shutdown";
@@ -36,18 +38,25 @@ export class Lines {
   close() { this.rl.close(); }
 }
 
-export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; client?: DispatchClient } = {}): Promise<ReplResult> {
-  const output = opts.output ?? process.stdout; const client = opts.client ?? makeClient(c);
+export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; client?: DispatchClient; initialRequest?: string; initialFolder?: string } = {}): Promise<ReplResult> {
+  const output = opts.output ?? process.stdout;
+  let client: DispatchClient;
+  try { client = opts.client ?? makeClient(c); } catch (e) { output.write(`${sym.fail()} ${(e as Error).message}\n`); return "detached"; }
   const sessionFile = join(c.paths.home, "sessions", `${process.ppid}-${process.env.TERM_SESSION_ID ?? "tty"}.json`.replace(/[^A-Za-z0-9._-]/g, "_"));
   const session = Session.open(sessionFile, LOCAL_ACTOR);
-  const completer = (l: string): [string[], string] => { const all = COMMANDS.map((x) => `/${x.name}`); return [l.startsWith("/") ? all.filter((x) => x.startsWith(l)) : [], l]; };
+  const completer = (l: string): [string[], string] => { if (/^\/dispatch\s*$/.test(l)) return [["/dispatch "], l]; // then type your <request>
+    const all = COMMANDS.map((x) => `/${x.name}`); return [l.startsWith("/") ? all.filter((x) => x.startsWith(l)) : [], l]; };
   const lines = new Lines(opts.input ?? process.stdin, output, completer);
   // Sanitise per line: control characters (ESC sequences etc.) are stripped, but our own line breaks survive.
   const say = (s: string) => output.write(`${s.split("\n").map((l) => safe(l)).join("\n")}\n`);
   const io: Io = { out: say, ask: async (p) => (await lines.next(p)) ?? "" };
   const ex = new Executor(client, session, io);
   const show = (o: Outcome) => say(o.status === "completed" ? o.message : `${o.status === "failed" ? sym.fail() : sym.warn()} ${o.message}`);
-  say(color.dim("Type /help for commands. /exit leaves the factory running; /shutdown stops it."));
+  say(color.dim("Type /dispatch <request> to make a request, /help for commands. /exit leaves the factory running; /shutdown stops it."));
+  let folderOk = true;
+  if (opts.initialFolder) { const o = await ex.addLocalProject(opts.initialFolder); show(o); folderOk = o.status === "completed"; }
+  if (opts.initialRequest && !folderOk) say("The request was not created because the folder was not added.");
+  else if (opts.initialRequest) show(await ex.submitRequest(opts.initialRequest));
   for (;;) {
     const raw = await lines.next(session.data.activeProjectName ? `dispatch [${safe(session.data.activeProjectName).slice(0, 24)}]> ` : "dispatch> ");
     if (raw === null) { say("\nDetached; the factory keeps running."); lines.close(); return "detached"; }
@@ -60,6 +69,8 @@ export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.R
         show(await ex.execute(r.intent)); break;
       }
       case "unknown": say(`Unknown command ${safe(p.input.split(" ")[0] ?? "")}.${p.suggestions.length ? ` Did you mean ${p.suggestions.join(", ")}?` : ""} Try /help.`); break;
+      case "local-project": show(await ex.addLocalProject(p.path)); break;
+      case "request": show(await ex.submitRequest(p.text)); break;
       case "usage": say(`Usage: ${p.usage}`); break;
       case "intent": show(await ex.execute(p.intent)); break;
       case "local": {

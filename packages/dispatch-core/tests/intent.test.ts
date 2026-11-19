@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bindingFor, COMMANDS, ConfirmationStore, deterministic, interpret, parseLine, validateIntent, type Intent, type NlInterpreter } from "../src/index";
+import { bindingFor, COMMANDS, ConfirmationStore, deterministic, interpret, parseLine, shellRequestText, validateIntent, type Intent, type NlInterpreter } from "../src/index";
 
 describe("intent schema is strict and fails closed (DSP-04)", () => {
   test("every contract intent type validates; unknown types/fields, wrong types, missing fields and injection-shaped ids are rejected", () => {
@@ -14,15 +14,15 @@ describe("intent schema is strict and fails closed (DSP-04)", () => {
 describe("slash commands (COMMANDS.md)", () => {
   test("every documented command parses to a typed intent, a local action or a usage hint; none is treated as text", () => {
     const seen = new Set<string>();
-    for (const c of COMMANDS) { const line = c.usage.replace("<id>", "x1").replace("<jobId>", "j1").replace("<title>", "T").replace("[clear]", "").replace("use x1", "use x1").trim(); const p = parseLine(line); seen.add(c.name); expect(p.kind === "text" || p.kind === "unknown").toBe(false); }
-    expect(seen.size).toBe(19);
+    for (const c of COMMANDS) { const line = c.usage.replace("<id>", "x1").replace("<jobId>", "j1").replace("<folder>", "~/code/x").replace("<request>", "do a thing").replace("[clear]", "").replace("use x1", "use x1").trim(); const p = parseLine(line); seen.add(c.name); expect(p.kind === "text" || p.kind === "unknown").toBe(false); }
+    expect(seen.size).toBe(20);
   });
   test("argument handling: /project use, /new, pause/resume/cancel/approve map to the right intents; malformed arguments give usage, not execution", () => {
     expect(parseLine("/project use p-1")).toMatchObject({ kind: "intent", intent: { type: "project.select", projectId: "p-1" } });
     expect(parseLine("/project use acme/clip")).toMatchObject({ intent: { type: "project.select", projectId: "acme/clip" } });
     for (const bad of ["../x", "a/../b", "/etc", "a//b", "a/b/c", ".hidden/x", "a b/c"]) expect(parseLine(`/project use ${bad}`).kind).toBe("usage");
     expect(parseLine("/project p-1").kind).toBe("usage"); expect(parseLine("/project use").kind).toBe("usage");
-    expect(parseLine("/new Clipboard sync")).toMatchObject({ intent: { type: "project.create", title: "Clipboard sync" } });
+    expect(parseLine("/new ~/code/my notes")).toEqual({ kind: "local-project", path: "~/code/my notes" }); expect(parseLine("/project add ../x y")).toEqual({ kind: "local-project", path: "../x y" }); expect(parseLine("/new").kind).toBe("usage");
     expect(parseLine("/cancel j1")).toMatchObject({ intent: { type: "job.cancel", jobId: "j1" } }); expect(parseLine("/pause j1;id").kind).toBe("usage"); expect(parseLine("/cancel").kind).toBe("usage");
     expect(parseLine("/approve a1")).toMatchObject({ intent: { type: "approval.review", approvalId: "a1" } }); expect(parseLine("/context clear")).toMatchObject({ command: "context-clear" }); expect(parseLine("/exit now").kind).toBe("usage");
     expect(parseLine("/STATUS")).toMatchObject({ intent: { type: "factory.status" } });
@@ -31,6 +31,20 @@ describe("slash commands (COMMANDS.md)", () => {
     for (const l of ["/rm -rf /", "/statu", "/shell id", "/etc/passwd", "//", "/ exit"]) { const p = parseLine(l); expect(p.kind).toBe("unknown"); }
     expect(parseLine("/statu")).toMatchObject({ suggestions: expect.arrayContaining(["/status"]) });
     expect(parseLine("show projects").kind).toBe("text"); expect(parseLine("").kind).toBe("text");
+  });
+});
+
+describe("/dispatch <request> and the shell form", () => {
+  test("/dispatch needs text; the request is carried verbatim as data and never interpreted as a command", () => {
+    expect(parseLine("/dispatch add dark mode")).toEqual({ kind: "request", text: "add dark mode" });
+    expect(parseLine("/dispatch /cancel j1; rm -rf /")).toEqual({ kind: "request", text: "/cancel j1; rm -rf /" });
+    expect(parseLine("/dispatch").kind).toBe("usage"); expect(parseLine("/dispatch " + "x".repeat(9000)).kind).toBe("usage");
+  });
+  test("shell form: sentences are requests; a one-word near-miss of a subcommand is refused", () => {
+    expect(shellRequestText(["add", "dark", "mode"])).toEqual({ ok: true, text: "add dark mode" }); expect(shellRequestText(["refactor"])).toMatchObject({ ok: true });
+    for (const w of ["statu", "stat", "docter", "strat", "migrat"]) expect(shellRequestText([w])).toMatchObject({ ok: false, error: expect.stringContaining("mistyped") });
+    expect(shellRequestText(["statu"])).toMatchObject({ error: expect.stringContaining("dispatch status") });
+    expect(shellRequestText(["status", "page", "redesign"])).toMatchObject({ ok: true }); expect(shellRequestText([""]).ok).toBe(false); expect(shellRequestText(["x".repeat(9000)]).ok).toBe(false);
   });
 });
 
