@@ -159,3 +159,13 @@ export async function pinnedVersion(sql: Sql, jobId: string, slug: string): Prom
   const [r] = await sql`SELECT p.version_id, p.digest FROM job_skill_pins p JOIN skill_versions v ON v.id = p.version_id WHERE p.job_id = ${jobId} AND v.slug = ${slug}`;
   return r ? { versionId: r.version_id as string, digest: r.digest as string } : null;
 }
+
+/**
+ * Revocation during a run (T-09): a pin is only still usable while its exact version is approved. Revoked/rejected versions fail this check, so
+ * new tool calls under that pin stop at the next check even though the job itself keeps its pinned digest as history.
+ */
+export async function pinStillValid(sql: Sql, jobId: string, slug: string): Promise<{ valid: boolean; reason?: string }> {
+  const [r] = await sql`SELECT v.state FROM job_skill_pins p JOIN skill_versions v ON v.id = p.version_id WHERE p.job_id = ${jobId} AND v.slug = ${slug}`;
+  if (!r) return { valid: false, reason: "no pin for this skill" };
+  return r.state === "approved" ? { valid: true } : { valid: false, reason: `pinned version is ${r.state as string}` };
+}

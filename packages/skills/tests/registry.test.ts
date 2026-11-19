@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestDb } from "../../db/src/testing";
-import { activate, decideApproval, emergencyDisable, getActive, lastApprovedBefore, listTree, pinForJob, pinnedVersion, policyDigestOf, ReportSigner, RegistryError, requestApproval, revisionOf, revokeVersion, submitCandidate, validateSkillTree, type ValidationPolicy } from "../src/index";
+import { activate, decideApproval, emergencyDisable, getActive, lastApprovedBefore, listTree, pinForJob, pinnedVersion, pinStillValid, policyDigestOf, ReportSigner, RegistryError, requestApproval, revisionOf, revokeVersion, submitCandidate, validateSkillTree, type ValidationPolicy } from "../src/index";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let org = "", author = "", requester = "", approver = "", approver2 = "", viewer = "", repo = "", jobId = "";
@@ -212,5 +212,30 @@ describe("job pinning, revocation and emergency disable (T-27)", () => {
     const [v] = await db.sql`SELECT state FROM skill_versions WHERE id = ${a.c.versionId}`;
     expect(v!.state).toBe("revoked");
     await expect(db.sql`UPDATE skill_versions SET state = 'approved' WHERE id = ${a.c.versionId}`).rejects.toThrow(/illegal/);
+  });
+});
+
+describe("recovery and revocation mid-run (T-09, T-27)", () => {
+  test("concurrent identical activations with one idempotency key yield one authoritative outcome", async () => {
+    const rev = await revisionOf(db.sql, scope());
+    const a = await approved("concurrent-same-key", rev);
+    const key = idem();
+    const run = () => activate(db.sql, { organizationId: org, requestId: a.req.requestId, expectedRevision: rev, actor: "approver", idempotencyKey: key, policyDigest: PD });
+    const [x, y, z] = await Promise.all([run(), run(), run()]);
+    expect([x.revision, y.revision, z.revision]).toEqual([rev + 1, rev + 1, rev + 1]);
+    expect([x, y, z].filter((r) => !r.replayed)).toHaveLength(1);
+    expect(Number((await db.sql`SELECT count(*) AS n FROM registry_log WHERE approval_request_id = ${a.req.requestId}`)[0]!.n)).toBe(1);
+  });
+  test("revoking a version mid-run: the job keeps its pinned digest as history but its pin stops being valid for new calls", async () => {
+    const rev = await revisionOf(db.sql, scope());
+    const a = await approved("revoked-mid-run", rev); await a.act();
+    const [rq] = await db.sql`INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) VALUES (${repo}, 'api', 'e2', 'x', 'feature', 't', 'd') RETURNING id`; const [j2] = await db.sql`INSERT INTO jobs (request_id, repository_id) VALUES (${rq!.id}, ${repo}) RETURNING id`;
+    const pin = await pinForJob(db.sql, j2!.id, scope());
+    expect(await pinStillValid(db.sql, j2!.id, "story-writer")).toEqual({ valid: true });
+    await revokeVersion(db.sql, { organizationId: org, versionId: a.c.versionId, actor: "sec", reason: "cve-1", idempotencyKey: idem() });
+    expect(await pinStillValid(db.sql, j2!.id, "story-writer")).toEqual({ valid: false, reason: "pinned version is revoked" });
+    expect(await pinnedVersion(db.sql, j2!.id, "story-writer")).toEqual(pin);   // history intact
+    await expect(pinForJob(db.sql, jobId, scope())).rejects.toThrow(/no approved active version/); // new runs are blocked
+    expect(await pinStillValid(db.sql, j2!.id, "no-such-skill")).toEqual({ valid: false, reason: "no pin for this skill" });
   });
 });

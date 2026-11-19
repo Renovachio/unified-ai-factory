@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { ArchiveRejected, enumerateSkills, importArchive, importToQuarantine, InventoryError, isPrivatePath, makeWritable, previewSkillDir, type ApprovedRoot } from "../src/index";
+import { ArchiveRejected, verifyQuarantineIntact, enumerateSkills, importArchive, importToQuarantine, InventoryError, isPrivatePath, makeWritable, previewSkillDir, type ApprovedRoot } from "../src/index";
 import { makeZip } from "./zip-helper";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "inv-")));
@@ -104,3 +104,18 @@ describe("quarantine import (T-05)", () => {
 import { readdirSync } from "node:fs";
 const readdirOrEmpty = (p: string) => { try { return readdirSync(p); } catch { return []; } };
 void chmodSync;
+
+describe("TOCTOU: bytes are re-verified immediately before use", () => {
+  test("a quarantined package that is altered after approval fails closed", () => {
+    const root = mkRoot({ s: { "SKILL.md": MD("toctou-skill") } });
+    const q = join(base, `q${n++}`);
+    const imp = importToQuarantine(root, join(root.path, "s"), q);
+    expect(verifyQuarantineIntact(imp.quarantineDir, imp.digest)).toEqual({ ok: true });
+    makeWritable(imp.quarantineDir);
+    writeFileSync(join(imp.quarantineDir, "SKILL.md"), MD("toctou-skill") + "\nevil");
+    expect(verifyQuarantineIntact(imp.quarantineDir, imp.digest)).toMatchObject({ ok: false, reason: expect.stringMatching(/changed/) });
+    symlinkSync("/etc/passwd", join(imp.quarantineDir, "link"));
+    expect(verifyQuarantineIntact(imp.quarantineDir, imp.digest)).toMatchObject({ ok: false, reason: expect.stringMatching(/symlink/) });
+    makeWritable(q);
+  });
+});

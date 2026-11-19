@@ -136,3 +136,10 @@ export function importArchive(zip: Uint8Array, quarantineBase: string, scratchBa
     return importToQuarantine({ id: `upload-${basename(scratch)}`, path: scratch, scope: "upload", approvedBy: uploader }, dir, quarantineBase, known);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
+
+/** TOCTOU guard: re-hash the quarantined/approved bytes immediately before use; any change since approval fails closed. */
+export function verifyQuarantineIntact(dir: string, expectedDigest: string): { ok: boolean; reason?: string } {
+  const { entries, symlinks } = listTree(dir);
+  if (symlinks.length) return { ok: false, reason: "symlink appeared in package" };
+  return treeDigest(entries) === expectedDigest ? { ok: true } : { ok: false, reason: "package bytes changed since validation/approval" };
+}
