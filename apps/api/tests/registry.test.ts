@@ -116,6 +116,15 @@ describe("v2.2 API: import → approve → activate over HTTP (T-07, T-08, T-25)
     expect((await call("viewer", "GET", "/improvements")).status).toBe(403);
     const list = await call("editor", "GET", "/improvements"); expect(list.status).toBe(200); expect((await list.json()).items).toEqual([]);
     expect((await call("operator", "POST", "/improvements/00000000-0000-0000-0000-000000000000/experiment")).status).toBe(404);
+    expect((await call("editor", "GET", "/improvements/00000000-0000-0000-0000-000000000000")).status).toBe(404);
+    // a proposal of org A is invisible to org B
+    const [t] = await db.sql`SELECT id, digest FROM skill_versions WHERE organization_id = ${orgA} LIMIT 1`;
+    const [sig] = await db.sql`INSERT INTO improvement_signals (organization_id, kind, intent_key, evidence_digest, anonymized, opted_in) VALUES (${orgA}, 'defect', 'x', ${"sha256:" + "1".repeat(64)}, true, true) RETURNING id`;
+    const [p] = await db.sql`INSERT INTO improvement_proposals (organization_id, dedupe_key, target_digest, signal_ids, problem, hypothesis, requested_action, risk) VALUES (${orgA}, 'dk', ${t!.digest}, ${[sig!.id]}::uuid[], 'prd omits non-goals', 'add instruction', 'revise_skill', 'low') RETURNING id`;
+    const detail = await call("editor", "GET", `/improvements/${p!.id}`); expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({ id: p!.id, state: "observed", approvalPackage: null, comparison: null });
+    expect((await call("approverB", "GET", `/improvements/${p!.id}`)).status).toBe(404);
+    expect((await (await call("approverB", "GET", "/improvements")).json()).items).toEqual([]);
   });
 });
 

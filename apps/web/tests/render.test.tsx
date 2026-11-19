@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AuditTable, ErrorNote, JobsTable, PolicyPanel, safeUrl, StateBadge, Timeline, UntrustedText, UsagePanel, WorkersTable, type UsageView } from "../lib/view";
+import { AuditTable, CandidateDiff, ComparisonPanel, ImprovementsTable, SkillsTable, ErrorNote, JobsTable, PolicyPanel, safeUrl, StateBadge, Timeline, UntrustedText, UsagePanel, WorkersTable, type UsageView } from "../lib/view";
 
 const html = (n: React.ReactElement) => renderToStaticMarkup(n);
 const MONEY = /(\$\s?\d|usd|dollar|price|pricing|cost|invoice|billed|spend)/i;
@@ -68,5 +68,28 @@ describe("usage and policy views show capacity and reasons, never money", () => 
     const out = html(<WorkersTable items={[{ id: "a".repeat(36), mode: "local", status: "quarantined", heartbeatAt: null, activeLeases: 0, capabilities: { sandbox: "seatbelt", isolation: "strong" } }]} />);
     expect(out).toContain("seatbelt / strong");
     expect(out).toContain("never");
+  });
+});
+
+describe("v2.2 registry and improvement views", () => {
+  test("skills table states inactive-by-default, shows digests, and has an explicit empty state", () => {
+    const out = html(<SkillsTable items={[{ id: "1", kind: "skill", slug: "story-writer", version: "1.0.0", digest: "sha256:" + "a".repeat(64), state: "validated", active: false, createdAt: "2026-11-19T10:00:00Z" }]} />);
+    expect(out).toContain("<caption"); expect(out).toContain("inactive"); expect(out).toContain("aaaaaaaaaaaa");
+    expect(html(<SkillsTable items={[]} />)).toContain("stay inactive until an independent human approves");
+  });
+  test("a malicious diff or problem text is inert (escaped), and the diff has no clickable links", () => {
+    const evil = `+<script>alert(1)</script><a href="javascript:x">y</a>`;
+    const d = html(<CandidateDiff diff={`--- a/SKILL.md\n${evil}`} />);
+    expect(d).not.toContain("<script>"); expect(d).not.toContain("<a "); expect(d).toContain("&lt;script&gt;"); expect(d).toContain('class="add"');
+    const t = html(<ImprovementsTable items={[{ id: "12345678-aaaa-bbbb-cccc-dddddddddddd", state: "awaiting_approval", action: "revise_skill", risk: "low", problem: evil, hypothesis: "h", targetDigest: "sha256:" + "b".repeat(64), candidateDigest: null, comparisonId: null, rank: 0.1234 }]} />);
+    expect(t).not.toContain("<script>"); expect(t).toContain("untrusted input"); expect(t).toContain('href="/improvements/12345678-aaaa-bbbb-cccc-dddddddddddd"');
+  });
+  test("the comparison panel reports uncertainty and never recommends approval without a passing evaluation; no pricing appears", () => {
+    const base = { id: "c1", benchmarkDigest: "sha256:" + "c".repeat(64), evaluator: "grader:independent", metrics: { baselineMean: 0.5, candidateMean: 0.8, meanImprovement: 0.3, ciLow: -0.1, ciHigh: 0.7 }, criticalRegressions: 0, sampleSize: 6, uncertaintyNotes: "small sample widens the interval", reasons: ["sample size 6 < required 20"] };
+    const low = html(<ComparisonPanel c={{ ...base, status: "insufficient_evidence", recommendation: "do_not_recommend" }} />);
+    expect(low).toContain("approval NOT recommended"); expect(low).toContain("sample size 6 &lt; required 20"); expect(low).toContain("small sample widens the interval");
+    const ok = html(<ComparisonPanel c={{ ...base, status: "passed", recommendation: "recommend_approval", sampleSize: 40 }} />);
+    expect(ok).toContain("approval may be recommended"); expect(ok).not.toMatch(MONEY);
+    expect(html(<ComparisonPanel c={null} />)).toContain("No independent evaluation");
   });
 });

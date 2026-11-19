@@ -185,6 +185,23 @@ export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: H
     // redacted view: no raw signal ids or evidence, only what a reviewer needs
     return { status: 200, body: { items: items.map((p) => ({ id: p.id, state: p.state, action: p.requestedAction, risk: p.risk, problem: p.problem, hypothesis: p.hypothesis, targetDigest: p.targetDigest, candidateDigest: p.candidateDigest, comparisonId: p.comparisonId, rollbackRule: p.rollbackRule, rank: p.rankScore })) } };
   } },
+  { method: "GET", pattern: /^\/improvements\/[^/]+$/, handler: async ({ req, sql, actor }) => {
+    require_(actor, "improvement:read");
+    const id = segs(req)[2] as string;
+    if (!uuid.test(id)) throw problems.notFound("proposal not found");
+    const [p] = await sql`SELECT * FROM improvement_proposals WHERE id = ${id} AND organization_id = ${actor.orgId}`;
+    if (!p) throw problems.notFound("proposal not found");
+    const [pkg] = await sql`SELECT detail, evaluator, benchmark_digest, created_at FROM experiment_ledger WHERE proposal_id = ${id} AND event = 'approval_package' ORDER BY id DESC LIMIT 1`;
+    const [cmp] = p.comparison_id ? await sql`SELECT status, benchmark_digest, policy_digest, evaluator, report, created_at FROM eval_comparisons WHERE id = ${p.comparison_id as string} AND organization_id = ${actor.orgId}` : [undefined];
+    const rep = cmp?.report as { metrics?: Record<string, number>; criticalRegressions?: number; sampleSize?: number; uncertaintyNotes?: string; reasons?: string[]; recommendation?: string } | undefined;
+    const events = await sql`SELECT event, evaluator, created_at FROM experiment_ledger WHERE proposal_id = ${id} ORDER BY id`;
+    return { status: 200, body: {
+      id: p.id, state: p.state, action: p.requested_action, risk: p.risk, problem: p.problem, hypothesis: p.hypothesis, targetDigest: p.target_digest, candidateDigest: p.candidate_digest, rollbackRule: p.rollback_rule,
+      approvalPackage: pkg ? (pkg.detail as { package: unknown }).package : null,
+      comparison: cmp && rep ? { id: p.comparison_id, status: cmp.status, benchmarkDigest: cmp.benchmark_digest, policyDigest: cmp.policy_digest, evaluator: cmp.evaluator, metrics: rep.metrics ?? {}, criticalRegressions: rep.criticalRegressions ?? 0, sampleSize: rep.sampleSize ?? 0, uncertaintyNotes: rep.uncertaintyNotes ?? "", reasons: rep.reasons ?? [], recommendation: rep.recommendation ?? "do_not_recommend" } : null,
+      ledger: events.map((e) => ({ event: e.event, evaluator: e.evaluator ?? null, at: new Date(e.created_at as string).toISOString() })),
+    } };
+  } },
   { method: "POST", pattern: /^\/improvements\/[^/]+\/experiment$/, handler: async ({ req, sql, actor, mutating, key }) => {
     require_(actor, "improvement:experiment"); mutating(); const k = key();
     const id = segs(req)[2] as string;

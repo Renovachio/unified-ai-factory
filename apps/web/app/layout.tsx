@@ -4,7 +4,7 @@ import { signOut } from "./actions";
 
 export const metadata = { title: "Unified AI Factory", description: "Operator dashboard" };
 
-const NAV = [["/", "Overview"], ["/jobs", "Jobs"], ["/inbox", "Inbox"], ["/workers", "Workers"], ["/policies", "Policies"], ["/usage", "Usage & capacity"], ["/auto-merge", "Auto-merge"], ["/audit", "Audit"]] as const;
+const NAV = [["/", "Overview"], ["/jobs", "Jobs"], ["/inbox", "Inbox"], ["/workers", "Workers"], ["/policies", "Policies"], ["/usage", "Usage & capacity"], ["/skills", "Skills & agents"], ["/improvements", "Improvements"], ["/auto-merge", "Auto-merge"], ["/audit", "Audit"]] as const;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

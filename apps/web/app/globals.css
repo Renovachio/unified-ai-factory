@@ -13,3 +13,8 @@ table { width: 100%; border-collapse: collapse; } th, td { text-align: left; pad
 .timeline .src { color: var(--muted); font-size: .8rem; min-width: 6rem; } pre { white-space: pre-wrap; word-break: break-word; background: var(--card); padding: .5rem; border-radius: 6px; overflow: auto; }
 pre.untrusted { border-left: 4px solid var(--warn); } .note, .empty { color: var(--muted); } .error { border: 1px solid var(--bad); padding: .75rem; border-radius: 6px; }
 form.inline { display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; } input, textarea, button { font: inherit; padding: .35rem .5rem; } button { cursor: pointer; }
+
+.diff { white-space: pre-wrap; overflow-x: auto; }
+.diff .add { background: #e6ffed; color: #033a16; }
+.diff .del { background: #ffeef0; color: #5c0b14; }
+@media (prefers-color-scheme: dark) { .diff .add { background: #0f2e1a; color: #aff5c0; } .diff .del { background: #3a1217; color: #ffb3bb; } }
