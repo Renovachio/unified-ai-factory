@@ -35,7 +35,7 @@ async function call(sub: string | null, method: string, path: string, body?: unk
   const headers: Record<string, string> = {};
   if (sub) headers.authorization = `Bearer ${await tok(sub)}`;
   if (o.key !== null && method === "POST") headers["idempotency-key"] = o.key ?? `k-${++n}-${crypto.randomUUID()}`;
-  let payload: BodyInit | undefined;
+  let payload: string | Buffer | undefined;
   if (o.zip) { headers["content-type"] = "application/zip"; payload = o.zip; } else if (body !== undefined) { headers["content-type"] = "application/json"; payload = JSON.stringify(body); }
   return api(new Request(`http://api.test/api/v2${path}`, { method, headers, ...(payload ? { body: payload } : {}) })) as Promise<R>;
 }
