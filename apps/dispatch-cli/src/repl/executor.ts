@@ -33,13 +33,13 @@ export class Executor {
   }
 
   async execute(intent: Intent): Promise<Outcome> {
-    try { return await this.run(intent); }
-    catch (e) {
+    try { return await this.run(intent); } catch (e) { return this.explain(e); }
+  }
+  private explain(e: unknown): Outcome {
       if (e instanceof OutcomeUnknown) return { status: "failed", reasonCode: "outcome-unknown", message: `The request may or may not have been applied (${e.message}). Check /jobs before retrying.` };
       if (e instanceof StaleRevision) return { status: "blocked", reasonCode: "stale-revision", message: "That item changed since you last looked. Refresh with /jobs and try again." };
       if (e instanceof ApiError) return e.status === 403 ? blocked("forbidden", "You are not permitted to do that.") : e.status === 404 ? blocked("not-found", "Not found, or not visible to you.") : { status: "failed", reasonCode: `http-${e.status}`, message: `${e.title}${e.detail ? `: ${e.detail}` : ""}` };
-      return { status: "failed", reasonCode: "unavailable", message: `The factory is not reachable (${(e as Error).message}). Run \`dispatch status\`.` };
-    }
+    return { status: "failed", reasonCode: "unavailable", message: `The factory is not reachable (${(e as Error).message}). Run \`dispatch status\`.` };
   }
 
   private async jobs(): Promise<JobView[]> { const s = await this.c.snapshot(); return s.jobs; }
@@ -58,10 +58,7 @@ export class Executor {
         this.session.setProject(hit.id, hit.name); return done(`Active project: ${hit.name}`);
       }
       case "project.create": return blocked("project-not-linked", "Creating a project requires linking a repository, which needs the GitHub App (not configured here). Use the dashboard once a repository is connected.");
-      case "job.create": {
-        const pid = await this.activeProject() ?? i.projectId; const m = this.c.mutation("POST", "/api/v1/jobs", { repositoryId: pid, request: { type: "feature", title: i.request.slice(0, 120), description: i.request, sourceId: `dispatch-${this.session.id}-${m_counter()}` } });
-        const r = await this.c.send<{ jobId: string; state: string }>(m); return done(`Job ${r.jobId.slice(0, 8)} created (${r.state}).`);
-      }
+      case "job.create": return this.createJob(await this.activeProject() ?? i.projectId, i.request);
       case "job.pause": case "job.resume": case "job.cancel": return this.jobAction(i);
       case "approval.review": return this.reviewApproval(i.approvalId);
       case "capability.list": return this.capabilities(i.category);
@@ -69,6 +66,24 @@ export class Executor {
     }
   }
 
+  /** `/dispatch <request>`: pick the project (active one; else the only one; else ask), then create the request through the normal idempotent job API. */
+  async submitRequest(text: string): Promise<Outcome> {
+    try {
+      let pid = await this.activeProject();
+      if (!pid) {
+        const ps = (await this.c.get<{ items: Array<{ id: string; name: string }> }>("/api/v2/dispatch/projects")).items;
+        if (ps.length === 0) return blocked("no-project", "There is no project to put this request in yet. A project is a linked repository, which needs the GitHub App (not configured here), so nothing was created.");
+        if (ps.length > 1) return { status: "needs-input", message: `Which project? Choose one with /project use <id|owner/name>, then repeat the request:\n${ps.slice(0, 8).map((p) => `  ${p.id.slice(0, 8)}  ${p.name}`).join("\n")}` };
+        const only = ps[0]; if (!only) return blocked("no-project", "No project."); pid = only.id; this.session.setProject(only.id, only.name);
+      }
+      return await this.createJob(pid, text);
+    } catch (e) { return this.explain(e); }
+  }
+  private async createJob(projectId: string, text: string): Promise<Outcome> {
+    const m = this.c.mutation("POST", "/api/v1/jobs", { repositoryId: projectId, request: { type: "feature", title: text.slice(0, 120), description: text, sourceId: `dispatch-${this.session.id}-${m_counter()}` } });
+    const r = await this.c.send<{ jobId: string; state: string }>(m);
+    return done(`Request created: job ${r.jobId.slice(0, 8)} (${r.state}). It will wait in the queue until a worker with a qualified, authorized model is available; check /jobs.`);
+  }
   private async jobAction(i: Extract<Intent, { type: "job.pause" | "job.resume" | "job.cancel" }>): Promise<Outcome> {
     const r = resolveJob(await this.jobs(), i.jobId); if (!r.ok) return { status: "needs-input", message: r.message };
     const j = r.item; const verb = i.type.split(".")[1] as "pause" | "resume" | "cancel";

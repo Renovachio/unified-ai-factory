@@ -55,6 +55,7 @@ Needs macOS (Apple silicon) and PostgreSQL 17 (`brew install postgresql@17`); Bu
 | Command | Meaning |
 |---|---|
 | `dispatch` / `--no-browser` | start or attach (idempotent, lock-protected), open the dashboard, enter the prompt |
+| `dispatch <request>` / `/dispatch <request>` | same, plus create a new request in the active (or only) project |
 | `dispatch start` / `status` / `doctor` | start missing services / report real health / diagnose without changing anything |
 | `dispatch stop [--yes]` / `migrate` | stop only services Dispatch owns, warning about in-flight jobs / apply pending migrations explicitly |
 | `/help /jobs /status /projects /project use /models /skills /agents /approvals /approve /pause /resume /cancel /logs /dashboard /context /exit /shutdown` | inside the prompt; `/exit` detaches and leaves jobs running |

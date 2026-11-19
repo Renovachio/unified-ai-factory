@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { shellRequestText } from "@factory/dispatch-core";
 import { runRepl } from "./repl/repl";
 import { getSummary } from "./launcher/api";
 import { cmdDoctor, cmdMigrate, cmdStart, cmdStatus, cmdStop, launchBrowser, startFactory } from "./commands/lifecycle";
@@ -11,6 +12,7 @@ export const HELP = `${HEADER()}
 
 Usage:
   dispatch                 start or attach to the factory, open the dashboard, enter the interactive prompt
+  dispatch <request>       same, and create a new request (e.g. dispatch add dark mode to settings)
   dispatch --no-browser    same, without opening a browser
   dispatch start           start missing managed services, then exit
   dispatch status          show real service health and job summary (read-only)
@@ -32,14 +34,19 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "doctor") return cmdDoctor();
   if (cmd === "stop") return cmdStop(rest);
   if (cmd === "migrate") return cmdMigrate(rest);
-  if (cmd !== undefined && cmd !== "--no-browser") { console.error(`${sym.fail()} unknown command "${cmd.slice(0, 40)}". Try \`dispatch --help\`.`); return 2; }
-  // Default: start or attach, then browser, then the interactive prompt (DSP-03).
-  const noBrowser = cmd === "--no-browser" || rest.includes("--no-browser");
+  const noBrowser = argv.includes("--no-browser");
+  const words = argv.filter((a) => a !== "--no-browser");
+  if (words.some((w) => w.startsWith("-"))) { console.error(`${sym.fail()} unknown option "${(words.find((w) => w.startsWith("-")) ?? "").slice(0, 40)}". Try \`dispatch --help\`.`); return 2; }
+  // `dispatch <words>` is a request. Validate it BEFORE starting anything so a typo costs nothing.
+  const req = words.length ? shellRequestText(words) : null;
+  if (req && !req.ok) { console.error(`${sym.fail()} ${req.error}`); return 2; }
   const c = makeCtx({ create: true });
   console.log(HEADER());
+  const before = await c.lifecycle.status(); const wasRunning = before.services.find((x) => x.name === "api")?.state === "ready";
   const r = await startFactory(c);
   if (!r.ok) { console.error(`\n${sym.fail()} Factory failed to start. Run \`dispatch doctor\`, fix the cause, then run \`dispatch\` again.`); return 1; }
-  if (!noBrowser && c.cfg.browser.open) await launchBrowser(c, r.services);
+  // Plain `dispatch` always opens the dashboard; with a request it opens only when this invocation started the factory.
+  if (!noBrowser && c.cfg.browser.open && (!req || !wasRunning)) await launchBrowser(c, r.services);
   const stopFlow = async (io: { out(s: string): void; ask(p: string): Promise<string> }) => {
     const st = await c.lifecycle.status(); const api = st.services.find((x) => x.name === "api"); let inFlight = 0;
     if (api?.state === "ready") { const sm = await getSummary(c.cfg, c.paths); if (!sm.ok) return { stopped: false, message: `${sym.fail()} Cannot determine active jobs (${safe(sm.error)}); not shutting down.` }; inFlight = sm.data.jobs.inFlight; }
@@ -48,10 +55,11 @@ export async function main(argv: string[]): Promise<number> {
     const r = await c.lifecycle.stop({ confirmed: true, activeJobs: inFlight });
     return { stopped: true, message: r.results.length ? r.results.map((x) => `${x.name}: ${x.action}`).join(", ") : "Nothing owned by Dispatch was running." };
   };
+  const initial = req && req.ok ? req.text : undefined;
   const result = await runRepl(c, {
     openDashboard: async () => { const st = await c.lifecycle.status(); await launchBrowser(c, st.services); return ""; },
     shutdown: stopFlow,
-  });
+  }, initial ? { initialRequest: initial } : {});
   void result; // both ending a session (detach) and a confirmed shutdown exit cleanly
   return 0;
 }

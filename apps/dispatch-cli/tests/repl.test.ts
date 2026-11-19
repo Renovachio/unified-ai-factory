@@ -27,9 +27,9 @@ const client = () => new DispatchClient({ baseUrl: base, headers: () => ({ autho
 const ctx = () => ({ paths: { home }, cfg: {}, env: {} }) as unknown as Ctx;
 async function seedJob(title: string, repo = repoId): Promise<string> { return (await db.sql`WITH q AS (INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) VALUES (${repo}, 'api', ${"s" + n++}, 'x', 'feature', ${title}, 'd') RETURNING id) INSERT INTO jobs (request_id, repository_id) SELECT id, ${repo} FROM q RETURNING id`)[0]?.id as string; }
 const hooks = (log: string[] = [], stopAnswer = false): ReplHooks => ({ openDashboard: async () => "dashboard opened", shutdown: async (io) => { const a = await io.ask("Type “shutdown”: "); log.push(a); return a === "shutdown" || stopAnswer ? { stopped: true, message: "stopped" } : { stopped: false, message: "Not stopped." }; } });
-async function session(lines: string[], h = hooks()): Promise<{ out: string; result: string }> {
+async function session(lines: string[], h = hooks(), extra: { initialRequest?: string } = {}): Promise<{ out: string; result: string }> {
   const input = new PassThrough(); const output = new PassThrough(); let out = ""; output.on("data", (d) => (out += String(d)));
-  const p = runRepl(ctx(), h, { input, output, client: client() }); for (const l of lines) input.write(l + "\n"); input.end(); const result = await p; return { out, result };
+  const p = runRepl(ctx(), h, { input, output, client: client(), ...extra }); for (const l of lines) input.write(l + "\n"); input.end(); const result = await p; return { out, result };
 }
 
 describe("interactive REPL against the real API (DSP-03/06/08)", () => {
@@ -94,5 +94,27 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
   });
   test("project.create is honestly blocked (no repository link), not faked", async () => {
     const r = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).execute({ type: "project.create", title: "X" }); expect(r).toMatchObject({ status: "blocked", reasonCode: "project-not-linked" });
+  });
+
+  test("/dispatch <request> creates a job in the active project; the text is stored verbatim as untrusted data, not run", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session([`/project use ${repoId.slice(0, 8)}`, "/dispatch add dark mode; rm -rf / /cancel everything", "/exit"]);
+    expect(out).toContain("Request created: job"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before + 1);
+    const r = (await db.sql`SELECT description FROM requests ORDER BY created_at DESC LIMIT 1`)[0]; expect(r?.description).toBe("add dark mode; rm -rf / /cancel everything");
+  });
+  test("with exactly one project and none selected, /dispatch uses it; the shell form (initialRequest) does the same, then the prompt is usable", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session(["/context", "/exit"], hooks(), { initialRequest: "write the release notes" });
+    expect(out).toContain("Request created: job"); expect(out).toContain("Active project: acme/clip"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before + 1);
+  });
+  test("with several projects and none selected it asks which one and creates nothing; with no project it says so", async () => {
+    const [o] = await db.sql`SELECT id FROM organizations WHERE name = 'Dispatch (local)'`; const [r2] = await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${o?.id}, 'github', 'second', 'acme', 'other') RETURNING id`;
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session(["/context clear", "/dispatch do something", "/exit"]); expect(out).toContain("Which project?"); expect(out).toContain("acme/other"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before);
+    await db.sql`DELETE FROM repositories WHERE id = ${r2?.id}`;
+    const none = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).submitRequest("x"); expect(none.status === "completed" || none.status === "blocked").toBe(true);
+  });
+  test("/dispatch with no text shows usage and creates nothing", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c); const { out } = await session(["/dispatch", "/exit"]); expect(out).toContain("Usage: /dispatch <request>"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before);
   });
 });

@@ -68,7 +68,7 @@ describe("command box only navigates", () => {
     expect(routeCommand("list skills")).toEqual({ to: "/skills" }); expect(routeCommand("/status")).toEqual({ to: "/" }); expect(routeCommand("/logs abc12345")).toEqual({ to: "/logs?job=abc12345" }); expect(routeCommand("/project use p-1")).toEqual({ to: "/projects/p-1" });
   });
   test("mutating, destructive, unknown and unrecognised input never execute and never navigate to an attacker-chosen URL", () => {
-    for (const t of ["/cancel j1", "/pause j1", "/resume j1", "/approve a1", "/new Thing"]) expect(routeCommand(t)).toHaveProperty("notice");
+    for (const t of ["/cancel j1", "/pause j1", "/resume j1", "/approve a1", "/new Thing", "/dispatch add dark mode"]) expect(routeCommand(t)).toHaveProperty("notice");
     expect(routeCommand("/cancel j1")).toMatchObject({ notice: expect.stringContaining("not run from this box") });
     for (const t of ["/rm -rf /", "https://evil.example", "//evil.example", "javascript:alert(1)", "pause the clipboard job", "stop everything", "/exit", "/shutdown", ""]) expect(routeCommand(t)).toHaveProperty("notice");
     const r = routeCommand("/project use ../../evil"); expect(r).toHaveProperty("notice");

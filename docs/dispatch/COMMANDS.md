@@ -1,10 +1,11 @@
 # Dispatch commands
 
-Outside the prompt: `dispatch` (start/attach, open dashboard unless `--no-browser`, enter the prompt), `start`, `status`, `doctor`, `stop [--yes]`, `migrate [--yes]`, `--help`, `--version`.
+Outside the prompt: `dispatch` (start/attach, open dashboard unless `--no-browser`, enter the prompt), **`dispatch <request>`** (same, then create a request, e.g. `dispatch add dark mode to settings`; the dashboard opens only if this call started the factory; a one-word near-miss of a subcommand such as `dispatch statu` is refused instead of becoming a request), `start`, `status`, `doctor`, `stop [--yes]`, `migrate [--yes]`, `--help`, `--version`.
 (On macOS the program is `dispatch`, not `/dispatch`, which would address the filesystem root.)
 
-Inside the prompt: `/help /new /projects /project use <id|owner/name> /jobs /status /models /skills /agents /approvals /approve <id> /pause <id> /resume <id> /cancel <id> /logs <id> /dashboard /context [clear] /exit /shutdown`.
+Inside the prompt: `/dispatch <request>` (tab completes `/dispatch `), `/help /new /projects /project use <id|owner/name> /jobs /status /models /skills /agents /approvals /approve <id> /pause <id> /resume <id> /cancel <id> /logs <id> /dashboard /context [clear] /exit /shutdown`.
 
+- A request goes to the active project; if none is selected and exactly one project exists it is used; with several you are asked to choose (`/project use`); with none nothing is created. The text is stored verbatim as untrusted data. The job then waits in `QUEUED` until a worker with a qualified, authorized model exists (none does yet).
 - A job reference is a full id, a unique id prefix (6+ chars) or a unique title fragment. Anything ambiguous lists the candidates and does nothing.
 - `/cancel` and `/approve` ask for a separate typed confirmation that is bound to the revision you were shown; if the job changed meanwhile nothing happens.
 - `/exit` (or Ctrl-D) detaches and leaves the factory and its jobs running. `/shutdown` stops only services Dispatch started, after warning about in-flight jobs.

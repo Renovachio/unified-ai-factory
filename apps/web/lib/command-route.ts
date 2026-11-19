@@ -30,6 +30,7 @@ export function routeCommand(text: string): Route {
       if (d && "ambiguous" in d) return { notice: d.ambiguous };
       return d ? routeIntent(d) : { notice: "I only understand a fixed set of phrases here (no model is qualified). Try /help." };
     }
+    case "request": return { notice: "Creating a request changes state, so it is not run from this box. Use `dispatch <request>` or /dispatch <request> in the terminal." };
     case "unknown": return { notice: `Unknown command. ${p.suggestions.length ? `Did you mean ${p.suggestions.join(", ")}? ` : ""}Try /help.` };
     case "usage": return { notice: `Usage: ${p.usage}` };
     case "intent": return routeIntent(p.intent);
