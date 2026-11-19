@@ -6,7 +6,9 @@ import { receiveGitHubWebhook } from "@factory/scm";
 import { assertCsrf, require_, resolveActor, type Actor, type Authenticator } from "./auth";
 import { readJson, readRaw } from "./body";
 import { cancelJob, createJob, getJob, listEvents, listJobs, requireIdempotencyKey, type JsonResult } from "./jobs";
+import { pauseJob, quarantineJob, releaseQuarantine, resumeJob, workerAction } from "./operator";
 import { ApiProblem, problemResponse, problems, SECURITY_HEADERS } from "./problem";
+import { jobTimeline, listArtifacts, listAudit, listWorkers, policyView, usageReport } from "./readmodels";
 import { RateLimiter } from "./ratelimit";
 
 export interface ApiConfig {
@@ -58,6 +60,34 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       if (r.status === "rejected") throw r.reason === "bad-signature" ? problems.unauthorized("invalid webhook signature") : problems.badRequest(`webhook rejected: ${r.reason}`);
       return json({ status: 202, body: { status: r.status } });
     }
+    if (path === `${BASE}/session`) {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      const a = await authn(req);
+      return json({ status: 200, body: { userId: a.userId, role: a.role, via: a.via, csrf: a.csrf ?? null } });
+    }
+    if (path === `${BASE}/usage`) {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      const a = await authn(req); require_(a, "usage:read");
+      return json({ status: 200, body: await usageReport(cfg.sql, a, url.searchParams) });
+    }
+    if (path === `${BASE}/audit`) {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      const a = await authn(req); require_(a, "audit:read");
+      return json({ status: 200, body: await listAudit(cfg.sql, a, url.searchParams) });
+    }
+    if (path === `${BASE}/workers`) {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      const a = await authn(req); require_(a, "worker:read");
+      return json({ status: 200, body: await listWorkers(cfg.sql, a) });
+    }
+    const wk = /^\/api\/v1\/workers\/([^/]+)\/(drain|quarantine|activate)$/.exec(path);
+    if (wk) {
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      const a = await authn(req); require_(a, "worker:manage"); mutating(req, a);
+      const { value } = await readJson(req, maxBody);
+      const r = await workerAction(cfg.sql, a, wk[1] as string, wk[2] as string, value);
+      return json(r);
+    }
     if (!path.startsWith(`${BASE}/jobs`)) throw problems.notFound("no such route");
     const rest = path.slice(`${BASE}/jobs`.length);
     const actor = await authn(req);
@@ -102,6 +132,20 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       requireIdempotencyKey(req);
       const { value } = await readJson(req, maxBody);
       return json(await cancelJob(cfg.sql, actor, id, value));
+    }
+    if (seg.length === 2 && (seg[1] === "timeline" || seg[1] === "artifacts" || seg[1] === "policy")) {
+      if (m !== "GET") throw problems.methodNotAllowed(["GET"]);
+      require_(actor, "job:read");
+      const body = seg[1] === "timeline" ? await jobTimeline(cfg.sql, actor, id, url.searchParams) : seg[1] === "artifacts" ? await listArtifacts(cfg.sql, actor, id, url.searchParams) : await policyView(cfg.sql, actor, id);
+      return json({ status: 200, body });
+    }
+    if (seg.length === 2 && ["pause", "resume", "quarantine", "release"].includes(seg[1] as string)) {
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      const perm = seg[1] === "pause" ? "job:pause" : seg[1] === "resume" ? "job:resume" : seg[1] === "quarantine" ? "job:quarantine" : "job:quarantine-release";
+      require_(actor, perm); mutating(req, actor);
+      const { value } = await readJson(req, maxBody);
+      const fn = { pause: pauseJob, resume: resumeJob, quarantine: quarantineJob, release: releaseQuarantine }[seg[1] as "pause"];
+      return json(await fn(cfg.sql, actor, id, value));
     }
     if (seg.length === 2 && seg[1] === "decisions") {
       if (m !== "POST") throw problems.methodNotAllowed(["POST"]);

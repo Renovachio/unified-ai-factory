@@ -7,16 +7,16 @@ export const ROLES = ["viewer", "editor", "operator", "approver", "admin", "secu
 export type Role = (typeof ROLES)[number];
 
 export type Permission =
-  | "job:read" | "job:create" | "job:feedback" | "job:cancel" | "job:resume" | "job:decide" | "worker:read" | "job:quarantine-release" | "audit:read";
+  | "job:read" | "job:create" | "job:feedback" | "job:cancel" | "job:resume" | "job:decide" | "job:pause" | "job:quarantine" | "worker:read" | "worker:manage" | "job:quarantine-release" | "audit:read" | "usage:read";
 
 /** Deny-by-default permission matrix (blueprint section 10 / 14). */
 export const PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
   viewer: new Set(["job:read"]),
   editor: new Set(["job:read", "job:create", "job:feedback"]),
-  operator: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "worker:read"]),
+  operator: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:pause", "job:quarantine", "worker:read", "worker:manage", "usage:read"]),
   approver: new Set(["job:read", "job:decide"]),
-  admin: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:decide", "worker:read", "audit:read"]),
-  security_officer: new Set(["job:read", "job:cancel", "job:quarantine-release", "audit:read"]),
+  admin: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:decide", "job:pause", "job:quarantine", "worker:read", "worker:manage", "audit:read", "usage:read"]),
+  security_officer: new Set(["job:read", "job:cancel", "job:quarantine", "job:quarantine-release", "worker:read", "worker:manage", "audit:read", "usage:read"]),
 };
 
 export interface Actor {
