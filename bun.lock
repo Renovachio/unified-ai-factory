@@ -169,6 +169,7 @@
       "dependencies": {
         "@factory/domain": "workspace:*",
         "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
       },
     },
     "packages/scheduler": {
@@ -189,6 +190,17 @@
         "@factory/sandboxes": "workspace:*",
         "@factory/telemetry": "workspace:*",
         "zod": "4.6.7",
+      },
+    },
+    "packages/secrets": {
+      "name": "@factory/secrets",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+        "@factory/telemetry": "workspace:*",
       },
     },
     "packages/telemetry": {
@@ -244,6 +256,8 @@
     "@factory/scheduler": ["@factory/scheduler@workspace:packages/scheduler"],
 
     "@factory/scm": ["@factory/scm@workspace:packages/scm"],
+
+    "@factory/secrets": ["@factory/secrets@workspace:packages/secrets"],
 
     "@factory/telemetry": ["@factory/telemetry@workspace:packages/telemetry"],
 

@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "note": "Cloud execution is OPT-IN and disabled by default. Enabling it is an operator decision (enabledBy/enabledOn) and requires pinned image digests, an attestation key and explicit infrastructure limits. Cloud workers never receive subscription credentials or model API keys: they may only run self-hosted models.",
+  "enabled": false,
+  "operatorEnablement": null,
+  "images": { "allowedDigests": [] },
+  "attestation": { "maxAgeSeconds": 300, "providerPublicKeyPem": null },
+  "limits": { "maxConcurrentSandboxes": 2, "maxSandboxSecondsPerDay": 3600, "maxWallSecondsPerSandbox": 900, "maxMemoryMb": 4096, "maxCpuCores": 2, "maxDiskMb": 2048, "sandboxTtlSeconds": 1800 },
+  "egress": { "allowedHosts": [], "deniedCidrs": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10", "0.0.0.0/8", "::1/128", "fc00::/7", "fe80::/10"], "deniedHostnames": ["metadata.google.internal", "metadata", "instance-data", "kubernetes.default.svc"] }
+}
