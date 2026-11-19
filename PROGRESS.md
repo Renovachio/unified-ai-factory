@@ -1,6 +1,6 @@
 # Execution progress
 
-This is a specification package. No engineering work orders have been implemented. Only change status after objective acceptance evidence.
+All 25 work orders are implemented, each with a report in `evidence/<ID>/report.md`, CI green on its candidate SHA. Status suffixes state what was NOT verified live (`MOCK_ONLY`, `FAKE_CLI_BLOCKED_LIVE`, `SIMULATED_PROVIDER`, `INERT_BY_DEFAULT`). "Accepted by: operator (continue-plan instruction)" means the operator told the agent to continue the plan; it is NOT an independent code review. Open operator actions and known limits: `docs/operator/OPEN_ACTIONS.md`.
 
 | Task | Status | Evidence | Accepted by |
 |---|---|---|---|

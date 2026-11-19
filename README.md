@@ -13,4 +13,4 @@ This is an **implementation specification and task execution scaffold**, not a f
 `SECURITY.md` and `AGENTS.md` are hard constraints. `CONTRACTS/` sets interface shapes. `TASKS/` sets work-order scope. The blueprint is explanatory where not in conflict. If instructions disagree, stop and log an ADR: never weaken safeguards.
 
 ## Status
-Specification-ready for supervised execution; application not yet implemented or tested. Provider CLI compatibility and legal reuse permission require operator verification.
+All 25 work orders are implemented and CI-green (see `PROGRESS.md` and `evidence/`). It is **not production-ready**: live GitHub App, subscription CLI, cloud and pilot verification are open operator actions listed in `docs/operator/OPEN_ACTIONS.md`. Provider CLI compatibility and legal reuse permission require operator verification.
