@@ -21,7 +21,7 @@ export type BodyAuthor = (spec: SkillSpec) => Promise<string> | string;
 export const templateAuthor: BodyAuthor = (s) => `# ${s.slug}\n\nUse when: ${s.triggers.join("; ")}.\n\n## Steps\n${s.steps.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\n## Output\nProduce: ${s.produces.join(", ")}. Cite the provenance of every nontrivial claim and list assumptions and open questions.\n`;
 
 export class CreatorError extends Error { constructor(readonly code: "LIVE_ROOT" | "BAD_SPEC" | "NOT_ISOLATED", m: string) { super(m); this.name = "CreatorError"; } }
-const q = (s: string) => (/[:#\[\]{},&*!|>'"%@`]/.test(s) ? JSON.stringify(s) : s);
+const q = (s: string) => (/[:#[\]{},&*!|>'"%@`]/.test(s) ? JSON.stringify(s) : s);
 const list = (xs: string[]) => `[${xs.map(q).join(", ")}]`;
 
 export interface CandidateResult { dir: string; digest: string; files: TreeEntry[]; report: ValidationReport; status: "READY_FOR_SUBMISSION" | "REJECTED_BY_VALIDATION" }
