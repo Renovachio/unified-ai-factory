@@ -26,6 +26,7 @@
         "@factory/improvements": "workspace:*",
         "@factory/intake": "workspace:*",
         "@factory/orchestrator": "workspace:*",
+        "@factory/product": "workspace:*",
         "@factory/sandboxes": "workspace:*",
         "@factory/scheduler": "workspace:*",
         "@factory/scm": "workspace:*",
@@ -192,6 +193,15 @@
         "@factory/telemetry": "workspace:*",
       },
     },
+    "packages/product": {
+      "name": "@factory/product",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/skills": "workspace:*",
+        "postgres": "4.1.1",
+      },
+    },
     "packages/runtimes": {
       "name": "@factory/runtimes",
       "version": "0.0.0",
@@ -305,6 +315,8 @@
     "@factory/intake": ["@factory/intake@workspace:packages/intake"],
 
     "@factory/orchestrator": ["@factory/orchestrator@workspace:packages/orchestrator"],
+
+    "@factory/product": ["@factory/product@workspace:packages/product"],
 
     "@factory/runner": ["@factory/runner@workspace:apps/runner"],
 

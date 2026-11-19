@@ -7,6 +7,8 @@ import { require_, type Actor } from "./auth";
 import { readJson } from "./body";
 import type { JsonResult } from "./jobs";
 import { ApiProblem, problems } from "./problem";
+import { approveArtifact, ArtifactError, createDraft, getArtifact, handoffPayload, HandoffBlocked, ProvenanceError, submitForReview, type ArtifactKind } from "@factory/product";
+import { createJob } from "./jobs";
 
 export interface SkillsConfig {
   quarantineDir: string; scratchDir: string;
@@ -16,6 +18,7 @@ export interface SkillsConfig {
   /** Max accepted archive upload. */
   maxArchiveBytes?: number;
 }
+const segs = (req: Request): string[] => new URL(req.url).pathname.slice("/api/v2".length).split("/"); // ["", "approvals", id, "decision"]
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OPS = new Set(["activate", "upgrade", "revoke", "rollback", "grant_permission"]);
 
@@ -43,7 +46,57 @@ type Handler = (a: { req: Request; sql: Sql; actor: Actor; cfg: SkillsConfig | u
 async function body(req: Request, max: number): Promise<Record<string, unknown>> { const { value } = await readJson(req, max); if (!value || typeof value !== "object" || Array.isArray(value)) throw problems.unprocessable("body must be an object"); return value as Record<string, unknown>; }
 const str = (b: Record<string, unknown>, k: string, re?: RegExp): string => { const v = b[k]; if (typeof v !== "string" || (re && !re.test(v))) throw problems.unprocessable(`${k} is missing or malformed`); return v; };
 
+const KINDS = new Set(["meeting", "research", "prd", "epic", "story", "roadmap", "analytics", "decision", "action"]);
+function artifactProblem(e: unknown): ApiProblem | null {
+  if (e instanceof ProvenanceError) return new ApiProblem({ status: 422, code: `provenance-${e.code.toLowerCase()}`, title: "Unprocessable Content", detail: e.message });
+  if (e instanceof HandoffBlocked) return new ApiProblem({ status: 423, code: "approval-missing", title: "Locked", detail: e.message });
+  if (e instanceof ArtifactError) {
+    if (e.code === "NOT_FOUND") return problems.notFound("artifact not found");
+    if (e.code === "DIGEST_MISMATCH") return new ApiProblem({ status: 412, code: "digest-mismatch", title: "Precondition Failed", detail: e.message });
+    if (e.code === "SELF_APPROVAL") return problems.forbidden(e.message);
+    return problems.conflict(e.code.toLowerCase(), e.message);
+  }
+  return null;
+}
+
 export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
+  { method: "POST", pattern: /^\/product\/workspaces\/[^/]+\/artifacts$/, handler: async ({ req, sql, actor, maxBody, key, mutating }) => {
+    require_(actor, "product:write"); mutating(); key();
+    const ws = segs(req)[3] as string;
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(ws)) throw problems.unprocessable("workspace id is malformed");
+    const b = await body(req, maxBody);
+    const kind = str(b, "kind"); if (!KINDS.has(kind)) throw problems.unprocessable("unknown artifact kind");
+    if (!b.body || typeof b.body !== "object" || Array.isArray(b.body)) throw problems.unprocessable("body must be an object");
+    const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 100) : []);
+    try {
+      const a = await createDraft(sql, { organizationId: actor.orgId, workspaceId: ws, kind: kind as ArtifactKind, title: str(b, "title").slice(0, 200), body: b.body as Record<string, unknown>, sourceIds: strs(b.sourceIds), assumptions: strs(b.assumptions), openQuestions: strs(b.openQuestions), createdBy: actor.userId, provenance: { authorizedParticipants: strs(b.authorizedParticipants) } });
+      return { status: 201, body: { id: a.id, version: a.version, state: a.state, digest: a.digest } };
+    } catch (e) { const p = artifactProblem(e); if (p) throw p; throw e; }
+  } },
+  { method: "POST", pattern: /^\/product\/artifacts\/[^/]+\/(review|approve)$/, handler: async ({ req, sql, actor, maxBody, key, mutating }) => {
+    const parts = segs(req); const id = parts[3] as string; const verb = parts[4] as string;
+    if (!uuid.test(id)) throw problems.notFound("artifact not found");
+    try {
+      if (verb === "review") { require_(actor, "product:write"); mutating(); key(); const a = await submitForReview(sql, actor.orgId, id); return { status: 200, body: { id: a.id, state: a.state, digest: a.digest } }; }
+      require_(actor, "approval:decide"); mutating(); key();
+      const b = await body(req, maxBody);
+      const a = await approveArtifact(sql, { organizationId: actor.orgId, id, approverId: actor.userId, digest: str(b, "digest") });
+      return { status: 200, body: { id: a.id, state: a.state, digest: a.digest, approvedBy: a.approvedBy } };
+    } catch (e) { const p = artifactProblem(e); if (p) throw p; throw e; }
+  } },
+  { method: "POST", pattern: /^\/product\/artifacts\/[^/]+\/handoff$/, handler: async ({ req, sql, actor, maxBody, key, mutating }) => {
+    require_(actor, "product:handoff"); mutating(); const k = key();
+    const id = segs(req)[3] as string;
+    if (!uuid.test(id)) throw problems.notFound("artifact not found");
+    const b = await body(req, maxBody);
+    try {
+      const art = await getArtifact(sql, actor.orgId, id);
+      const h = handoffPayload(art); // 423 unless approved exact version
+      // Existing engineering intake: same validation, repository tenant check and idempotency as POST /api/v1/jobs. The job then follows the normal gated pipeline to a reviewed draft PR.
+      const r = await createJob(sql, actor, `handoff-${k}`.slice(0, 255), { repositoryId: str(b, "repositoryId", uuid), request: { type: h.type, title: h.title, description: h.description, sourceId: h.sourceId } });
+      return { status: 202, body: { ...(r.body as object), artifactDigest: art.digest, note: "queued into the existing engineering orchestrator; human review gates still apply" } };
+    } catch (e) { const p = artifactProblem(e); if (p) throw p; throw e; }
+  } },
   { method: "GET", pattern: /^\/skills$/, handler: async ({ sql, actor }) => {
     require_(actor, "skill:read");
     const rows = await sql`SELECT v.id, v.kind, v.slug, v.version, v.digest, v.state, v.created_at, (a.active_version_id = v.id) AS active FROM skill_versions v LEFT JOIN registry_active a ON a.organization_id = v.organization_id AND a.workspace_id = v.workspace_id AND a.kind = v.kind AND a.slug = v.slug WHERE v.organization_id = ${actor.orgId} ORDER BY v.created_at DESC LIMIT 200`;
@@ -95,7 +148,7 @@ export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: H
   } },
   { method: "POST", pattern: /^\/approvals\/[^/]+\/decision$/, handler: async ({ req, sql, actor, maxBody, key, mutating }) => {
     require_(actor, "approval:decide"); mutating(); key();
-    const id = new URL(req.url).pathname.split("/")[4] as string;
+    const id = segs(req)[2] as string;
     if (!uuid.test(id)) throw problems.notFound("approval request not found");
     const [r] = await sql`SELECT id FROM approval_requests WHERE id = ${id} AND organization_id = ${actor.orgId}`;
     if (!r) throw problems.notFound("approval request not found");  // tenant isolation: other orgs' requests are indistinguishable from absent
@@ -134,7 +187,7 @@ export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: H
   } },
   { method: "POST", pattern: /^\/improvements\/[^/]+\/experiment$/, handler: async ({ req, sql, actor, mutating, key }) => {
     require_(actor, "improvement:experiment"); mutating(); const k = key();
-    const id = new URL(req.url).pathname.split("/")[3] as string;
+    const id = segs(req)[2] as string;
     if (!uuid.test(id)) throw problems.notFound("proposal not found");
     const [p] = await sql`SELECT id, state FROM improvement_proposals WHERE id = ${id} AND organization_id = ${actor.orgId}`;
     if (!p) throw problems.notFound("proposal not found");

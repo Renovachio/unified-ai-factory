@@ -118,3 +118,37 @@ describe("v2.2 API: import → approve → activate over HTTP (T-07, T-08, T-25)
     expect((await call("operator", "POST", "/improvements/00000000-0000-0000-0000-000000000000/experiment")).status).toBe(404);
   });
 });
+
+describe("v2.2 PM artifacts over HTTP: draft → review → independent approval → engineering handoff (T-17, T-18, T-28, T-30 gate)", () => {
+  let repo = ""; let art: { id: string; digest: string };
+  const prd = { problem: "bulk invite", stories: [{ title: "Invite via CSV", body: "As an admin..." }] };
+  test("drafts require provenance; an invented-participant meeting is 422", async () => {
+    repo = (await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${orgA}, 'github', 'pm1', 'o', 'n') RETURNING id`)[0]!.id;
+    const bad = await call("editor", "POST", "/product/workspaces/pm/artifacts", { kind: "meeting", title: "Sync", body: { summary: "s", participants: ["Nobody Real"], decisions: [], actions: [] }, sourceIds: ["t1"], authorizedParticipants: ["Ana Silva"] });
+    expect(bad.status).toBe(422); expect((await bad.json()).type).toMatch(/invented_participant/);
+    expect((await call("viewer", "POST", "/product/workspaces/pm/artifacts", { kind: "prd", title: "x", body: {}, sourceIds: [] })).status).toBe(403);
+    const ok = await call("editor", "POST", "/product/workspaces/pm/artifacts", { kind: "prd", title: "Bulk invite", body: prd, sourceIds: ["S1"], assumptions: ["a"], openQuestions: ["q"] });
+    expect(ok.status).toBe(201); art = await ok.json(); expect(art.digest).toMatch(/^sha256:/);
+  });
+  test("handoff before approval is 423; approval needs the exact digest and an approver (not the author)", async () => {
+    expect((await call("operator", "POST", `/product/artifacts/${art.id}/handoff`, { repositoryId: repo })).status).toBe(423);
+    expect((await call("editor", "POST", `/product/artifacts/${art.id}/review`)).status).toBe(200);
+    expect((await call("editor", "POST", `/product/artifacts/${art.id}/approve`, { digest: art.digest })).status).toBe(403); // editors cannot approve
+    expect((await call("approver", "POST", `/product/artifacts/${art.id}/approve`, { digest: "sha256:" + "0".repeat(64) })).status).toBe(412);
+    expect((await call("approverB", "POST", `/product/artifacts/${art.id}/approve`, { digest: art.digest })).status).toBe(404); // other tenant
+    const ok = await call("approver", "POST", `/product/artifacts/${art.id}/approve`, { digest: art.digest });
+    expect(ok.status).toBe(200); expect(await ok.json()).toMatchObject({ state: "approved" });
+  });
+  test("after approval the artifact enters the EXISTING engineering intake as a job; a second handoff is deduplicated; other tenants get 404", async () => {
+    const jobsBefore = Number((await db.sql`SELECT count(*) AS n FROM jobs`)[0]!.n);
+    const r = await call("operator", "POST", `/product/artifacts/${art.id}/handoff`, { repositoryId: repo });
+    expect(r.status).toBe(202); const j = await r.json();
+    expect(j).toMatchObject({ state: expect.any(String), artifactDigest: art.digest });
+    expect(Number((await db.sql`SELECT count(*) AS n FROM jobs`)[0]!.n)).toBe(jobsBefore + 1);
+    const [rq] = await db.sql`SELECT source_external_id, title FROM requests WHERE repository_id = ${repo}`;
+    expect(rq!.source_external_id).toBe(`product-artifact:${art.id}:${art.digest.slice(7, 23)}`);
+    const again = await call("operator", "POST", `/product/artifacts/${art.id}/handoff`, { repositoryId: repo });
+    expect(again.status).toBe(409); expect(Number((await db.sql`SELECT count(*) AS n FROM jobs`)[0]!.n)).toBe(jobsBefore + 1);
+    expect((await call("operatorB", "POST", `/product/artifacts/${art.id}/handoff`, { repositoryId: repo })).status).toBe(404);
+  });
+});

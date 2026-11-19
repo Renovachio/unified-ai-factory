@@ -17,6 +17,7 @@
     "@factory/scheduler": "workspace:*",
     "@factory/scm": "workspace:*",
     "@factory/skills": "workspace:*",
+    "@factory/product": "workspace:*",
     "@factory/capabilities": "workspace:*",
     "@factory/improvements": "workspace:*",
     "@factory/telemetry": "workspace:*",
