@@ -1,0 +1,15 @@
+:root { --bg: #fff; --fg: #1b1f24; --muted: #5b6573; --line: #d8dde3; --accent: #1f5fbf; --ok: #1a7f37; --warn: #9a6700; --bad: #b42318; --card: #f6f8fa; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0e1116; --fg: #e6e9ee; --muted: #9aa4b2; --line: #2a313a; --accent: #6ea8fe; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --card: #151a21; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+nav { display: flex; gap: 1rem; flex-wrap: wrap; padding: .75rem 1rem; border-bottom: 1px solid var(--line); background: var(--card); }
+nav a { color: var(--accent); text-decoration: none; } nav a:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sr { position: absolute; left: -9999px; }
+.badge { display: inline-block; padding: 0 .5rem; border-radius: 999px; border: 1px solid var(--line); font-size: .8rem; }
+.badge.ok { color: var(--ok); border-color: var(--ok); } .badge.warn { color: var(--warn); border-color: var(--warn); } .badge.bad, .badge.risk-high, .badge.risk-critical { color: var(--bad); border-color: var(--bad); } .badge.muted { color: var(--muted); }
+.timeline { list-style: none; margin: 0; padding: 0; } .timeline li { display: flex; gap: .6rem; flex-wrap: wrap; padding: .35rem 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.timeline .src { color: var(--muted); font-size: .8rem; min-width: 6rem; } pre { white-space: pre-wrap; word-break: break-word; background: var(--card); padding: .5rem; border-radius: 6px; overflow: auto; }
+pre.untrusted { border-left: 4px solid var(--warn); } .note, .empty { color: var(--muted); } .error { border: 1px solid var(--bad); padding: .75rem; border-radius: 6px; }
+form.inline { display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; } input, textarea, button { font: inherit; padding: .35rem .5rem; } button { cursor: pointer; }

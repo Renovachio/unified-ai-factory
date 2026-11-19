@@ -51,3 +51,12 @@ export function parseRoleOutput(role: AgentRole, raw: unknown, opts: { maxBytes:
   if (!p.success) throw new OutputRejected("schema", `artifact output invalid: ${p.error.message}`);
   return p.data;
 }
+
+/** Best-effort extraction of the model's single JSON object from text that may contain fences or chatter. */
+export function extractJsonObject(text: string): string {
+  const t = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  if (t.startsWith("{")) return t;
+  const a = t.indexOf("{");
+  const b = t.lastIndexOf("}");
+  return a >= 0 && b > a ? t.slice(a, b + 1) : t;
+}

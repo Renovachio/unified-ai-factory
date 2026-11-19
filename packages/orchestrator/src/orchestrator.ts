@@ -1,11 +1,11 @@
 import { appendEvent, ConflictError, transitionJob, type Q, type Sql } from "@factory/db";
 import {
-  assertTransition, maxRisk, RECOVERY_ONLY_STATES, TERMINAL_STATES, type EvidenceBinding, type JobSnapshot, type JobState, type RiskLevel,
+  assertTransition, maxRisk, RECOVERY_ONLY_STATES, TERMINAL_STATES, type JobSnapshot, type JobState, type RiskLevel,
 } from "@factory/domain";
 import { enqueueTask, expireLeases, revokeJobLeases } from "@factory/scheduler";
-import { digestOf } from "@factory/telemetry";
 import { artifactKind, AGENT_STAGES, taskStage } from "./pipeline";
-import type { IntakeHandler, JobCtx, Ports, SpecHandler } from "./ports";
+import { loadJobSnapshot } from "./snapshot";
+import type { IntakeHandler, JobCtx, MergePort, Ports, SpecHandler } from "./ports";
 
 /** Automated fix attempts allowed per gate-failure class (blueprint section 5). */
 export const MAX_FIXES_PER_CLASS = 2;
@@ -24,6 +24,8 @@ export interface OrchestratorOptions {
   intake?: IntakeHandler;
   /** Trusted traceability validation of the specification; when absent the spec is accepted unchanged (mock pipeline). */
   spec?: SpecHandler;
+  /** Privileged merge coordinator. Without it the orchestrator never merges (it stops at AWAITING_HUMAN). */
+  merge?: MergePort;
   actor?: string;
   now?: () => Date;
   /** Test seam: throw from here to simulate a crash at a named point. */
@@ -53,26 +55,8 @@ export class Orchestrator {
     return { id: r.id, repositoryId: r.repository_id, state: r.state, version: r.version, risk: r.risk, headSha: r.head_sha, baseSha: r.base_sha, round: r.current_round, maxRounds: r.max_rounds, prNumber: r.pr_number, pausedAt: r.paused_at };
   }
 
-  /** Evidence bindings for the domain guards, reconstructed from durable rows. */
-  private async snapshot(tx: Q, jobId: string): Promise<JobSnapshot> {
-    const q = tx as Sql;
-    const job = await this.load(jobId, tx);
-    const [j2] = await q<{ policy_digest: string | null; spec_digest: string | null }[]>`SELECT policy_digest, spec_digest FROM jobs WHERE id = ${jobId}`;
-    const roles = [...(await this.o.ports.review.requiredRoles(job))].sort();
-    const common = { repoId: job.repositoryId, policyDigest: j2?.policy_digest ?? "none", reviewerSetDigest: digestOf(roles), artifactDigest: j2?.spec_digest ?? "none", policyVersion: "1" };
-    const [gate] = await q<{ head_sha: string; base_sha: string; gate_config_digest: string; verdict: string }[]>`
-      SELECT head_sha, base_sha, gate_config_digest, verdict FROM gate_results WHERE job_id = ${jobId} AND verdict = 'pass' ORDER BY created_at DESC LIMIT 1`;
-    const current: EvidenceBinding | undefined = job.headSha && job.baseSha && gate
-      ? { ...common, headSha: job.headSha, baseSha: job.baseSha, gateConfigDigest: gate.gate_config_digest } : undefined;
-    const gateB: EvidenceBinding | undefined = gate ? { ...common, headSha: gate.head_sha, baseSha: gate.base_sha, gateConfigDigest: gate.gate_config_digest } : undefined;
-    const revs = job.headSha ? await q<{ reviewer_role: string; head_sha: string }[]>`
-      SELECT DISTINCT reviewer_role, head_sha FROM review_results WHERE job_id = ${jobId} AND verdict = 'pass' AND head_sha = ${job.headSha}` : [];
-    return {
-      state: job.state, version: job.version, risk: job.risk, headSha: job.headSha ?? undefined, gate: gateB, current,
-      reviews: current ? revs.map((r) => ({ role: r.reviewer_role, binding: { ...current, headSha: r.head_sha } })) : [],
-      requiredReviewers: roles, round: job.round, maxRounds: job.maxRounds, pausedAt: job.pausedAt?.toISOString(),
-    };
-  }
+  /** Evidence bindings for the domain guards, reconstructed from durable rows (see snapshot.ts). */
+  private snapshot(tx: Q, jobId: string): Promise<JobSnapshot> { return loadJobSnapshot(tx, this.o.ports.review, jobId); }
 
   private async move(job: JobCtx, next: JobState, evidence: Record<string, unknown>, write?: (tx: Q) => Promise<void>): Promise<TickResult> {
     await this.hit(`before-transition:${job.state}->${next}`);
@@ -125,7 +109,16 @@ export class Orchestrator {
         }
         return this.move(job, "BUILDING", { round: job.round + 1 }, async (tx) => { await (tx as Sql)`UPDATE jobs SET current_round = current_round + 1 WHERE id = ${job.id}`; });
       }
-      case "PREMERGE": return this.premerge(job);
+      case "PREMERGE": {
+        if (this.o.merge && job.headSha) {
+          const [ap] = await this.o.sql<{ c: number }[]>`SELECT count(*)::int AS c FROM approvals WHERE job_id = ${job.id} AND head_sha = ${job.headSha} AND decision = 'approve'`;
+          if ((ap?.c ?? 0) > 0) return this.mergeStep(job);
+        }
+        return this.premerge(job);
+      }
+      case "MERGING": return this.o.merge ? this.mergeStep(job) : { state: job.state, action: "waiting", detail: "no merge coordinator" };
+      case "MERGED":
+      case "POSTMERGE_MONITOR": return { state: job.state, action: "waiting", detail: "post-merge monitoring" };
       case "NEEDS_INFO": return { state: job.state, action: "awaiting-info" };
       case "AWAITING_HUMAN": return { state: job.state, action: "awaiting-human" };
       default: return { state: job.state, action: "waiting", detail: "no handler" };
@@ -200,7 +193,16 @@ export class Orchestrator {
       await (tx as Sql)`INSERT INTO gate_results (job_id, head_sha, base_sha, gate_config_digest, verdict, results_digest)
         VALUES (${job.id}, ${headSha}, ${baseSha}, ${r.configDigest}, ${r.verdict}, ${r.resultsDigest}) ON CONFLICT DO NOTHING`;
     };
-    if (r.verdict === "pass") return this.move(job, "REVIEWING", { gate: r.resultsDigest }, write);
+    if (r.verdict === "pass") {
+      // Re-assess risk from the actual candidate BEFORE reviewers are routed, so a change that turns out to touch protected paths
+      // gets the reviewers its real risk demands. Risk only ratchets up.
+      const pol = await this.o.ports.policy.evaluate(job, headSha);
+      await this.hit("after-port:policy.assess");
+      return this.move(job, "REVIEWING", { gate: r.resultsDigest, risk: pol.risk }, async (tx) => {
+        await write(tx);
+        await this.ratchetRisk(tx, job.id, pol.risk);
+      });
+    }
     return this.move(job, "REWORK", { gate: r.resultsDigest, verdict: r.verdict }, async (tx) => {
       await write(tx);
       await appendEvent(tx, { jobId: job.id, type: "gate.failed", source: "orchestrator", payload: { round: job.round, head_sha: headSha, class: r.failureClass ?? r.verdict, results: r.resultsDigest } });
@@ -245,6 +247,14 @@ export class Orchestrator {
     return this.move(job, allPass ? "PREMERGE" : "REWORK", { reviews: results.map((r) => `${r.role}:${r.verdict}`) }, write);
   }
 
+  /** Raise (never lower) the job's risk. An unclassified job simply takes the policy's value. */
+  private async ratchetRisk(tx: Q, jobId: string, polRisk: RiskLevel): Promise<void> {
+    const t = tx as Sql;
+    const [cur] = await t<{ risk: RiskLevel; risk_classified: boolean }[]>`SELECT risk, risk_classified FROM jobs WHERE id = ${jobId}`;
+    const next = cur?.risk_classified ? maxRisk(cur.risk, polRisk) : polRisk;
+    await t`UPDATE jobs SET risk = ${next}, risk_classified = true WHERE id = ${jobId}`;
+  }
+
   private async premerge(job: JobCtx): Promise<TickResult> {
     if (!job.headSha) return this.fail(job, "premerge-without-candidate");
     const head = job.headSha;
@@ -252,15 +262,47 @@ export class Orchestrator {
     await this.hit("after-port:policy.evaluate");
     const pr = await this.o.ports.scm.ensureDraftPr(job, head);
     await this.hit("after-port:scm.ensureDraftPr");
-    return this.move(job, "AWAITING_HUMAN", { policy: pol.policyDigest, pr: pr.prNumber }, async (tx) => {
+    const record = async (tx: Q) => {
       const q = tx as Sql;
-      const risk = maxRisk(job.risk, pol.risk); // risk only ratchets up
-      await q`UPDATE jobs SET policy_digest = ${pol.policyDigest}, pr_number = ${pr.prNumber}, risk = ${risk}, risk_classified = true WHERE id = ${job.id}`;
+      await this.ratchetRisk(tx, job.id, pol.risk);
+      const [rr] = await q<{ risk: RiskLevel }[]>`SELECT risk FROM jobs WHERE id = ${job.id}`;
+      const risk = (rr?.risk ?? pol.risk) as RiskLevel;
+      await q`UPDATE jobs SET policy_digest = ${pol.policyDigest}, pr_number = ${pr.prNumber} WHERE id = ${job.id}`;
       await q`INSERT INTO policy_decisions (job_id, head_sha, policy_digest, risk, eligible, reasons)
         SELECT ${job.id}, ${head}, ${pol.policyDigest}, ${risk}, ${pol.eligible && (risk === "LOW" || risk === "MEDIUM")}, ${q.json(pol.reasons as never)}
         WHERE NOT EXISTS (SELECT 1 FROM policy_decisions WHERE job_id = ${job.id} AND head_sha = ${head} AND policy_digest = ${pol.policyDigest})`;
-      await appendEvent(q, { jobId: job.id, type: "approval.requested", source: "orchestrator", payload: { head_sha: head, pr_number: pr.prNumber, reasons: pol.reasons } });
+    };
+    // Unattended path: policy says eligible AND a privileged coordinator exists. The coordinator still re-validates everything freshly
+    // (and the rollout controls) before merging; if anything is off, mergeStep sends the job to a human. HIGH/CRITICAL are never eligible.
+    if (pol.eligible && this.o.merge) {
+      await this.o.sql.begin(async (tx) => {
+        await record(tx);
+        await appendEvent(tx, { jobId: job.id, type: "auto_merge.eligible", source: "orchestrator", payload: { head_sha: head, pr_number: pr.prNumber, reasons: pol.reasons } });
+      });
+      await this.hit("after-record:auto-merge");
+      return this.mergeStep(job);
+    }
+    return this.move(job, "AWAITING_HUMAN", { policy: pol.policyDigest, pr: pr.prNumber }, async (tx) => {
+      await record(tx);
+      await appendEvent(tx, { jobId: job.id, type: "approval.requested", source: "orchestrator", payload: { head_sha: head, pr_number: pr.prNumber, reasons: pol.reasons } });
     });
+  }
+
+  /** Delegates to the privileged coordinator and maps a refusal onto a legal state transition. The orchestrator itself never merges. */
+  private async mergeStep(job: JobCtx): Promise<TickResult> {
+    const r = await (this.o.merge as MergePort).merge(job.id);
+    await this.hit("after-port:merge");
+    if (r.status === "merged" || r.status === "already-merged") return { state: "MERGED", action: "transitioned" };
+    if (r.status === "pending") return { state: job.state, action: "waiting", detail: r.detail };
+    if (r.next === "stay") return { state: job.state, action: "waiting", detail: r.blockers.join("; ") };
+    const cur = await this.load(job.id);
+    if (cur.state !== "PREMERGE") return { state: cur.state, action: "waiting", detail: "awaiting coordinator state" };
+    if (r.next === "QUARANTINED") {
+      const q = await this.move(cur, "QUARANTINED", { blockers: r.blockers });
+      if (q.action === "transitioned") await revokeJobLeases(this.o.sql, job.id, "merge-integrity-violation");
+      return q;
+    }
+    return this.move(cur, "AWAITING_HUMAN", { blockers: r.blockers });
   }
 
   private async fail(job: JobCtx, code: string): Promise<TickResult> {

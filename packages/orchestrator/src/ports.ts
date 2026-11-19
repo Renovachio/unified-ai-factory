@@ -63,3 +63,12 @@ export interface SpecValidationResult {
 }
 /** Trusted validation of the SPECIFYING artifacts (see @factory/agents). */
 export interface SpecHandler { validate(job: JobCtx): Promise<SpecValidationResult> }
+
+export interface MergePort {
+  merge(jobId: string): Promise<
+    | { status: "merged"; mergeSha: string; reconciled: boolean }
+    | { status: "already-merged"; mergeSha: string | null }
+    | { status: "blocked"; blockers: string[]; next: "AWAITING_HUMAN" | "QUARANTINED" | "stay" }
+    | { status: "pending"; detail: string }
+  >;
+}

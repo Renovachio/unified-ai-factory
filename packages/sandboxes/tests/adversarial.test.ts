@@ -39,6 +39,10 @@ test("bwrap argv: unshares everything, binds only the workspace read-write, re-a
   expect(w.args).not.toContain("--share-net");
   const i = w.args.indexOf("--clearenv");
   expect(w.args.slice(i + 1, i + 7)).toEqual(["--setenv", "HOME", "/h", "--setenv", "PATH", "/usr/bin:/bin"]);
+  // tmpfs must be mounted BEFORE any read-only bind that lives under /tmp, or the bind is hidden by it
+  expect(w.args.indexOf("--tmpfs")).toBeLessThan(w.args.indexOf("--bind"));
+  const roW = new BwrapBackend("/usr/bin/bwrap").wrap("/x", [], { workspaceRoot: ws.root, readOnlyPaths: [hostDir] });
+  expect(roW.args.indexOf("--tmpfs")).toBeLessThan(roW.args.indexOf(hostDir));
   const binds = w.args.flatMap((a, k) => (a === "--bind" ? [w.args[k + 1]] : []));
   expect(binds).toEqual([ws.root]);
   expect(w.args.join(" ")).toContain("ulimit -t 5");

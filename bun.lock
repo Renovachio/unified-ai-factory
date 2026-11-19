@@ -23,11 +23,15 @@
         "@factory/db": "workspace:*",
         "@factory/domain": "workspace:*",
         "@factory/intake": "workspace:*",
+        "@factory/orchestrator": "workspace:*",
         "@factory/sandboxes": "workspace:*",
         "@factory/scheduler": "workspace:*",
         "@factory/scm": "workspace:*",
         "@factory/telemetry": "workspace:*",
         "jose": "6.2.18",
+      },
+      "devDependencies": {
+        "@factory/evals": "workspace:*",
       },
     },
     "apps/runner": {
@@ -64,7 +68,9 @@
         "zod": "4.6.7",
       },
       "devDependencies": {
+        "@factory/api": "workspace:*",
         "@factory/checks": "workspace:*",
+        "@factory/evals": "workspace:*",
         "@factory/intake": "workspace:*",
         "@factory/orchestrator": "workspace:*",
         "@factory/runner": "workspace:*",
@@ -113,6 +119,22 @@
     "packages/domain": {
       "name": "@factory/domain",
       "version": "0.0.0",
+      "dependencies": {
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+    },
+    "packages/evals": {
+      "name": "@factory/evals",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/domain": "workspace:*",
+        "@factory/intake": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
     },
     "packages/intake": {
       "name": "@factory/intake",
@@ -163,6 +185,7 @@
       "dependencies": {
         "@factory/domain": "workspace:*",
         "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
       },
     },
     "packages/scheduler": {
@@ -183,6 +206,17 @@
         "@factory/sandboxes": "workspace:*",
         "@factory/telemetry": "workspace:*",
         "zod": "4.6.7",
+      },
+    },
+    "packages/secrets": {
+      "name": "@factory/secrets",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+        "@factory/telemetry": "workspace:*",
       },
     },
     "packages/telemetry": {
@@ -225,6 +259,8 @@
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
 
+    "@factory/evals": ["@factory/evals@workspace:packages/evals"],
+
     "@factory/intake": ["@factory/intake@workspace:packages/intake"],
 
     "@factory/orchestrator": ["@factory/orchestrator@workspace:packages/orchestrator"],
@@ -238,6 +274,8 @@
     "@factory/scheduler": ["@factory/scheduler@workspace:packages/scheduler"],
 
     "@factory/scm": ["@factory/scm@workspace:packages/scm"],
+
+    "@factory/secrets": ["@factory/secrets@workspace:packages/secrets"],
 
     "@factory/telemetry": ["@factory/telemetry@workspace:packages/telemetry"],
 

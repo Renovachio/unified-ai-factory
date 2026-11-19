@@ -24,6 +24,8 @@ export interface JobSnapshot {
   requiredReviewers?: readonly string[] | undefined;
   /** Human approval bound to a specific candidate. */
   approval?: EvidenceBinding | undefined;
+  /** The latest policy decision for this exact head marked the change eligible for UNATTENDED merge (never true for HIGH/CRITICAL). */
+  autoMergeEligible?: boolean | undefined;
   /** Current authoritative binding (freshly computed from head/base/policy/etc.). */
   current?: EvidenceBinding | undefined;
   round: number;
@@ -66,8 +68,11 @@ export function assertTransition(job: JobSnapshot, next: JobState): void {
     }
     case "MERGING": {
       const cur = job.current;
-      if (!job.approval || !cur) return fail("no-approval", "MERGING requires a human approval bound to the exact candidate");
-      if (isApprovalStale(job.approval, cur)) fail("stale-approval", "approval no longer matches head/base/policy/evidence");
+      if (!cur) return fail("no-approval", "MERGING requires current evidence for the exact candidate");
+      if (!job.approval) {
+        // Only an explicit, policy-recorded auto-merge eligibility can stand in for a human, and never above MEDIUM risk.
+        if (!(job.autoMergeEligible === true && !requiresHumanApproval(job.risk))) return fail("no-approval", "MERGING requires a human approval bound to the exact candidate");
+      } else if (isApprovalStale(job.approval, cur)) fail("stale-approval", "approval no longer matches head/base/policy/evidence");
       if (!job.gate || isApprovalStale(job.gate, cur)) fail("stale-gate", "gate evidence stale at merge time");
       break;
     }

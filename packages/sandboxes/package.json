@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@factory/domain": "workspace:*",
-    "@factory/telemetry": "workspace:*"
+    "@factory/telemetry": "workspace:*",
+    "zod": "4.6.7"
   }
 }

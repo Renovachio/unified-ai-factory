@@ -7,16 +7,16 @@ export const ROLES = ["viewer", "editor", "operator", "approver", "admin", "secu
 export type Role = (typeof ROLES)[number];
 
 export type Permission =
-  | "job:read" | "job:create" | "job:feedback" | "job:cancel" | "job:resume" | "job:decide" | "worker:read" | "job:quarantine-release" | "audit:read";
+  | "job:read" | "job:create" | "job:feedback" | "job:cancel" | "job:resume" | "job:decide" | "job:pause" | "job:quarantine" | "worker:read" | "worker:manage" | "job:quarantine-release" | "audit:read" | "usage:read" | "automerge:read" | "automerge:kill" | "automerge:configure" | "job:hold-auto";
 
 /** Deny-by-default permission matrix (blueprint section 10 / 14). */
 export const PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
   viewer: new Set(["job:read"]),
   editor: new Set(["job:read", "job:create", "job:feedback"]),
-  operator: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "worker:read"]),
-  approver: new Set(["job:read", "job:decide"]),
-  admin: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:decide", "worker:read", "audit:read"]),
-  security_officer: new Set(["job:read", "job:cancel", "job:quarantine-release", "audit:read"]),
+  operator: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:pause", "job:quarantine", "worker:read", "worker:manage", "usage:read", "automerge:read", "automerge:kill", "job:hold-auto"]),
+  approver: new Set(["job:read", "job:decide", "job:hold-auto", "automerge:read"]),
+  admin: new Set(["job:read", "job:create", "job:feedback", "job:cancel", "job:resume", "job:decide", "job:pause", "job:quarantine", "worker:read", "worker:manage", "audit:read", "usage:read", "automerge:read", "automerge:kill", "automerge:configure", "job:hold-auto"]),
+  security_officer: new Set(["job:read", "job:cancel", "job:quarantine", "job:quarantine-release", "worker:read", "worker:manage", "audit:read", "usage:read", "automerge:read", "automerge:kill", "automerge:configure", "job:hold-auto"]),
 };
 
 export interface Actor {
