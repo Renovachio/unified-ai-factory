@@ -84,7 +84,7 @@ export class BwrapBackend implements SandboxBackend {
     const inner = pre ? ["/bin/sh", "-c", `${pre}; exec "$0" "$@"`, command, ...args] : [command, ...args];
     return {
       command: this.bin,
-      args: ["--unshare-all", "--die-with-parent", "--new-session", "--clearenv", ...Object.entries(ctx.env ?? {}).flatMap(([k, v]) => ["--setenv", k, v]), ...ro, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind", ws, ws, "--chdir", ctx.cwd ? real(ctx.cwd) : ws, ...inner],
+      args: ["--unshare-all", "--die-with-parent", "--new-session", "--clearenv", ...Object.entries(ctx.env ?? {}).flatMap(([k, v]) => ["--setenv", k, v]), "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", ...ro, "--bind", ws, ws, "--chdir", ctx.cwd ? real(ctx.cwd) : ws, ...inner],
     };
   }
 }
