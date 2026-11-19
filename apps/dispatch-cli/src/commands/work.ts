@@ -1,9 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { termsApproval, type TermsCheck } from "@factory/dispatch-core";
-import { buildClaudeLaunch, workDirOf, type ClaudeLaunch } from "../claude-launch";
+import { buildClaudeLaunch, shQuote, workDirOf, type ClaudeLaunch } from "../claude-launch";
 import { apiCall } from "../launcher/api";
 import { makeCtx } from "../launcher/context";
-import { configDir, pluginDir } from "../launcher/runtime";
+import { configDir, pluginDir, selfCommand } from "../launcher/runtime";
 import { safe, sym } from "../render";
 
 export interface WorkDeps {
@@ -15,6 +15,10 @@ export interface WorkDeps {
   nextJob: () => Promise<{ title: string; project: { name: string; path: string } } | null>;
   spawn: (l: ClaudeLaunch) => Promise<number>;
   env: Record<string, string | undefined>;
+  /** Shell command for the write-guard hook (this same binary, `guard-write`). */
+  guardCommand: string;
+  /** How Claude starts the Dispatch tool server (this same binary, `mcp`). */
+  mcpCommand: { cmd: string; args: string[] };
   out: (s: string) => void; err: (s: string) => void;
 }
 
@@ -34,7 +38,7 @@ export async function runWork(d: WorkDeps): Promise<number> {
   const work = workDirOf(d.home); mkdirSync(work, { recursive: true, mode: 0o700 });
   d.out(`Job: ${safe(job.title)}\nProject: ${safe(job.project.name)} (${safe(job.project.path)})`);
   d.out("Opening Claude Code (restricted mode, Opus plans, cheaper agents execute). It works on a COPY; nothing changes in your folder until you approve in Dispatch.");
-  const code = await d.spawn(buildClaudeLaunch({ claude, pluginDir: plugin, projectPath: job.project.path, workDir: work, env: d.env }));
+  const code = await d.spawn(buildClaudeLaunch({ claude, pluginDir: plugin, projectPath: job.project.path, workDir: work, env: d.env, guardCommand: d.guardCommand, mcpCommand: d.mcpCommand }));
   d.out(`\nBack in Dispatch. Review what the agents did with \`dispatch\` then /runs, /review <run>, /accept <run>.`);
   return code;
 }
@@ -43,6 +47,8 @@ export async function cmdWork(): Promise<number> {
   const c = makeCtx({ create: false });
   return runWork({
     home: c.paths.home, env: process.env,
+    mcpCommand: (() => { const s = selfCommand(); return { cmd: s.cmd, args: [...s.prefix, "mcp"] }; })(),
+    guardCommand: (() => { const s = selfCommand(); return [s.cmd, ...s.prefix, "guard-write"].map(shQuote).join(" "); })(),
     terms: () => termsApproval(configDir(), "claude-code"),
     which: (cmd) => Bun.which(cmd), plugin: () => pluginDir(),
     nextJob: async () => {
