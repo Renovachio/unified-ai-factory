@@ -2,7 +2,7 @@
 
 - **Status:** ACCEPTED_SIMULATED_PROVIDER_OPT_IN_OFF
 - **Date:** 2026-11-19
-- **Candidate SHA:** a9231ecc16cd0ecc48837b30b45a105cc2ac0c71 (branch dev/cld-001)
+- **Candidate SHA:** 451e1894b608538ed93a2be49855d2f4a4ddedda (branch dev/cld-001)
 - **GitHub CI on candidate SHA:** completed success https://github.com/Renovachio/unified-ai-factory/actions/runs/44446677845
 - **Test totals:**  880 pass  0 fail 
 - **Accepted by:** operator, via instruction to continue following the plan to completion (2026-11-18); no separate human code review has occurred.

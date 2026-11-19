@@ -2,7 +2,7 @@
 
 - **Status:** ACCEPTED_MOCK_ONLY
 - **Date:** 2026-11-19
-- **Candidate SHA:** 8bc7c4c0093aa2ec5592d9d1e9a4cf57f520f8ef (branch dev/scm-001)
+- **Candidate SHA:** ff5f01bf38a86942624e4e458b837ed2b77c1b2f (branch dev/scm-001)
 - **GitHub CI on candidate SHA:** completed success https://github.com/Renovachio/unified-ai-factory/actions/runs/44425392823
 - **Test totals:** 
 - **Accepted by:** operator, via instruction to continue following the plan to completion (2026-11-18); no separate human code review has occurred.

@@ -3,7 +3,7 @@
 - **Status:** ACCEPTED (operator instruction to continue the plan, 2026-11-18)
 - **Date:** 2026-11-18
 - **Dependencies:** none
-- **Candidate SHA:** cce82efb8eb9ca530a78a090cee2e05c29314460 (branch dev/fnd-001, pushed to origin; GitHub CI not yet confirmed)
+- **Candidate SHA:** 53c064da3ff9e7614a642ca23b172386aebb029a (branch dev/fnd-001, pushed to origin; GitHub CI not yet confirmed)
 
 ## Files added
 `package.json`, `bun.lock`, `bunfig.toml`, `tsconfig.base.json`, `eslint.config.mjs`, `.github/workflows/ci.yml`,
@@ -39,4 +39,4 @@ CI unverified on GitHub; no candidate SHA; npm install scripts for deps not revi
 Pending. **Next task:** LIC-001 (after FND-001 accepted).
 
 ## Update
-GitHub CI on candidate cce82ef: completed/success. Bun 1.4.4 now installed on host.
+GitHub CI on candidate 53c064d: completed/success. Bun 1.4.4 now installed on host.

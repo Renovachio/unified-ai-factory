@@ -2,7 +2,7 @@
 
 - **Status:** ACCEPTED_FAKE_CLI_BLOCKED_LIVE
 - **Date:** 2026-11-19
-- **Candidate SHA:** a5f76e086508fadc77a0d662957bb62eaa4ddb47 (branch dev/agt-002)
+- **Candidate SHA:** 930989a0e203047aa82ace7a9f3412a5e249f88f (branch dev/agt-002)
 - **GitHub CI on candidate SHA:** completed success https://github.com/Renovachio/unified-ai-factory/actions/runs/44444561452
 - **Test totals:**  804 pass  0 fail 
 - **Accepted by:** operator, via instruction to continue following the plan to completion (2026-11-18); no separate human code review has occurred.

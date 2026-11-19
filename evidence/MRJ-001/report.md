@@ -2,7 +2,7 @@
 
 - **Status:** ACCEPTED_MOCK_GITHUB
 - **Date:** 2026-11-19
-- **Candidate SHA:** 2f60af132483320a240b7fd4696906b18cb389b0 (branch dev/mrj-001)
+- **Candidate SHA:** e0f78b47fb3154b7c843614d821cb85410e5fbd2 (branch dev/mrj-001)
 - **GitHub CI on candidate SHA:** completed success https://github.com/Renovachio/unified-ai-factory/actions/runs/44440133843
 - **Test totals:**  759 pass  0 fail 
 - **Accepted by:** operator, via instruction to continue following the plan to completion (2026-11-18); no separate human code review has occurred.

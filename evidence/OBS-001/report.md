@@ -2,7 +2,7 @@
 
 - **Status:** ACCEPTED
 - **Date:** 2026-11-19
-- **Candidate SHA:** 5a2324ddadc4a8b7f74caafcc64713782ef1c2a7 (branch dev/obs-001)
+- **Candidate SHA:** d7bb3dcddb96874176fbd82edd79d9d24c8d57f8 (branch dev/obs-001)
 - **GitHub CI on candidate SHA:** completed success https://github.com/Renovachio/unified-ai-factory/actions/runs/44442328484
 - **Test totals:**  777 pass  0 fail 
 - **Accepted by:** operator, via instruction to continue following the plan to completion (2026-11-18); no separate human code review has occurred.
