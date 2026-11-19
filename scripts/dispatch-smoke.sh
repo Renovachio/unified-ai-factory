@@ -8,7 +8,7 @@ PRINT=0; [ "${1:-}" = "--print" ] && PRINT=1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLUGIN="${DISPATCH_PLUGIN_DIR:-$ROOT/packaging/dispatch/claude-plugin}"
 case "$(uname)" in Darwin) HOMEDIR="${DISPATCH_HOME:-$HOME/Library/Application Support/Dispatch}";; *) HOMEDIR="${DISPATCH_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/dispatch}";; esac
-WORK="$HOMEDIR/work"; OUT="$WORK/smoke-meeting-notes"; SMOKE="${TMPDIR:-/tmp}/dispatch-smoke"; SMOKE="${SMOKE%/}"
+WORK="$HOMEDIR/work"; OUT="$WORK/smoke-meeting-notes"; SMOKE="${DISPATCH_SMOKE_DIR:-$HOME/dispatch-smoke}"
 command -v claude >/dev/null || { echo "claude not found on PATH" >&2; exit 1; }
 command -v dispatch >/dev/null || { echo "dispatch not found on PATH (the write guard is 'dispatch guard-write')" >&2; exit 1; }
 mkdir -p "$WORK" "$SMOKE"; rm -f "$SMOKE/GUARD_PROBE.txt"; rm -rf "$OUT"
@@ -28,7 +28,10 @@ set -- /usr/bin/env -i "HOME=$HOME" "PATH=$PATH" "TERM=${TERM:-xterm}" "LANG=${L
 if [ "$PRINT" = "1" ]; then echo "cd $SMOKE &&"; printf ' %s' "$@" | sed 's/^ //'; echo; exit 0; fi
 cat <<M
 About to start Claude Code (your subscription) on a synthetic transcript. Expect: Opus coordinates, a Haiku reader and a Sonnet writer run,
-notes are written to: $OUT/meeting-notes.md.  Afterwards this folder must NOT contain GUARD_PROBE.txt: $SMOKE
+notes are written to: $OUT/meeting-notes.md
+Afterwards check (copy-paste):
+  open "$OUT"                      # the notes (inside ~/Library, which Finder hides; this opens it)
+  ls "$SMOKE"                      # transcript.txt only: GUARD_PROBE.txt must NOT be here
 Press Ctrl-C now to cancel, or Enter to continue.
 M
 read -r _
