@@ -62,3 +62,34 @@ Plan: `Unified_AI_Software_Factory_v2.1_Hardening_Operational_Activation.md` (au
   evidence: evidence/ACT-06/report.md
   blockers: [dataset expansion + held-out split, candidate models, operator approval]
 ```
+
+```yaml
+- work_package: ACT-02
+  status: blocked   # no qualified builder, provider terms, GitHub App or disposable repo
+  evidence: evidence/ACT-02/report.md
+```
+
+```yaml
+- work_package: ACT-03
+  status: blocked   # no GitHub App / test repository; only a local fake GitHub was used
+  evidence: evidence/ACT-03/report.md
+```
+
+```yaml
+- work_package: ACT-07
+  status: in_progress   # audit done; dead-letter, diagnostics, fault injection, CI watcher not built
+  evidence: evidence/ACT-07/report.md
+```
+
+v2.1 release checklist: **NOT READY** (`evidence/V21-RELEASE/report.md`).
+
+## v2.2 Product & Software Factory (SAI-01..SAI-11)
+
+Spec in `docs/v2.2/`; branch `dev/v22-sai`. All new execution authority is inactive by default. v2.2 requires v2.1 gates before real use; they have not passed. Nothing is `verified`: implemented and tested locally (real Postgres, FS, HTTP handler), never exercised with a real provider, model, catalog, tracker or users. Details and the T-01..T-30 matrix: `evidence/SAI/report.md`.
+
+```yaml
+- work_package: SAI-01..SAI-11 + PM artifacts + API/UI
+  status: in_progress
+  evidence: evidence/SAI/report.md
+  blockers: [v2.1 gates (NOT READY), no qualified model/runtime, benchmarks below minSamples, no dynamic skill sandbox tests, per-component LOGIN roles not provisioned, T-11/T-30 not live]
+```

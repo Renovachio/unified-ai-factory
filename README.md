@@ -23,7 +23,8 @@ Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual
 | `packages/orchestrator` | Durable job orchestrator, auto-merge controller |
 | `packages/intake`, `agents`, `checks`, `contracts`, `telemetry`, `secrets`, `evals` | Intake classification, role agents and policy port, gates, shared schemas, redacting telemetry, secret broker, eval benchmark |
 | `apps/api`, `apps/runner`, `apps/web` | HTTP API, worker, Next.js dashboard |
-| `migrations/` | Reversible SQL migrations 0001-0008 |
+| `packages/skills`, `capabilities`, `improvements`, `product` | v2.2: skill/agent registry (quarantine, static validation, digest-bound approval, CAS activation), capability matcher and gap analysis, zero-authority improvement supervisor, PM artifacts |
+| `migrations/` | Reversible SQL migrations 0001-0012 |
 | `config/` | Inference policy, provider terms, risk policy, runtime allowlist, cloud, eval thresholds, gate manifests |
 | `evidence/<ID>/` | Per-task acceptance report |
 | `docs/` | Blueprint, ADRs, third-party notices, eval report, operator actions |
@@ -34,6 +35,9 @@ Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual
 - Cloud execution is off.
 - Auto-merge: the global kill switch starts engaged, no repository is opted in, and the policy requires a human approval of the exact candidate SHA. HIGH and CRITICAL changes never merge unattended.
 - The only real model measured (`qwen3.5:4b`) fails the quality thresholds (`docs/evals/REPORT.md`), so no route is eligible yet.
+
+## v2.2 (inactive by default)
+Skill/agent registry, paired evaluation, improvement supervisor and PM artifacts exist behind `/api/v2` and dashboard pages `/skills`, `/improvements`. No skill is active, all discovery sources are disabled, and the supervisor can only propose. v2.1 gates are NOT READY (`evidence/V21-RELEASE/report.md`); v2.2 status and gaps: `evidence/SAI/report.md`, operations: `docs/operator/SKILLS_AND_IMPROVEMENT.md`.
 
 ## Before real use
 See `docs/operator/OPEN_ACTIONS.md`: provider-terms decision, GitHub App, OIDC identity provider, evidence signing key, ratifying the proposed dependency approvals and the LGPL exception, and a real pilot.
