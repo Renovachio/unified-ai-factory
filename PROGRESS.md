@@ -8,7 +8,7 @@ This is a specification package. No engineering work orders have been implemente
 | LIC-001 | ACCEPTED | evidence/LIC-001/report.md | operator (continue-plan instruction) |
 | DOM-001 | ACCEPTED | evidence/DOM-001/report.md | operator (continue-plan instruction) |
 | DB-001 | ACCEPTED | evidence/DB-001/report.md | operator (continue-plan instruction) |
-| API-001 | NOT_STARTED | — | — |
+| API-001 | ACCEPTED | evidence/API-001/report.md | operator (continue-plan instruction) |
 | EVT-001 | ACCEPTED | evidence/EVT-001/report.md | operator (continue-plan instruction) |
 | SCH-001 | ACCEPTED | evidence/SCH-001/report.md | operator (continue-plan instruction) |
 | RUN-001 | ACCEPTED | evidence/RUN-001/report.md | operator (continue-plan instruction) |
