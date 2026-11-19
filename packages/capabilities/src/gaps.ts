@@ -55,7 +55,7 @@ const MIN_EVIDENCE = 3;
 
 export function analyzeGaps(signals: readonly StoredSignal[]): GapReport[] {
   const groups = new Map<string, StoredSignal[]>();
-  for (const s of signals) { const k = `${s.intentKey}|${s.targetVersionId ?? ""}`; (groups.get(k) ?? groups.set(k, []).get(k)!).push(s); }
+  for (const s of signals) { const k = `${s.intentKey}|${s.targetVersionId ?? ""}`; const bucket = groups.get(k) ?? []; bucket.push(s); groups.set(k, bucket); }
   const out: GapReport[] = [];
   for (const [, g] of groups) {
     const distinct = new Set(g.map((s) => s.evidenceDigest)).size;
