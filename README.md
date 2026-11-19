@@ -1,16 +1,42 @@
-# Unified AI Software Factory — Agent Implementation Package v2.0
+# Unified AI Software Factory
 
-This is an **implementation specification and task execution scaffold**, not a functioning factory. Read `AGENTS.md`, then `MASTER_PLAN.md`, then the selected `TASKS/<ID>.md`. Original implementation only; upstream source code is not included.
+A Bun/TypeScript monorepo that takes a request through intake, spec, build, gates, review, policy and a guarded merge, with a human approving by default. All 25 work orders in `MASTER_PLAN.md` are implemented. Original implementation only; upstream source code is not included.
 
-## Start here
-1. Install an approved toolchain on the target host. Confirm provider subscription automation terms before using any subscription CLI. No paid model inference, API keys or metered endpoints.
-2. Read `docs/BLUEPRINT_V1_1.md`, `ARCHITECTURE.md`, `SECURITY.md`, and `CONTRACTS/README.md`.
-3. Run `python3 scripts/validate_package.py` to verify package consistency (standard library only).
-4. Implement `FND-001`, followed by the dependencies listed in `MASTER_PLAN.md`. Run the acceptance commands for the current task. Record outputs in `evidence/<TASK-ID>/` and update `PROGRESS.md`.
-5. Remain on a development branch; no unattended merges or deployments during the pilot.
+**Status: built and CI-green, not production-ready.** Nothing has run against a real GitHub App, subscription CLI, cloud provider or pilot data. Per-task status and its caveats are in `PROGRESS.md`; open operator actions and known limits are in `docs/operator/OPEN_ACTIONS.md`. "Accepted" there means the operator told the agent to continue the plan, not that an independent human reviewed the code.
+
+## Quick start
+```sh
+bun install
+bun run ci        # validate package, license check, gates lock, lint, typecheck, tests, build
+```
+Requires Bun 1.4.4 and Postgres 17 (tests start a temporary cluster). Individual steps: `bun run lint`, `typecheck`, `test`, `build`, `license`, `gates:lock`, `validate:package`.
+
+## Layout
+| Path | Contents |
+|---|---|
+| `packages/domain` | Job state machine, transition guards, risk levels, policy types |
+| `packages/db` | Drizzle schema, events/outbox, test database helper |
+| `packages/scheduler` | Task queue with leases and fencing tokens |
+| `packages/sandboxes` | macOS Seatbelt / Linux bubblewrap sandbox, cloud sandbox layer (off by default) |
+| `packages/scm` | Trusted-side git candidates, GitHub App client, draft PRs, merge coordinator |
+| `packages/runtimes` | Agent runtimes: mock, local model, subscription-CLI adapters (blocked by default) |
+| `packages/orchestrator` | Durable job orchestrator, auto-merge controller |
+| `packages/intake`, `agents`, `checks`, `contracts`, `telemetry`, `secrets`, `evals` | Intake classification, role agents and policy port, gates, shared schemas, redacting telemetry, secret broker, eval benchmark |
+| `apps/api`, `apps/runner`, `apps/web` | HTTP API, worker, Next.js dashboard |
+| `migrations/` | Reversible SQL migrations 0001-0008 |
+| `config/` | Inference policy, provider terms, risk policy, runtime allowlist, cloud, eval thresholds, gate manifests |
+| `evidence/<ID>/` | Per-task acceptance report |
+| `docs/` | Blueprint, ADRs, third-party notices, eval report, operator actions |
+
+## Safe defaults that ship
+- No model API keys or metered endpoints anywhere.
+- Subscription CLIs (Claude Code, Codex) are disabled until a provider-terms approval is recorded in `config/provider-terms.json`.
+- Cloud execution is off.
+- Auto-merge: the global kill switch starts engaged, no repository is opted in, and the policy requires a human approval of the exact candidate SHA. HIGH and CRITICAL changes never merge unattended.
+- The only real model measured (`qwen3.5:4b`) fails the quality thresholds (`docs/evals/REPORT.md`), so no route is eligible yet.
+
+## Before real use
+See `docs/operator/OPEN_ACTIONS.md`: provider-terms decision, GitHub App, OIDC identity provider, evidence signing key, ratifying the proposed dependency approvals and the LGPL exception, and a real pilot.
 
 ## Authority
-`SECURITY.md` and `AGENTS.md` are hard constraints. `CONTRACTS/` sets interface shapes. `TASKS/` sets work-order scope. The blueprint is explanatory where not in conflict. If instructions disagree, stop and log an ADR: never weaken safeguards.
-
-## Status
-All 25 work orders are implemented and CI-green (see `PROGRESS.md` and `evidence/`). It is **not production-ready**: live GitHub App, subscription CLI, cloud and pilot verification are open operator actions listed in `docs/operator/OPEN_ACTIONS.md`. Provider CLI compatibility and legal reuse permission require operator verification.
+`SECURITY.md` and `AGENTS.md` are hard constraints. `CONTRACTS/` sets interface shapes. `TASKS/` sets work-order scope. `docs/BLUEPRINT_V1_1.md` and `ARCHITECTURE.md` are explanatory where not in conflict. If instructions disagree, stop and log an ADR; never weaken safeguards.
