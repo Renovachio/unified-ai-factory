@@ -13,7 +13,7 @@ export interface Scope { organizationId: string; workspaceId?: string }
 const ws = (s: Scope) => s.workspaceId ?? "default";
 
 /** Stores an immutable candidate in quarantine (state `quarantined`, then `validated` only with a passing, verified, unexpired report). Duplicate digests return the existing row and never overwrite. */
-export async function submitCandidate(sql: Sql, i: Scope & { kind: "skill" | "agent"; manifest: SkillManifest; files: readonly TreeEntry[]; createdBy: string; signed: SignedValidationReport; reportPublicKeyPem: string; policyDigest: string; now?: Date }): Promise<{ versionId: string; duplicate: boolean; state: string }> {
+export async function submitCandidate(sql: Sql, i: Scope & { kind: "skill" | "agent"; manifest: Pick<SkillManifest, "slug" | "version" | "digest" | "origin">; files: readonly TreeEntry[]; createdBy: string; signed: SignedValidationReport; reportPublicKeyPem: string; policyDigest: string; now?: Date }): Promise<{ versionId: string; duplicate: boolean; state: string }> {
   const { manifest: m } = i;
   const existing = await sql`SELECT id, state FROM skill_versions WHERE organization_id = ${i.organizationId} AND workspace_id = ${ws(i)} AND kind = ${i.kind} AND slug = ${m.slug} AND digest = ${m.digest}`;
   if (existing[0]) return { versionId: existing[0].id as string, duplicate: true, state: existing[0].state as string };

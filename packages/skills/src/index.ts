@@ -5,3 +5,5 @@ export * from "./validator";
 export * from "./registry";
 export * from "./inventory";
 export * from "./discovery";
+export * from "./creator";
+export * from "./agent-designer";
