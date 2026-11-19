@@ -1,0 +1,144 @@
+schemaVersion: 1
+# SPDX identifiers whose licenses are permitted for installed packages (direct and transitive).
+allowedLicenses: [MIT, ISC, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, Unlicense, Python-2.0, CC-BY-4.0]
+# Metered model-inference SDKs: never allowed (SECURITY.md; AGENTS.md rule 3).
+forbiddenPackages:
+  - "@anthropic-ai/sdk"
+  - "@anthropic-ai/bedrock-sdk"
+  - "@anthropic-ai/vertex-sdk"
+  - openai
+  - "@google/generative-ai"
+  - "@google/genai"
+  - cohere-ai
+  - "@mistralai/mistralai"
+  - ai
+  - langchain
+  - "@langchain/openai"
+  - "@langchain/anthropic"
+# Paths excluded from the upstream-marker / SDK-import scan (the checker itself and its fixtures).
+scanExclude:
+  - "packages/checks/src/license/**"
+  - "packages/checks/tests/**"
+  - "scripts/license-check.ts"
+# Approved direct dependencies. Add an entry (exact version) BEFORE adding a dependency.
+packages:
+  - name: "@eslint/js"
+    version: "10.0.1"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "@next/eslint-plugin-next"
+    version: "16.4.6"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "@types/bun"
+    version: "1.4.4"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "@types/node"
+    version: "26.6.6"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "@types/react"
+    version: "19.3.0"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "@types/react-dom"
+    version: "19.3.0"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "eslint"
+    version: "10.15.0"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "globals"
+    version: "17.14.0"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "next"
+    version: "16.4.6"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "react"
+    version: "19.3.1"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "react-dom"
+    version: "19.3.1"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "typescript"
+    version: "6.0.3"
+    license: Apache-2.0
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "typescript-eslint"
+    version: "8.73.0"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [dev]
+  - name: "yaml"
+    version: "2.9.1"
+    license: ISC
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "zod"
+    version: "4.6.7"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "drizzle-orm"
+    version: "0.45.4"
+    license: Apache-2.0
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "postgres"
+    version: "4.1.1"
+    license: Unlicense
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "ajv"
+    version: "8.20.0"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+  - name: "ajv-formats"
+    version: "3.0.1"
+    license: MIT
+    approvedBy: "PROPOSED by agent - operator ratification pending (permissive license, on allowlist)"
+    approvedOn: "2026-11-18"
+    allowedModes: [runtime]
+# Installed packages whose license is not on the allowlist but were individually reviewed.
+exceptions:
+  - name: "@img/sharp-libvips-*"
+    license: LGPL-3.0-or-later
+    reason: Optional prebuilt native library pulled in by Next.js image optimisation (sharp); dynamically linked, unmodified, not redistributed by this project. Legal review of LGPL obligations still pending.
+    approvedBy: operator (explicit decision in session, 2026-11-18) - conditional on legal review

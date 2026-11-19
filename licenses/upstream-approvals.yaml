@@ -1,0 +1,4 @@
+schemaVersion: 1
+# Per-file approvals for code incorporated from upstream projects (path + content sha256 + pinned upstream commit).
+# Empty: nothing from Marshal Factory or Zazen is approved for incorporation.
+approvals: []
