@@ -52,7 +52,8 @@ export async function runRepl(c: Ctx, hooks: ReplHooks, opts: { input?: NodeJS.R
   const clean = (s: string) => s.split("\n").map((l) => safe(l)).join("\n");
   const say = (s: string, prefix = "") => output.write(`${prefix}${clean(s)}\n`);
   const dim = (s: string) => output.write(`${color.dim(clean(s))}\n`);
-  const io: Io = { out: say, ask: async (p) => (await lines.next(p)) ?? "" };
+  // Questions are written by us (readline only shows prompts on a terminal), so they are visible with piped input too.
+  const io: Io = { out: say, ask: async (p) => { output.write(clean(p)); const a = (await lines.next("")) ?? ""; if (!process.stdin.isTTY) output.write("\n"); return a; } };
   const ex = new Executor(client, session, io);
   const show = (o: Outcome) => (o.status === "completed" ? say(o.message) : say(o.message, `${o.status === "failed" ? sym.fail() : sym.warn()} `));
   dim("Type /dispatch <request> to make a request, /help for commands. /exit leaves the factory running; /shutdown stops it.");

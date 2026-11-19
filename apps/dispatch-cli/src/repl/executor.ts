@@ -71,9 +71,16 @@ export class Executor {
   async addLocalProject(path: string): Promise<Outcome> {
     try {
       const abs = path.trim().startsWith("~") || path.trim().startsWith("/") ? path.trim() : resolvePath(process.cwd(), path.trim());
-      const r = await this.c.send<{ id: string; name: string; path: string; created: boolean; isGit: boolean }>(this.c.mutation("POST", "/api/v2/dispatch/projects", { path: abs }));
+      type R = { id?: string; name: string; path: string; created?: boolean; isGit?: boolean; missing?: boolean; folderCreated?: boolean };
+      let r = await this.c.send<R>(this.c.mutation("POST", "/api/v2/dispatch/projects", { path: abs }));
+      if (r.missing) { // the folder does not exist: offer to create exactly that path
+        const ans = (await this.io.ask(`${r.path} does not exist. Create it? (y/N) `)).trim().toLowerCase();
+        if (ans !== "y" && ans !== "yes") return blocked("not-confirmed", "Nothing was created.");
+        r = await this.c.send<R>(this.c.mutation("POST", "/api/v2/dispatch/projects", { path: abs, create: true }));
+      }
+      if (!r.id) return blocked("folder-refused", "The folder could not be added.");
       this.session.setProject(r.id, r.name);
-      return done(`${r.created ? "Added" : "Already added"}: ${r.name} (${r.path})${r.isGit ? "" : "\nNote: this folder is not a git repository. Requests can be recorded, but changes to it will not be tracked until it is one."}\nActive project: ${r.name}`);
+      return done(`${r.folderCreated ? "Created and added" : r.created ? "Added" : "Already added"}: ${r.name} (${r.path})${r.isGit ? "" : "\nNote: this folder is not a git repository, so changes to it cannot be tracked until it is one."}\nActive project: ${r.name}`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) return blocked("folder-refused", e.detail ?? e.title);
       return this.explain(e);

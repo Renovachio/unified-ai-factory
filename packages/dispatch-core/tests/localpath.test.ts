@@ -32,4 +32,14 @@ describe("local project folders (safety)", () => {
   test("files, missing paths, NUL bytes, empty and oversized input are refused", () => {
     for (const p of [join(home, "file.txt"), join(home, "nope"), "a\0b", "", "   ", "x".repeat(2000)]) expect(v(p).ok).toBe(false);
   });
+
+  test("a missing folder is planned (not created) only with allowMissing, judged by the path it would have", () => {
+    const nu = join(home, "code", "brand-new", "deep"); expect(v(nu).ok).toBe(false);
+    expect(validateLocalFolder(nu, { home, allowMissing: true })).toMatchObject({ ok: true, missing: true, path: join(work, "..", "brand-new", "deep").replace(/\/notes\/\.\.\//, "/") });
+    expect(validateLocalFolder(join(home, "innocent", "x"), { home, allowMissing: true }).ok).toBe(false); // symlink into ~/.ssh
+    expect(validateLocalFolder(join(home, ".ssh", "new"), { home, allowMissing: true }).ok).toBe(false);
+    expect(validateLocalFolder("/etc/newthing", { home, allowMissing: true }).ok).toBe(false);
+    expect(validateLocalFolder(join(home, "file.txt", "sub"), { home, allowMissing: true }).ok).toBe(false); // parent is a file
+    expect(validateLocalFolder(join(home, "Library", "x"), { home, allowMissing: true }).ok).toBe(false);
+  });
 });

@@ -128,7 +128,8 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
   test("dangerous or invalid folders are refused with the reason and nothing is registered", async () => {
     const before = Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c);
     const { out } = await session(["/new /", "/new /etc", "/new ~", "/new /no/such/folder", `/new ${join(home, "..", "..")}`, "/exit"]);
-    expect(out).toContain("refusing"); expect(out).toContain("no such folder"); expect(Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c)).toBe(before);
+    expect(out).toContain("refusing"); expect(out).toContain("cannot create folders inside"); // an unwritable parent is refused rather than offered
+    expect(Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c)).toBe(before);
   });
   test("the DB refuses a local project without a path and a github one with a path", async () => {
     await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'local', 'zz', 'local', 'zz')`).rejects.toThrow();
@@ -143,5 +144,13 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
     finally { if (had) Object.defineProperty(process.stdout, "isTTY", had); else Reflect.deleteProperty(process.stdout, "isTTY"); }
     expect(a.out).toContain("Added: Scribe Deck Transcripts"); expect(a.out).not.toContain("\u001b[2J");   // untrusted escape removed
     expect(a.out).toContain("\u001b[33m!\u001b[0m"); expect(a.out).not.toContain("·[33m");               // our own marker intact, not mangled
+  });
+
+  test("/new <missing folder> asks, creates only on yes, and registers it; refusing leaves the disk untouched; dangerous places are refused without asking", async () => {
+    const fs = await import("node:fs"); const nu = join(home, "MeetingNotes"); const no = join(home, "NotCreated");
+    const declined = await session([`/new ${no}`, "n", "/exit"]); expect(declined.out).toContain("does not exist. Create it?"); expect(declined.out).toContain("Nothing was created"); expect(fs.existsSync(no)).toBe(false);
+    const yes = await session([`/new ${nu}`, "y", "/dispatch first note", "/exit"]); expect(yes.out).toContain("Created and added: MeetingNotes"); expect(fs.existsSync(nu)).toBe(true); expect(yes.out).toContain("Request created");
+    const again = await session([`/new ${nu}`, "/exit"]); expect(again.out).toContain("Already added: MeetingNotes"); expect(again.out).not.toContain("Create it?");
+    const bad = await session(["/new /etc/mynotes", "/new /System/x", "/exit"]); expect(bad.out).not.toContain("Create it?"); expect(bad.out).toContain("refusing a system folder"); expect(fs.existsSync("/etc/mynotes")).toBe(false);
   });
 });

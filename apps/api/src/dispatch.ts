@@ -1,6 +1,6 @@
 // Dispatch v2.3 interaction layer, API side. Additive: every route sits under /api/v2/dispatch, uses the existing authentication, RBAC and tenant scoping,
 // and reads or calls the existing job/approval services. Nothing here is a second orchestrator.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateLocalFolder } from "@factory/dispatch-core";
 import type { Sql } from "@factory/db";
@@ -92,17 +92,24 @@ export async function listProjects(sql: Sql, actor: Actor) {
 }
 
 /** Register a folder on this machine as a project. Only in Dispatch local mode (single-user, loopback): a server-side path means nothing, and is dangerous, in a hosted deployment. */
-export async function addLocalProject(sql: Sql, actor: Actor, path: string, dispatchHome?: string): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function addLocalProject(sql: Sql, actor: Actor, path: string, dispatchHome?: string, create = false): Promise<{ status: number; body: Record<string, unknown> }> {
   if (!process.env.DISPATCH_LOCAL_TOKEN_FILE) throw problems.notFound("no such route");
-  const f = validateLocalFolder(path, dispatchHome ? { dispatchHome } : {});
+  let f = validateLocalFolder(path, { allowMissing: true, ...(dispatchHome ? { dispatchHome } : {}) });
   if (!f.ok) throw problems.unprocessable(f.reason);
+  if (f.missing) {
+    // Never create anything unless the caller explicitly asked to; report what WOULD be created so the human can confirm.
+    if (!create) return { status: 200, body: { missing: true, path: f.path, name: f.name } };
+    mkdirSync(f.path, { recursive: true });
+    f = validateLocalFolder(f.path, dispatchHome ? { dispatchHome } : {}); // re-check the real thing now that it exists (a race could have changed it)
+    if (!f.ok) throw problems.unprocessable(f.reason);
+  }
   const [existing] = await sql<{ id: string; name: string }[]>`SELECT id, name FROM repositories WHERE provider = 'local' AND external_id = ${f.id} AND organization_id = ${actor.orgId}`;
   if (existing) return { status: 200, body: { id: existing.id, name: existing.name, path: f.path, created: false, isGit: f.isGit } };
   const [row] = await sql<{ id: string }[]>`INSERT INTO repositories (organization_id, provider, external_id, owner, name, local_path) VALUES (${actor.orgId}, 'local', ${f.id}, 'local', ${f.name}, ${f.path})
     ON CONFLICT (provider, external_id) DO NOTHING RETURNING id`;
   if (!row) throw problems.conflict("duplicate-project", "that folder is already registered by another organisation");
   await sql`INSERT INTO audit_entries (organization_id, actor, action, resource, result, digest) VALUES (${actor.orgId}, ${actor.userId}, 'project.add_local', ${`project:${row.id}`}, 'ok', ${f.id})`;
-  return { status: 201, body: { id: row.id, name: f.name, path: f.path, created: true, isGit: f.isGit } };
+  return { status: 201, body: { id: row.id, name: f.name, path: f.path, created: true, isGit: f.isGit, folderCreated: create } };
 }
 
 export async function approvalsInbox(sql: Sql, actor: Actor) {
@@ -152,8 +159,8 @@ export const dispatchRoutes: Array<{ method: string; pattern: RegExp; handler: H
   { method: "POST", pattern: /^\/dispatch\/projects$/, handler: async ({ req, sql, actor, mutating, key, maxBody }) => {
     require_(actor, "job:create"); mutating(); key();
     const { value } = await readJson(req, maxBody);
-    const path = (value as { path?: unknown } | null)?.path; if (typeof path !== "string") throw problems.unprocessable("body must be {path: string}");
-    return addLocalProject(sql, actor, path, process.env.DISPATCH_HOME);
+    const b = (value ?? {}) as { path?: unknown; create?: unknown }; if (typeof b.path !== "string") throw problems.unprocessable("body must be {path: string, create?: boolean}");
+    return addLocalProject(sql, actor, b.path, process.env.DISPATCH_HOME, b.create === true);
   } },
   { method: "GET", pattern: /^\/dispatch\/approvals$/, handler: async ({ sql, actor }) => { require_(actor, "job:read"); return { status: 200, body: await approvalsInbox(sql, actor) }; } },
   { method: "GET", pattern: /^\/dispatch\/capabilities$/, handler: async ({ req, sql, actor }) => {
