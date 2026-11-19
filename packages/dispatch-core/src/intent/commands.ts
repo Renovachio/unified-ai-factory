@@ -85,7 +85,7 @@ export function parseLine(line: string): Parsed {
 }
 
 /** Subcommands of the shell program. `dispatch <words>` is a request, so a one-word typo of a subcommand must be refused rather than become a job. */
-export const SHELL_SUBCOMMANDS = ["start", "status", "doctor", "stop", "migrate", "help", "work", "mcp"] as const;
+export const SHELL_SUBCOMMANDS = ["start", "status", "doctor", "stop", "migrate", "help", "work", "mcp", "code", "changes", "undo"] as const;
 export function shellRequestText(args: string[]): { ok: true; text: string } | { ok: false; error: string } {
   const text = args.join(" ").trim();
   if (text === "") return { ok: false, error: "empty request" };

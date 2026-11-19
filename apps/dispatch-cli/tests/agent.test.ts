@@ -63,6 +63,6 @@ describe("dispatch guard-write: Claude may write only inside the Dispatch work c
     expect(guardWrite("not json", work).allow).toBe(false); expect(guardWrite(JSON.stringify({ tool_name: "Write", tool_input: {} }), work).allow).toBe(false);
     expect(g("Bash", join(work, "a")).allow).toBe(false); expect(g("Write", `${work}/a\0b`).allow).toBe(false);
     expect(guardWrite(JSON.stringify({ tool_name: "Write", tool_input: { file_path: join(work, "a") } }), join(base, "does-not-exist")).allow).toBe(false);
-    const r = g("Write", "/etc/passwd"); if (!r.allow) expect(r.reason).toContain("work copy");
+    const r = g("Write", "/etc/passwd"); if (!r.allow) expect(r.reason).toContain("only allowed inside");
   });
 });

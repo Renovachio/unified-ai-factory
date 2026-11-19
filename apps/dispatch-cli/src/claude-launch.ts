@@ -31,3 +31,16 @@ export function buildClaudeLaunch(o: { claude: string; pluginDir: string; projec
   };
 }
 export const workDirOf = (home: string): string => join(home, "work");
+
+/**
+ * In-place session: Claude Code runs in YOUR folder on the real files (like plain `claude`), with Opus coordinating cheaper agents. Writes are NOT
+ * pre-approved (Claude asks, as usual); the session-wide guard confines writes to the folder and refuses .git/.github/.env/keys/dependencies.
+ * No MCP servers at all (--strict-mcp-config with an empty set): no connectors, no Dispatch tools. A snapshot is taken first so the change can be undone.
+ */
+export function buildHereLaunch(o: { claude: string; pluginDir: string; projectPath: string; env: Record<string, string | undefined>; guardCommand: string; request?: string | undefined }): ClaudeLaunch {
+  const prompt = o.request ? `/dispatch:here ${o.request}` : "/dispatch:here";
+  return {
+    command: o.claude, cwd: o.projectPath, env: claudeEnv(o.env),
+    args: [prompt, "--restricted", "--model", "opus", "--plugin-dir", o.pluginDir, "--settings", guardSettings(o.guardCommand), "--tools", AGENT_TOOLS, "--mcp-config", '{"mcpServers":{}}', "--strict-mcp-config"],
+  };
+}

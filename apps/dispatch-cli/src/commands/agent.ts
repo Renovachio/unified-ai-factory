@@ -22,10 +22,10 @@ export async function cmdMcp(): Promise<number> {
 }
 
 /** `dispatch guard-write`: Claude Code PreToolUse hook. Exit 0 = allow, exit 2 = deny (the reason on stderr is shown to Claude). */
-export async function cmdGuardWrite(): Promise<number> {
-  const c = makeCtx({ create: false }); let input = "";
-  for await (const chunk of process.stdin) input += chunk;
-  const r = guardWrite(input, join(c.paths.home, "work"));
+export async function cmdGuardWrite(args: string[] = []): Promise<number> {
+  let input = ""; for await (const chunk of process.stdin) input += chunk;
+  const ri = args.indexOf("--root"); const root = ri >= 0 ? args[ri + 1] : undefined;
+  const r = root ? guardWrite(input, root, { protect: args.includes("--protect") }) : guardWrite(input, join(makeCtx({ create: false }).paths.home, "work")); // no --root: the work folder (queued-job flow)
   if (r.allow) return 0;
   process.stderr.write(`Dispatch blocked this write: ${r.reason}\n`); return 2;
 }
