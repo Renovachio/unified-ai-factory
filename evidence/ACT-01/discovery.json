@@ -1,0 +1,38 @@
+[
+ {
+  "adapterId": "claude-code",
+  "kind": "subscription_cli",
+  "found": true,
+  "executablePath": "/Users/carlossoares/.local/bin/claude",
+  "version": "2.1.328",
+  "os": "darwin-arm64",
+  "capabilityFlags": [
+   "noninteractive-print",
+   "json-output",
+   "tool-use",
+   "sandboxed-shell-by-factory"
+  ],
+  "detail": "2.1.328 (Claude Code)"
+ },
+ {
+  "adapterId": "codex",
+  "kind": "subscription_cli",
+  "found": false,
+  "os": "darwin-arm64",
+  "capabilityFlags": [],
+  "detail": "codex not found on PATH"
+ },
+ {
+  "adapterId": "ollama",
+  "kind": "local_engine",
+  "found": true,
+  "executablePath": "/usr/local/bin/ollama",
+  "version": "0.33.3",
+  "os": "darwin-arm64",
+  "capabilityFlags": [
+   "openai-compatible-loopback",
+   "tool-calls-model-dependent"
+  ],
+  "detail": "ollama version is 0.33.3"
+ }
+]

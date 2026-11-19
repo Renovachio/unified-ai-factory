@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "note": "Role-specific model qualification registry (ACT-06). A (runtime, model, promptVersion, toolsetDigest, role) tuple may serve a critical role ONLY with an approved, unexpired record whose measured results meet roleTargets. Empty = no model is qualified for any critical role. Targets are initial policy values, not statistically validated guarantees.",
+  "roleTargets": {
+    "builder": { "metric": "acceptance", "minRate": 0.9, "minSamples": 30 },
+    "review_code": { "metric": "criticalDefectRecall", "minRate": 0.9, "minSamples": 30 },
+    "review_security": { "metric": "criticalHighDefectRecall", "minRate": 0.95, "minSamples": 30 },
+    "spec": { "metric": "schemaValidAndCriteriaCoverage", "minRate": 0.95, "minSamples": 30 }
+  },
+  "maxValidityDays": 90,
+  "qualifications": []
+}

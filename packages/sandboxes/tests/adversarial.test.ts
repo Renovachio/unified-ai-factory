@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assertEnvAllowed, BwrapBackend, buildSandboxEnv, createWorkspace, detectBackend, findEscapingSymlinks, NoIsolationBackend, PathEscapeError, PolicyViolation,
-  resolveInside, runSandboxed, sanitizeGitDir, sweepStaleWorkspaces, teardownWorkspace, type Workspace,
+  resolveInside, runSandboxed, sanitizeGitDir, sweepStaleWorkspaces, teardownWorkspace, verifySandboxEnforcement, type Workspace,
 } from "../src/index";
 
 const backend = detectBackend();
@@ -267,5 +267,29 @@ describe("workspace lifecycle", () => {
     expect(sweepStaleWorkspaces(sweepBase, 60_000)).toEqual([]);
     expect(sweepStaleWorkspaces(sweepBase, 60_000, Date.now() + 120_000)).toEqual([w.root.split("/").pop() as string]);
     expect(existsSync(w.root)).toBe(false);
+  });
+});
+
+describe("egress enforcement is OS-level, not configuration (ACT-01 RT-07 / ACT-05 SEC-03)", () => {
+  const sh = (script: string) => runSandboxed({ backend, workspaceRoot: ws.root, cwd: ws.repoDir, command: "/bin/sh", args: ["-c", script], env, timeoutMs: 12_000 });
+  test("metered inference hosts are unreachable by name, by raw IP, over IPv6 and via DNS; even with proxy/base-url variables set", async () => {
+    for (const url of ["https://api.anthropic.com/v1/messages", "https://api.openai.com/v1/chat/completions", "https://generativelanguage.googleapis.com/", "https://openrouter.ai/api/v1", "https://1.1.1.1/", "https://[2606:4700:4700::1111]/", "http://2130706433:" + port + "/", "http://0x7f000001:" + port + "/", "http://localhost:" + port + "/"]) {
+      const r = await runSandboxed({ backend, workspaceRoot: ws.root, cwd: ws.repoDir, command: "/usr/bin/curl", args: ["-s", "-m", "4", "-o", "/dev/null", "-w", "%{http_code}", url], env: { ...env, HTTPS_PROXY: "http://127.0.0.1:" + port, ALL_PROXY: "http://127.0.0.1:" + port, ANTHROPIC_BASE_URL: "http://127.0.0.1:" + port }, timeoutMs: 12_000 });
+      expect(r.stdout.trim() === "" || r.stdout.trim() === "000", `${url} -> ${r.stdout}`).toBe(true);
+    }
+    expect(connections).toBe(0);
+  });
+  test("DNS resolution and raw sockets are denied from inside the sandbox", async () => {
+    const dns = await sh("/usr/bin/nslookup api.anthropic.com 8.8.8.8 2>&1 | head -5");
+    expect(dns.stdout).not.toMatch(/Address: \d+\.\d+\.\d+\.\d+\s*$/m);
+    const sock = await sh("exec 3<>/dev/tcp/127.0.0.1/" + port + " 2>&1; echo rc=$?");
+    expect(connections).toBe(0);
+    void sock;
+  });
+  test("fail-closed self-test passes on this host and reports each probe; a no-isolation backend is never 'enforced'", async () => {
+    const rep = await verifySandboxEnforcement(backend);
+    expect(rep.enforced, JSON.stringify(rep)).toBe(true);
+    expect(rep.checks.map((c) => c.name)).toEqual(["loopback-connect-denied", "host-read-denied", "host-write-denied"]);
+    expect((await verifySandboxEnforcement(new NoIsolationBackend())).enforced).toBe(false);
   });
 });

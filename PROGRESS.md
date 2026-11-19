@@ -29,3 +29,15 @@ All 25 work orders are implemented, each with a report in `evidence/<ID>/report.
 | CLD-001 | ACCEPTED_SIMULATED_PROVIDER_OPT_IN_OFF | evidence/CLD-001/report.md | operator (continue-plan instruction) |
 | EVAL-001 | ACCEPTED | evidence/EVAL-001/report.md | operator (continue-plan instruction) |
 | AUTO-001 | ACCEPTED_INERT_BY_DEFAULT | evidence/AUTO-001/report.md | operator (continue-plan instruction) |
+
+## v2.1 Hardening & Operational Activation
+
+Plan: `Unified_AI_Software_Factory_v2.1_Hardening_Operational_Activation.md` (auto-merge stays disabled). `IMPLEMENTED` is not `VERIFIED`; statuses are `not_started | in_progress | blocked | verified`.
+
+```yaml
+- work_package: ACT-01
+  status: blocked   # local-engine path verified; provider terms + qualified builder missing
+  baseline_commit: 298a60c  # v2.0 dev/auto-001 tip before v2.1 (history later rewritten; see git log)
+  evidence: evidence/ACT-01/report.md
+  blockers: [provider-terms approval, no role-qualified builder model]
+```
