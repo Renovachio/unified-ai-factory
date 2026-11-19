@@ -353,3 +353,104 @@ export const authSessions = pgTable("auth_sessions", {
   revokeReason: text("revoke_reason"),
   replacedBy: text("replaced_by"),
 });
+
+// ---- v2.2 skill/agent registry (migration 0011) ----
+const ts = (n: string) => timestamp(n, { withTimezone: true });
+export const skillVersions = pgTable("skill_versions", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  workspaceId: text("workspace_id").notNull().default("default"),
+  kind: text("kind").notNull(),
+  slug: text("slug").notNull(),
+  version: text("version").notNull(),
+  digest: text("digest").notNull(),
+  permissionDigest: text("permission_digest").notNull(),
+  manifest: jsonb("manifest").notNull(),
+  origin: jsonb("origin").notNull(),
+  fileManifest: jsonb("file_manifest").notNull(),
+  state: text("state").notNull().default("quarantined"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: created(),
+});
+export const skillValidations = pgTable("skill_validations", {
+  id: id(),
+  versionId: uuid("version_id").notNull().references(() => skillVersions.id),
+  candidateDigest: text("candidate_digest").notNull(),
+  policyDigest: text("policy_digest").notNull(),
+  ok: boolean("ok").notNull(),
+  report: jsonb("report").notNull(),
+  signature: text("signature").notNull(),
+  keyId: text("key_id").notNull(),
+  evidenceDigest: text("evidence_digest").notNull(),
+  expiresAt: ts("expires_at").notNull(),
+  createdAt: created(),
+});
+export const approvalRequests = pgTable("approval_requests", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  versionId: uuid("version_id").notNull().references(() => skillVersions.id),
+  operation: text("operation").notNull(),
+  targetDigest: text("target_digest").notNull(),
+  permissionDigest: text("permission_digest").notNull(),
+  policyDigest: text("policy_digest").notNull(),
+  evidenceDigest: text("evidence_digest").notNull(),
+  requestedBy: uuid("requested_by").notNull().references(() => users.id),
+  idempotencyKey: text("idempotency_key").notNull(),
+  expiresAt: ts("expires_at").notNull(),
+  createdAt: created(),
+});
+export const approvalDecisions = pgTable("approval_decisions", {
+  requestId: uuid("request_id").primaryKey().references(() => approvalRequests.id),
+  decision: text("decision").notNull(),
+  decidedBy: uuid("decided_by").notNull().references(() => users.id),
+  presentedDigest: text("presented_digest").notNull(),
+  presentedPermissionDigest: text("presented_permission_digest").notNull(),
+  note: text("note"),
+  decidedAt: ts("decided_at").notNull().defaultNow(),
+  consumedAt: ts("consumed_at"),
+});
+export const registryActive = pgTable("registry_active", {
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  workspaceId: text("workspace_id").notNull().default("default"),
+  kind: text("kind").notNull(),
+  slug: text("slug").notNull(),
+  activeVersionId: uuid("active_version_id").references(() => skillVersions.id),
+  revision: integer("revision").notNull().default(0),
+  disabledReason: text("disabled_reason"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+export const registryLog = pgTable("registry_log", {
+  id: bigint("id", { mode: "number" }).primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  workspaceId: text("workspace_id").notNull(),
+  kind: text("kind").notNull(),
+  slug: text("slug").notNull(),
+  operation: text("operation").notNull(),
+  fromVersionId: uuid("from_version_id").references(() => skillVersions.id),
+  toVersionId: uuid("to_version_id").references(() => skillVersions.id),
+  revision: integer("revision").notNull(),
+  approvalRequestId: uuid("approval_request_id").references(() => approvalRequests.id),
+  actor: text("actor").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  reason: text("reason"),
+  createdAt: created(),
+});
+export const jobSkillPins = pgTable("job_skill_pins", {
+  jobId: uuid("job_id").notNull().references(() => jobs.id),
+  versionId: uuid("version_id").notNull().references(() => skillVersions.id),
+  digest: text("digest").notNull(),
+  pinnedAt: ts("pinned_at").notNull().defaultNow(),
+});
+export const rollbackPolicies = pgTable("rollback_policies", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  versionId: uuid("version_id").notNull().references(() => skillVersions.id),
+  metric: text("metric").notNull(),
+  comparator: text("comparator").notNull(),
+  threshold: doublePrecision("threshold").notNull(),
+  minSamples: integer("min_samples").notNull(),
+  action: text("action").notNull(),
+  approvedBy: uuid("approved_by").notNull().references(() => users.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: created(),
+});
