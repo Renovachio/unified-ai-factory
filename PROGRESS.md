@@ -22,7 +22,7 @@ This is a specification package. No engineering work orders have been implemente
 | SPC-001 | ACCEPTED | evidence/SPC-001/report.md | operator (continue-plan instruction) |
 | BLD-001 | ACCEPTED | evidence/BLD-001/report.md | operator (continue-plan instruction) |
 | GAT-001 | ACCEPTED | evidence/GAT-001/report.md | operator (continue-plan instruction) |
-| REV-001 | NOT_STARTED | — | — |
+| REV-001 | ACCEPTED | evidence/REV-001/report.md | operator (continue-plan instruction) |
 | POL-001 | NOT_STARTED | — | — |
 | MRJ-001 | NOT_STARTED | — | — |
 | OBS-001 | NOT_STARTED | — | — |
