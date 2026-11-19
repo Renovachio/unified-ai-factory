@@ -71,11 +71,9 @@ export function assertTransition(job: JobSnapshot, next: JobState): void {
       if (!job.gate || isApprovalStale(job.gate, cur)) fail("stale-gate", "gate evidence stale at merge time");
       break;
     }
-    case "REWORK":
-      if (job.round >= job.maxRounds && job.state !== "FAILED") fail("rework-budget", "rework budget exhausted; escalate");
-      break;
     case "BUILDING":
-      if (job.state === "REWORK" && job.round > job.maxRounds) fail("rework-budget", "rework budget exhausted");
+      // Entering REWORK is a decision point and always allowed; leaving it for another build round is what the budget bounds.
+      if (job.state === "REWORK" && job.round > job.maxRounds) fail("rework-budget", "rework budget exhausted; escalate to a human");
       break;
     default:
       break;

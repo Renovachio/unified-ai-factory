@@ -63,6 +63,7 @@ export const jobs = pgTable("jobs", {
   state: text("state").notNull().default("QUEUED"),
   version: integer("version").notNull().default(1),
   risk: text("risk").notNull().default("CRITICAL"),
+  riskClassified: boolean("risk_classified").notNull().default(false),
   priority: text("priority").notNull().default("normal"),
   policyDigest: text("policy_digest"),
   specDigest: text("spec_digest"),
@@ -270,5 +271,33 @@ export const idempotencyKeys = pgTable("idempotency_keys", {
   responseStatus: integer("response_status"),
   responseBody: jsonb("response_body"),
   jobId: uuid("job_id").references(() => jobs.id),
+  createdAt: created(),
+});
+
+export const pullRequests = pgTable("pull_requests", {
+  id: id(),
+  jobId: uuid("job_id").notNull().unique().references(() => jobs.id),
+  repositoryId: uuid("repository_id").notNull().references(() => repositories.id),
+  prNumber: integer("pr_number").notNull(),
+  headRef: text("head_ref").notNull(),
+  headSha: text("head_sha").notNull(),
+  baseRef: text("base_ref").notNull(),
+  draft: boolean("draft").notNull().default(true),
+  htmlUrl: text("html_url").notNull(),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const candidates = pgTable("candidates", {
+  id: id(),
+  jobId: uuid("job_id").notNull().references(() => jobs.id),
+  round: integer("round").notNull(),
+  role: text("role").notNull(),
+  parentSha: text("parent_sha").notNull(),
+  headSha: text("head_sha").notNull(),
+  treeSha: text("tree_sha").notNull(),
+  patchDigest: text("patch_digest").notNull(),
+  descriptorDigest: text("descriptor_digest").notNull(),
+  filesChanged: integer("files_changed").notNull(),
   createdAt: created(),
 });

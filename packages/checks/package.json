@@ -10,6 +10,16 @@
   },
   "dependencies": {
     "yaml": "2.9.1",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@factory/db": "workspace:*",
+    "@factory/domain": "workspace:*",
+    "@factory/orchestrator": "workspace:*",
+    "@factory/sandboxes": "workspace:*",
+    "@factory/scm": "workspace:*",
+    "@factory/telemetry": "workspace:*"
+  },
+  "devDependencies": {
+    "@factory/runner": "workspace:*",
+    "@factory/scheduler": "workspace:*"
   }
 }

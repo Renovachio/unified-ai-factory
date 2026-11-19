@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "note": "Operator-maintained pin of gate manifest digests. Re-pin only after human review of the manifest change.",
+  "profiles": {
+    "typescript-web": "sha256:b3f683fc95054b5b1d5a9193588903fdd943d2eef6cf53a261cb5c9fc0418f70"
+  }
+}

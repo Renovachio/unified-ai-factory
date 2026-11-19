@@ -15,6 +15,31 @@
         "typescript-eslint": "8.73.0",
       },
     },
+    "apps/api": {
+      "name": "@factory/api",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/contracts": "workspace:*",
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/intake": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+        "@factory/scm": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "jose": "6.2.18",
+      },
+    },
+    "apps/runner": {
+      "name": "@factory/runner",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+      },
+    },
     "apps/web": {
       "name": "@factory/web",
       "version": "0.0.0",
@@ -28,12 +53,42 @@
         "@types/react-dom": "19.3.0",
       },
     },
+    "packages/agents": {
+      "name": "@factory/agents",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@factory/checks": "workspace:*",
+        "@factory/intake": "workspace:*",
+        "@factory/orchestrator": "workspace:*",
+        "@factory/runner": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+        "@factory/scm": "workspace:*",
+      },
+    },
     "packages/checks": {
       "name": "@factory/checks",
       "version": "0.0.0",
       "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/orchestrator": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scm": "workspace:*",
+        "@factory/telemetry": "workspace:*",
         "yaml": "2.9.1",
         "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@factory/runner": "workspace:*",
+        "@factory/scheduler": "workspace:*",
       },
     },
     "packages/contracts": {
@@ -58,6 +113,77 @@
     "packages/domain": {
       "name": "@factory/domain",
       "version": "0.0.0",
+    },
+    "packages/intake": {
+      "name": "@factory/intake",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@factory/contracts": "workspace:*",
+        "@factory/orchestrator": "workspace:*",
+        "@factory/runner": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+      },
+    },
+    "packages/orchestrator": {
+      "name": "@factory/orchestrator",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/runner": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+        "@factory/scm": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+      },
+    },
+    "packages/runtimes": {
+      "name": "@factory/runtimes",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/contracts": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+    },
+    "packages/sandboxes": {
+      "name": "@factory/sandboxes",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/domain": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+      },
+    },
+    "packages/scheduler": {
+      "name": "@factory/scheduler",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+      },
+    },
+    "packages/scm": {
+      "name": "@factory/scm",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
     },
     "packages/telemetry": {
       "name": "@factory/telemetry",
@@ -87,6 +213,10 @@
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.7.3", "", { "dependencies": { "@eslint/core": "^1.2.1", "levn": "^0.4.1" } }, "sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q=="],
 
+    "@factory/agents": ["@factory/agents@workspace:packages/agents"],
+
+    "@factory/api": ["@factory/api@workspace:apps/api"],
+
     "@factory/checks": ["@factory/checks@workspace:packages/checks"],
 
     "@factory/contracts": ["@factory/contracts@workspace:packages/contracts"],
@@ -94,6 +224,20 @@
     "@factory/db": ["@factory/db@workspace:packages/db"],
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
+
+    "@factory/intake": ["@factory/intake@workspace:packages/intake"],
+
+    "@factory/orchestrator": ["@factory/orchestrator@workspace:packages/orchestrator"],
+
+    "@factory/runner": ["@factory/runner@workspace:apps/runner"],
+
+    "@factory/runtimes": ["@factory/runtimes@workspace:packages/runtimes"],
+
+    "@factory/sandboxes": ["@factory/sandboxes@workspace:packages/sandboxes"],
+
+    "@factory/scheduler": ["@factory/scheduler@workspace:packages/scheduler"],
+
+    "@factory/scm": ["@factory/scm@workspace:packages/scm"],
 
     "@factory/telemetry": ["@factory/telemetry@workspace:packages/telemetry"],
 
@@ -328,6 +472,8 @@
     "is-number": ["is-number@7.0.0", "", {}, "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],
 
     "isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
+
+    "jose": ["jose@6.2.18", "", {}, "sha512-doV4thUwgkrycJH4yLeqwTGIIZphHl+pk7CPReuMIhYhncmgzdko85MaCG4YQFTxqMFr1/oEH32tZuKKovcDEg=="],
 
     "json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 
