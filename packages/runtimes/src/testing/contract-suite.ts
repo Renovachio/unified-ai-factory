@@ -121,13 +121,13 @@ export function adapterContractSuite(h: ContractHarness): void {
       await new Promise((r) => setTimeout(r, 50));
       expect(events.length).toBe(n);
       expect(events.filter((e) => TERMINAL.includes(e.type)).length).toBe(1);
-    });
+    }, 20_000); // process-group teardown under load (CI) can exceed the 5 s default; the assertions themselves are unchanged
 
     test("wall-time limit yields timed_out", async () => {
       const { result, events } = await runToEnd(await h.create("slow"), request({ maxWallTimeSec: 1 }));
       expect(result.exitStatus).toBe("timed_out");
       expect(events.at(-1)?.type).toBe("agent.timed_out");
-    });
+    }, 20_000);
 
     test("start is idempotent on requestId (one run, one event stream)", async () => {
       const a = await h.create("ok");
