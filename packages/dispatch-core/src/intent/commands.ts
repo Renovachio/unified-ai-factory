@@ -47,6 +47,12 @@ function lev(a: string, b: string): number {
 }
 export const suggest = (name: string): string[] => COMMANDS.map((c) => ({ c, d: lev(name, c.name) })).filter((x) => x.d <= 3 || x.c.name.startsWith(name)).sort((a, b) => a.d - b.d).slice(0, 3).map((x) => `/${x.c.name}`);
 
+/** Folder arguments may be typed shell-style: surrounding quotes, or backslash-escaped characters (what tab completion and drag-and-drop produce). No expansion is performed. */
+export function unescapePath(raw: string): string {
+  const t = raw.trim();
+  if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) return t.slice(1, -1);
+  return t.replace(/\\(.)/g, "$1");
+}
 export function parseLine(line: string): Parsed {
   const s = line.trim(); if (s === "") return { kind: "text", text: "" };
   if (!s.startsWith("/")) return { kind: "text", text: s };
@@ -61,8 +67,8 @@ export function parseLine(line: string): Parsed {
     case "jobs": return arg === "" ? { kind: "intent", intent: { type: "job.list" }, viaCommand: name } : usage();
     case "status": return arg === "" ? { kind: "intent", intent: { type: "factory.status" }, viaCommand: name } : usage();
     case "dispatch": return arg === "" || arg.length > MAX_TEXT ? usage() : { kind: "request", text: arg };
-    case "new": return arg === "" || arg.length > 1024 ? usage() : { kind: "local-project", path: arg };
-    case "project": { const add = /^add\s+(.+)$/i.exec(arg)?.[1]?.trim(); if (add && add.length <= 1024) return { kind: "local-project", path: add }; const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && (ID_RE.test(pid) || PROJECT_REF_RE.test(pid)) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
+    case "new": return arg === "" || arg.length > 1024 ? usage() : { kind: "local-project", path: unescapePath(arg) };
+    case "project": { const add = /^add\s+(.+)$/i.exec(arg)?.[1]?.trim(); if (add && add.length <= 1024) return { kind: "local-project", path: unescapePath(add) }; const pid = /^use\s+(\S+)$/i.exec(arg)?.[1]; return pid && (ID_RE.test(pid) || PROJECT_REF_RE.test(pid)) ? { kind: "intent", intent: { type: "project.select", projectId: pid }, viaCommand: name } : usage(); }
     case "pause": case "resume": case "cancel": return id() ? { kind: "intent", intent: { type: `job.${name}`, jobId: arg }, viaCommand: name } : usage();
     case "approve": return id() ? { kind: "intent", intent: { type: "approval.review", approvalId: arg }, viaCommand: name } : usage();
     case "logs": return id() ? { kind: "local", command: "logs", arg } : usage();

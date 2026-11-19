@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bindingFor, COMMANDS, ConfirmationStore, deterministic, interpret, parseLine, shellRequestText, validateIntent, type Intent, type NlInterpreter } from "../src/index";
+import { unescapePath, bindingFor, COMMANDS, ConfirmationStore, deterministic, interpret, parseLine, shellRequestText, validateIntent, type Intent, type NlInterpreter } from "../src/index";
 
 describe("intent schema is strict and fails closed (DSP-04)", () => {
   test("every contract intent type validates; unknown types/fields, wrong types, missing fields and injection-shaped ids are rejected", () => {
@@ -31,6 +31,16 @@ describe("slash commands (COMMANDS.md)", () => {
     for (const l of ["/rm -rf /", "/statu", "/shell id", "/etc/passwd", "//", "/ exit"]) { const p = parseLine(l); expect(p.kind).toBe("unknown"); }
     expect(parseLine("/statu")).toMatchObject({ suggestions: expect.arrayContaining(["/status"]) });
     expect(parseLine("show projects").kind).toBe("text"); expect(parseLine("").kind).toBe("text");
+  });
+});
+
+describe("folder arguments typed shell-style", () => {
+  test("escaped spaces, quotes and plain paths all resolve to the same text", () => {
+    expect(parseLine("/new /Users/me/Documents/ScribeDeck\\ Transcripts")).toEqual({ kind: "local-project", path: "/Users/me/Documents/ScribeDeck Transcripts" });
+    expect(parseLine('/new "/Users/me/My Docs"')).toEqual({ kind: "local-project", path: "/Users/me/My Docs" });
+    expect(parseLine("/project add '/Users/me/My Docs'")).toEqual({ kind: "local-project", path: "/Users/me/My Docs" });
+    expect(parseLine("/new ~/code/x y")).toEqual({ kind: "local-project", path: "~/code/x y" });
+    expect(unescapePath("a\\ b")).toBe("a b"); expect(unescapePath("plain")).toBe("plain");
   });
 });
 

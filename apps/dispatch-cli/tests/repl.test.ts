@@ -134,4 +134,14 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
     await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'local', 'zz', 'local', 'zz')`).rejects.toThrow();
     await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name, local_path) VALUES (${org}, 'github', 'zy', 'o', 'n', '/x')`).rejects.toThrow();
   });
+
+  test("our own colour codes survive, untrusted escape sequences do not; shell-escaped folder paths work", async () => {
+    const dir = join(home, "Scribe Deck Transcripts"); (await import("node:fs")).mkdirSync(dir, { recursive: true });
+    const had = Object.getOwnPropertyDescriptor(process.stdout, "isTTY"); Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true }); // colours on, as in a real terminal
+    let a: { out: string; result: string };
+    try { a = await session([`/new ${join(home, "Scribe\\ Deck\\ Transcripts")}`, "/new /no/such/\u001b[2Jfolder", "/exit"]); }
+    finally { if (had) Object.defineProperty(process.stdout, "isTTY", had); else Reflect.deleteProperty(process.stdout, "isTTY"); }
+    expect(a.out).toContain("Added: Scribe Deck Transcripts"); expect(a.out).not.toContain("\u001b[2J");   // untrusted escape removed
+    expect(a.out).toContain("\u001b[33m!\u001b[0m"); expect(a.out).not.toContain("·[33m");               // our own marker intact, not mangled
+  });
 });
