@@ -1,0 +1,17 @@
+{
+  "adapter": "claude-code",
+  "executable": "~/.local/bin/claude",
+  "installed": true,
+  "at": "2026-11-19T02:17:09.017Z",
+  "shippedConfigProbe": {
+    "available": false,
+    "adapterId": "claude-code",
+    "reason": "terms-not-approved",
+    "detail": "no provider-terms approval recorded for adapter claude-code; subscription automation is blocked (config/provider-terms.json)"
+  },
+  "versionCommand": {
+    "exitCode": 0,
+    "stdout": "2.1.328 (Claude Code)",
+    "stderr": ""
+  }
+}

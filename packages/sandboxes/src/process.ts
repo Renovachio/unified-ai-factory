@@ -16,6 +16,10 @@ export interface RunOptions {
   readOnlyPaths?: string[];
   cpuSeconds?: number;
   maxFileBytes?: number;
+  /** Written to the process stdin, then closed (prompts travel on stdin, never in argv). */
+  stdin?: string;
+  /** Called with the number of output bytes seen so far (progress signal; never the content). */
+  onOutput?: (bytes: number) => void;
 }
 
 export interface RunResult {
@@ -53,13 +57,15 @@ export async function runSandboxed(opts: RunOptions): Promise<RunResult> {
   const wrapped = opts.backend.wrap(opts.command, opts.args ?? [], ctx); // throws PolicyViolation when no isolation
   const max = opts.maxOutputBytes ?? 1_000_000;
   const start = Date.now();
-  const child = spawn(wrapped.command, wrapped.args, { cwd: opts.cwd, env: opts.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(wrapped.command, wrapped.args, { cwd: opts.cwd, env: opts.env, detached: true, stdio: [opts.stdin !== undefined ? "pipe" : "ignore", "pipe", "pipe"] });
+  if (opts.stdin !== undefined) { child.stdin?.on("error", () => undefined); child.stdin?.end(opts.stdin); }
   const pgid = child.pid as number;
   let stdout = "";
   let stderr = "";
   let bytes = 0;
   let truncated = false;
   const collect = (which: "out" | "err") => (d: Buffer) => {
+    opts.onOutput?.(bytes + d.length);
     if (bytes >= max) { truncated = true; return; }
     const room = max - bytes;
     const chunk = d.length > room ? d.subarray(0, room) : d;
@@ -67,8 +73,8 @@ export async function runSandboxed(opts: RunOptions): Promise<RunResult> {
     bytes += chunk.length;
     if (which === "out") stdout += chunk.toString("utf8"); else stderr += chunk.toString("utf8");
   };
-  child.stdout.on("data", collect("out"));
-  child.stderr.on("data", collect("err"));
+  child.stdout?.on("data", collect("out"));
+  child.stderr?.on("data", collect("err"));
 
   let timedOut = false;
   let cancelled = false;

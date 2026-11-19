@@ -6,3 +6,6 @@ export * from "./sinks";
 export * from "./base";
 export * from "./prompts";
 export * from "./local-model";
+export * from "./cli";
+export * from "./claude-code";
+export * from "./router";
