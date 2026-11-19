@@ -42,3 +42,13 @@ export interface IntakeHandler {
   pre(job: JobCtx): Promise<IntakeResult | null>;
   decide(job: JobCtx): Promise<IntakeResult>;
 }
+
+export interface SpecValidationResult {
+  ok: boolean;
+  errors: string[];
+  riskFloor: RiskLevel;
+  traceabilityDigest?: string | undefined;
+  specDigest?: string | undefined;
+}
+/** Trusted validation of the SPECIFYING artifacts (see @factory/agents). */
+export interface SpecHandler { validate(job: JobCtx): Promise<SpecValidationResult> }

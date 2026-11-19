@@ -5,7 +5,7 @@ import {
 import { enqueueTask, expireLeases, revokeJobLeases } from "@factory/scheduler";
 import { digestOf } from "@factory/telemetry";
 import { artifactKind, AGENT_STAGES, taskStage } from "./pipeline";
-import type { IntakeHandler, JobCtx, Ports } from "./ports";
+import type { IntakeHandler, JobCtx, Ports, SpecHandler } from "./ports";
 
 export type FaultHook = (point: string) => void | Promise<void>;
 
@@ -14,6 +14,8 @@ export interface OrchestratorOptions {
   ports: Ports;
   /** Trusted intake logic; when absent every request is accepted unchanged (mock pipeline). */
   intake?: IntakeHandler;
+  /** Trusted traceability validation of the specification; when absent the spec is accepted unchanged (mock pipeline). */
+  spec?: SpecHandler;
   actor?: string;
   now?: () => Date;
   /** Test seam: throw from here to simulate a crash at a named point. */
@@ -144,7 +146,25 @@ export class Orchestrator {
     }
     if (job.state === "SPECIFYING") {
       const [spec] = await q<{ digest: string }[]>`SELECT digest FROM artifacts WHERE job_id = ${job.id} AND kind = 'spec.json' LIMIT 1`;
-      return this.move(job, stage.next, { spec: spec?.digest }, async (tx) => { await (tx as Sql)`UPDATE jobs SET spec_digest = ${spec?.digest ?? null} WHERE id = ${job.id}`; });
+      const v = this.o.spec ? await this.o.spec.validate(job) : { ok: true, errors: [] as string[], riskFloor: "LOW" as RiskLevel, specDigest: spec?.digest, traceabilityDigest: undefined as string | undefined };
+      await this.hit("after-port:spec.validate");
+      if (!v.ok) {
+        // An untraceable specification never reaches the builder. FAILED requires explicit authorised recovery.
+        const r = await this.move(job, "FAILED", { code: "spec-traceability" }, async (tx) => {
+          await (tx as Sql)`UPDATE jobs SET last_error_code = 'spec-traceability' WHERE id = ${job.id}`;
+          await appendEvent(tx, { jobId: job.id, type: "spec.rejected", source: "orchestrator", payload: { errors: v.errors.slice(0, 50) } });
+        });
+        if (r.action === "transitioned") await revokeJobLeases(this.o.sql, job.id, "spec-traceability");
+        return r;
+      }
+      return this.move(job, stage.next, { spec: v.specDigest, traceability: v.traceabilityDigest }, async (tx) => {
+        const t = tx as Sql;
+        await t`UPDATE jobs SET spec_digest = ${v.specDigest ?? null} WHERE id = ${job.id}`;
+        // Protected-path touches ratchet the risk floor up (never down).
+        const cur = (await t<{ risk: RiskLevel; risk_classified: boolean }[]>`SELECT risk, risk_classified FROM jobs WHERE id = ${job.id}`)[0];
+        if (cur && v.riskFloor !== "LOW") await t`UPDATE jobs SET risk = ${cur.risk_classified ? maxRisk(cur.risk, v.riskFloor) : maxRisk(v.riskFloor, "MEDIUM")}, risk_classified = true WHERE id = ${job.id}`;
+        if (v.traceabilityDigest) await appendEvent(tx, { jobId: job.id, type: "spec.accepted", source: "orchestrator", payload: { traceability: v.traceabilityDigest, risk_floor: v.riskFloor } });
+      });
     }
     return this.move(job, stage.next, {});
   }

@@ -53,6 +53,24 @@
         "@types/react-dom": "19.3.0",
       },
     },
+    "packages/agents": {
+      "name": "@factory/agents",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@factory/intake": "workspace:*",
+        "@factory/orchestrator": "workspace:*",
+        "@factory/runner": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+      },
+    },
     "packages/checks": {
       "name": "@factory/checks",
       "version": "0.0.0",
@@ -180,6 +198,8 @@
     "@eslint/object-schema": ["@eslint/object-schema@3.0.5", "", {}, "sha512-vqTaUEgxzm+YDSdElad6PiRoX4t8VGDjCtt05zn4nU810UIx/uNEV7/lZJ6KwFThKZOzOxzXy48da+No7HZaMw=="],
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.7.3", "", { "dependencies": { "@eslint/core": "^1.2.1", "levn": "^0.4.1" } }, "sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q=="],
+
+    "@factory/agents": ["@factory/agents@workspace:packages/agents"],
 
     "@factory/api": ["@factory/api@workspace:apps/api"],
 
