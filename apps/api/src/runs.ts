@@ -4,7 +4,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { applyChanges, changesDigest, clearScope, copyProject, diffManifests, outOfScope, renderDiff, snapshotFrom, snapshotTree, takeSnapshot, undoSince, validateLocalFolder, validatePlan, writeScope, WorkCopyError, type Change, type Manifest } from "@factory/dispatch-core";
+import { applyChanges, changesDigest, bumpWave, clearScope, copyProject, diffManifests, outOfScope, renderDiff, snapshotFrom, snapshotTree, takeSnapshot, undoSince, validateLocalFolder, validatePlan, writeScope, WorkCopyError, type Change, type Manifest } from "@factory/dispatch-core";
 import type { Sql } from "@factory/db";
 import { require_, type Actor } from "./auth";
 import { readJson } from "./body";
@@ -84,6 +84,7 @@ export async function startRun(sql: Sql, actor: Actor, jobId: string, planRaw: u
 export async function progress(sql: Sql, actor: Actor, runId: string, note: string) {
   localOnly(); require_(actor, "job:create"); const run = await loadRun(sql, actor, runId);
   if (run.status !== "running") throw problems.conflict("run-not-running", `the run is ${run.status}`);
+  if (run.mode === "in_place") bumpWave(process.env.DISPATCH_HOME ?? "", run.local_path, runId); // a progress report marks the end of a wave
   const entry = [{ at: new Date().toISOString(), note: clean(note, 500) }];
   // keep at most the newest 200 entries
   await sql`UPDATE work_runs SET log = (SELECT COALESCE(jsonb_agg(e ORDER BY n), '[]'::jsonb) FROM (SELECT e, n FROM jsonb_array_elements(log || ${sql.json(entry as never)}) WITH ORDINALITY AS t(e, n) ORDER BY n DESC LIMIT 200) s), updated_at = now() WHERE id = ${runId} AND status = 'running'`;

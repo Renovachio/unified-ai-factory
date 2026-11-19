@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, realpathSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { latestSnapshot, takeSnapshot, changesSince, undoSince, writeScope, clearScope, scopeFile } from "@factory/dispatch-core";
+import { latestSnapshot, takeSnapshot, changesSince, undoSince, writeScope, clearScope, scopeFile, bumpWave } from "@factory/dispatch-core";
 import { guardWrite } from "../src/guard";
 import { cmdChanges, cmdUndo, runCode, type CodeDeps } from "../src/commands/code";
 
@@ -62,7 +62,13 @@ describe("guard with a plan scope (in-place run)", () => {
       const g = (f: string) => guardWrite(input(f), t.p, { protect: true, scopeFile: real }).allow;
       expect(g(join(t.p, "src/a.ts"))).toBe(true); expect(g(join(t.p, "README.md"))).toBe(true); expect(g(join(t.p, "other.ts"))).toBe(false); expect(g(join(t.p, "src2/x.ts"))).toBe(false); expect(g(join(t.p, ".env"))).toBe(false);
       writeFileSync(real, JSON.stringify({ runId: "r", project: "/somewhere/else", writes: ["src/"] })); expect(g(join(t.p, "src/a.ts"))).toBe(false);
-      clearScope(t.home, root, "r"); writeScope(t.home, { runId: "r2", project: root, writes: ["src/"] }); clearScope(t.home, root, "r"); expect(g(join(t.p, "src/a.ts"))).toBe(true); // a stale run id cannot clear a newer scope
+      // agent leases: within a wave the first agent owns a file; another agent is refused; the same agent may continue; a new wave frees it
+      const as = (id: string | undefined, f: string) => guardWrite(JSON.stringify({ agent_id: id, tool_name: "Write", tool_input: { file_path: f } }), t.p, { protect: true, scopeFile: real }).allow;
+      writeFileSync(real, JSON.stringify({ runId: "r", project: root, writes: ["src/"], wave: 0 }));
+      expect(as("agentA", join(t.p, "src/x.ts"))).toBe(true); expect(as("agentA", join(t.p, "src/x.ts"))).toBe(true); expect(as("agentB", join(t.p, "src/x.ts"))).toBe(false); expect(as(undefined, join(t.p, "src/x.ts"))).toBe(false); expect(as("agentB", join(t.p, "src/y.ts"))).toBe(true);
+      bumpWave(t.home, root, "r"); expect(as("agentB", join(t.p, "src/x.ts"))).toBe(true); bumpWave(t.home, root, "wrong-run"); expect(as("agentA", join(t.p, "src/x.ts"))).toBe(false);
+      clearScope(t.home, root, "r"); expect(existsSync(`${real}.claims`)).toBe(false);
+      writeScope(t.home, { runId: "r2", project: root, writes: ["src/"] }); clearScope(t.home, root, "r"); expect(g(join(t.p, "src/a.ts"))).toBe(true); // a stale run id cannot clear a newer scope
     } finally { t.done(); }
   });
 });

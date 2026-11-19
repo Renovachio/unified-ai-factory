@@ -40,11 +40,16 @@ export function undoSince(s: SnapshotInfo): ApplyResult & { reverted?: number } 
 }
 
 /** The plan's write scope for an in-place run. The API writes it when the plan is accepted and removes it when the run ends; the write guard reads it. */
-export interface ActiveScope { runId: string; project: string; writes: string[] }
+export interface ActiveScope { runId: string; project: string; writes: string[]; wave?: number }
 export const scopeFile = (home: string, project: string): string => join(home, "active", `${projectKey(project)}.json`);
 export function writeScope(home: string, scope: ActiveScope): string {
-  const f = scopeFile(home, scope.project); mkdirSync(join(home, "active"), { recursive: true, mode: 0o700 }); writeFileSync(f, JSON.stringify(scope), { mode: 0o600 }); return f;
+  const f = scopeFile(home, scope.project); mkdirSync(join(home, "active"), { recursive: true, mode: 0o700 }); writeFileSync(f, JSON.stringify({ wave: 0, ...scope }), { mode: 0o600 }); return f;
 }
 export function clearScope(home: string, project: string, runId?: string): void {
-  const f = scopeFile(home, project); try { if (runId) { const cur = JSON.parse(readFileSync(f, "utf8")) as ActiveScope; if (cur.runId !== runId) return; } rmSync(f, { force: true }); } catch { /* none */ }
+  const f = scopeFile(home, project); try { if (runId) { const cur = JSON.parse(readFileSync(f, "utf8")) as ActiveScope; if (cur.runId !== runId) return; } rmSync(f, { force: true }); rmSync(`${f}.claims`, { recursive: true, force: true }); } catch { /* none */ }
+}
+/** Advance the wave of the active run (called when the coordinator reports progress): file leases from earlier waves no longer block later agents. */
+export function bumpWave(home: string, project: string, runId: string): void {
+  const f = scopeFile(home, project);
+  try { const cur = JSON.parse(readFileSync(f, "utf8")) as ActiveScope; if (cur.runId !== runId) return; writeFileSync(f, JSON.stringify({ ...cur, wave: (cur.wave ?? 0) + 1 }), { mode: 0o600 }); } catch { /* no active scope */ }
 }
