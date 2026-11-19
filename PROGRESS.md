@@ -25,7 +25,7 @@ This is a specification package. No engineering work orders have been implemente
 | REV-001 | ACCEPTED | evidence/REV-001/report.md | operator (continue-plan instruction) |
 | POL-001 | ACCEPTED | evidence/POL-001/report.md | operator (continue-plan instruction) |
 | MRJ-001 | ACCEPTED_MOCK_GITHUB | evidence/MRJ-001/report.md | operator (continue-plan instruction) |
-| OBS-001 | NOT_STARTED | — | — |
+| OBS-001 | ACCEPTED | evidence/OBS-001/report.md | operator (continue-plan instruction) |
 | CLD-001 | NOT_STARTED | — | — |
 | EVAL-001 | NOT_STARTED | — | — |
 | AUTO-001 | NOT_STARTED | — | — |
