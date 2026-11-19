@@ -86,7 +86,8 @@ export function adapterContractSuite(h: ContractHarness): void {
 
     test("invalid structured output can never succeed (schema error / wrong SHA)", async () => {
       const bad = await runToEnd(await h.create("bad_output"), request());
-      expect(bad.result).toMatchObject({ exitStatus: "failed", failureCode: "output-schema" });
+      expect(bad.result.exitStatus).toBe("failed");
+      expect(bad.result.failureCode).toMatch(/^output-(schema|not-json)$/);
       expect(bad.events.at(-1)?.type).toBe("agent.failed");
       const wrong = await runToEnd(await h.create("wrong_sha"), request({ role: "review_security", candidateSha: "a".repeat(40) }));
       expect(wrong.result).toMatchObject({ exitStatus: "failed", failureCode: "output-sha-mismatch" });

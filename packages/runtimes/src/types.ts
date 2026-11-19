@@ -53,6 +53,7 @@ export type ProbeFailure =
 
 export const EVENT_TYPES = ["agent.started", "agent.progress", "agent.artifact", "agent.rate_limited", "agent.completed", "agent.failed", "agent.cancelled", "agent.timed_out"] as const;
 export type AgentEventType = (typeof EVENT_TYPES)[number];
+export type TerminalType = "agent.completed" | "agent.failed" | "agent.cancelled" | "agent.timed_out";
 export const TERMINAL_EVENTS: readonly AgentEventType[] = ["agent.completed", "agent.failed", "agent.cancelled", "agent.timed_out"];
 
 export const AgentEventSchema = z.strictObject({
