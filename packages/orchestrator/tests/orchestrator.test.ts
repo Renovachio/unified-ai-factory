@@ -63,7 +63,7 @@ describe("mock request reaches PR-ready", () => {
     expect(res.state).toBe("AWAITING_HUMAN");
     expect(await history(id)).toEqual(HAPPY);
     const kinds = (await db.sql`SELECT kind, digest FROM artifacts WHERE job_id=${id} ORDER BY kind`);
-    expect(kinds.map((k) => k.kind)).toEqual(["build.r0.json", "design.json", "intake.json", "requirements.json", "spec.json", "test-plan.r0.json"]);
+    expect(kinds.map((k) => k.kind)).toEqual(["build.r0.json", "design.json", "intake.r0.json", "requirements.json", "spec.json", "test-plan.r0.json"]);
     for (const k of kinds) expect(JSON.parse(store.get(k.digest as string).toString())).toHaveProperty("artifactUri"); // integrity-verified read
     expect(await count("gate_results", id)).toBe(1);
     expect(await count("review_results", id)).toBe(1);

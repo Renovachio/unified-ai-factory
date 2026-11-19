@@ -22,6 +22,7 @@
         "@factory/contracts": "workspace:*",
         "@factory/db": "workspace:*",
         "@factory/domain": "workspace:*",
+        "@factory/intake": "workspace:*",
         "@factory/sandboxes": "workspace:*",
         "@factory/scheduler": "workspace:*",
         "@factory/scm": "workspace:*",
@@ -82,6 +83,24 @@
     "packages/domain": {
       "name": "@factory/domain",
       "version": "0.0.0",
+    },
+    "packages/intake": {
+      "name": "@factory/intake",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/domain": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@factory/contracts": "workspace:*",
+        "@factory/orchestrator": "workspace:*",
+        "@factory/runner": "workspace:*",
+        "@factory/sandboxes": "workspace:*",
+        "@factory/scheduler": "workspace:*",
+      },
     },
     "packages/orchestrator": {
       "name": "@factory/orchestrator",
@@ -171,6 +190,8 @@
     "@factory/db": ["@factory/db@workspace:packages/db"],
 
     "@factory/domain": ["@factory/domain@workspace:packages/domain"],
+
+    "@factory/intake": ["@factory/intake@workspace:packages/intake"],
 
     "@factory/orchestrator": ["@factory/orchestrator@workspace:packages/orchestrator"],
 

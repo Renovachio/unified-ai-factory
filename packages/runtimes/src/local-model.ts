@@ -1,6 +1,6 @@
 import { InferenceSourcePolicy } from "./policy";
 import { BaseRunAdapter, type RunContext } from "./base";
-import { OutputRejected, parseRoleOutput } from "./output";
+import { OutputRejected, parseRoleOutput, type SchemaRegistry } from "./output";
 import { buildMessages, loadRolePrompt } from "./prompts";
 import { isReviewRole, type ProbeResult } from "./types";
 
@@ -14,6 +14,8 @@ export interface LocalModelOptions {
   /** Extra request fields for the local server (e.g. Ollama `think: false`). Never credentials. */
   extraBody?: Record<string, unknown>;
   promptsDir?: string;
+  /** Strict per-role output schemas (see SchemaRegistry). */
+  schemas?: SchemaRegistry;
 }
 
 const OUTPUT_HINT: Record<"review" | "artifact", string> = {
@@ -67,7 +69,7 @@ export class LocalModelAdapter extends BaseRunAdapter {
     const started = Date.now();
     const prompt = loadRolePrompt(req.role, this.o.promptsDir);
     const context = await this.o.loadContext(req.immutableContextManifestUri);
-    const messages = buildMessages(req.role, prompt, context, { candidateSha: req.candidateSha, outputHint: OUTPUT_HINT[isReviewRole(req.role) ? "review" : "artifact"] });
+    const messages = buildMessages(req.role, prompt, context, { candidateSha: req.candidateSha, outputHint: this.o.schemas?.get(req.outputSchemaUri)?.hint ?? OUTPUT_HINT[isReviewRole(req.role) ? "review" : "artifact"] });
     await seq.emit("agent.started", { role: req.role, model: req.modelId, prompt_digest: prompt.digest, auth_mode: "local_model" });
 
     const stop = async (): Promise<boolean> => {
@@ -131,7 +133,7 @@ export class LocalModelAdapter extends BaseRunAdapter {
     }
     if (await stop()) return;
     try {
-      const parsed = parseRoleOutput(req.role, extractJson(text), { maxBytes: req.maxOutputBytes, expectedSha: req.candidateSha });
+      const parsed = parseRoleOutput(req.role, extractJson(text), { maxBytes: req.maxOutputBytes, expectedSha: req.candidateSha, schemaUri: req.outputSchemaUri, schemas: this.o.schemas });
       await seq.emit("agent.artifact", { role: req.role });
       const artifactUri = "artifactUri" in parsed ? parsed.artifactUri : undefined;
       const candidateSha = "candidateSha" in parsed ? parsed.candidateSha : undefined;

@@ -1,7 +1,7 @@
 import { validateAgentResult } from "@factory/contracts";
 import { findForbiddenEnv } from "@factory/domain";
 import { PolicyViolation } from "@factory/sandboxes";
-import { OutputRejected, parseRoleOutput } from "./output";
+import { OutputRejected, parseRoleOutput, type SchemaRegistry } from "./output";
 import {
   AgentRunRequestSchema, EventSequencer, isReviewRole, toWireResult,
   type AgentRunRequest, type AgentRunResult, type AgentRuntimeAdapter, type EventSink, type ProbeResult,
@@ -17,6 +17,7 @@ export interface MockOptions {
   env?: Readonly<Record<string, string | undefined>>;
   /** Override the structured output the mock "model" returns. */
   output?: (req: AgentRunRequest) => unknown;
+  schemas?: SchemaRegistry;
 }
 
 interface Run {
@@ -101,7 +102,7 @@ export class MockAdapter implements AgentRuntimeAdapter {
       if (behavior === "bad_output") out = { nonsense: true };
       if (behavior === "wrong_sha" && isReviewRole(req.role)) out = { ...(out as object), candidateSha: "f".repeat(40) };
       try {
-        const parsed = parseRoleOutput(req.role, out, { maxBytes: req.maxOutputBytes, expectedSha: req.candidateSha });
+        const parsed = parseRoleOutput(req.role, out, { maxBytes: req.maxOutputBytes, expectedSha: req.candidateSha, schemaUri: req.outputSchemaUri, schemas: this.o.schemas });
         await seq.emit("agent.artifact", { role: req.role });
         const artifactUri = "artifactUri" in parsed ? parsed.artifactUri : `mock://${req.jobId}/${req.role}/${req.attempt}.json`;
         const candidateSha = "candidateSha" in parsed ? parsed.candidateSha : undefined;

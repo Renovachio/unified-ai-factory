@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sseResponse, type Sql } from "@factory/db";
+import { answerQuestions, FeedbackRejected } from "@factory/intake";
 import { receiveGitHubWebhook } from "@factory/scm";
 import { assertCsrf, require_, resolveActor, type Actor, type Authenticator } from "./auth";
 import { readJson, readRaw } from "./body";
@@ -98,6 +99,21 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
       requireIdempotencyKey(req);
       const { value } = await readJson(req, maxBody);
       return json(await cancelJob(cfg.sql, actor, id, value));
+    }
+    if (seg.length === 2 && seg[1] === "feedback") {
+      if (m !== "POST") throw problems.methodNotAllowed(["POST"]);
+      require_(actor, "job:feedback"); mutating(req, actor);
+      const { value } = await readJson(req, maxBody);
+      const b = value as { message?: unknown; expectedVersion?: unknown };
+      if (typeof b?.message !== "string" || !Number.isInteger(b.expectedVersion) || (b.expectedVersion as number) < 1) throw problems.unprocessable("body must be {message: string, expectedVersion: integer >= 1}");
+      await getJob(cfg.sql, actor, id); // org-scoped existence
+      try {
+        const r = await answerQuestions(cfg.sql, { jobId: id, actorId: actor.userId, message: b.message, expectedVersion: b.expectedVersion as number });
+        return json({ status: 202, body: { state: "INTAKE", version: r.version }, headers: { etag: `"${r.version}"` } });
+      } catch (e) {
+        if (e instanceof FeedbackRejected) throw e.code === "too-long" ? problems.unprocessable(e.message) : problems.conflict(e.code, e.message);
+        throw e;
+      }
     }
     throw problems.notFound("no such route");
   }

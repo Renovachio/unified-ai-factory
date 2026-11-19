@@ -5,13 +5,15 @@ export interface AgentStep {
   role: AgentRole;
   /** Artifact kind produced by the step. `{r}` expands to the rework round so reruns do not collide. */
   artifact: string;
-  /** Whether the artifact is round-scoped. */
+  /** Whether the artifact is versioned by a counter (so repeated runs never collide). */
   perRound?: boolean;
+  /** Which counter versions it: the rework round (default) or the intake round (number of requester answers). */
+  scope?: "rework" | "intake";
 }
 
 /** Declarative pipeline: agent steps run in order within a state; when all are satisfied the job moves to `next`. */
 export const AGENT_STAGES: Partial<Record<JobState, { steps: AgentStep[]; next: JobState }>> = {
-  INTAKE: { steps: [{ role: "intake", artifact: "intake.json" }], next: "SPECIFYING" },
+  INTAKE: { steps: [{ role: "intake", artifact: "intake.json", perRound: true, scope: "intake" }], next: "SPECIFYING" },
   SPECIFYING: {
     steps: [
       { role: "analyst", artifact: "requirements.json" },

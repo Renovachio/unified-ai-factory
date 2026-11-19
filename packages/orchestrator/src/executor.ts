@@ -10,7 +10,7 @@ export interface ExecutorDeps {
   store: FileArtifactStore;
   modelFor: (role: AgentRole) => string;
   /** Produces the immutable context manifest URI for a job/role. */
-  contextUri: (jobId: string, role: AgentRole) => string;
+  contextUri: (jobId: string, role: AgentRole) => string | Promise<string>;
 }
 
 const stepFor = (role: AgentRole, stage: string): { step: AgentStep; round: number } | undefined => {
@@ -33,7 +33,7 @@ export function agentTaskExecutor(d: ExecutorDeps): TaskExecutor {
     const [job] = await d.sql<{ head_sha: string | null }[]>`SELECT head_sha FROM jobs WHERE id = ${ctx.lease.jobId}`;
     const req: AgentRunRequest = {
       requestId: `${ctx.lease.taskId}:${ctx.lease.attempt}`, jobId: ctx.lease.jobId, attempt: ctx.lease.attempt, role,
-      modelId: d.modelFor(role), promptVersion: "v1", immutableContextManifestUri: d.contextUri(ctx.lease.jobId, role),
+      modelId: d.modelFor(role), promptVersion: "v1", immutableContextManifestUri: await d.contextUri(ctx.lease.jobId, role),
       allowedTools: [], maxWallTimeSec: 600, maxOutputBytes: 1_000_000, outputSchemaUri: `schema://${role}`,
       ...(job?.head_sha && role.startsWith("review_") ? { candidateSha: job.head_sha } : {}),
     };

@@ -1,17 +1,19 @@
 import { appendEvent, ConflictError, transitionJob, type Q, type Sql } from "@factory/db";
 import {
-  assertTransition, RECOVERY_ONLY_STATES, TERMINAL_STATES, type EvidenceBinding, type JobSnapshot, type JobState, type RiskLevel,
+  assertTransition, maxRisk, RECOVERY_ONLY_STATES, TERMINAL_STATES, type EvidenceBinding, type JobSnapshot, type JobState, type RiskLevel,
 } from "@factory/domain";
 import { enqueueTask, expireLeases, revokeJobLeases } from "@factory/scheduler";
 import { digestOf } from "@factory/telemetry";
 import { artifactKind, AGENT_STAGES, taskStage } from "./pipeline";
-import type { JobCtx, Ports } from "./ports";
+import type { IntakeHandler, JobCtx, Ports } from "./ports";
 
 export type FaultHook = (point: string) => void | Promise<void>;
 
 export interface OrchestratorOptions {
   sql: Sql;
   ports: Ports;
+  /** Trusted intake logic; when absent every request is accepted unchanged (mock pipeline). */
+  intake?: IntakeHandler;
   actor?: string;
   now?: () => Date;
   /** Test seam: throw from here to simulate a crash at a named point. */
@@ -19,7 +21,7 @@ export interface OrchestratorOptions {
 }
 
 export type TickAction =
-  | "transitioned" | "waiting" | "enqueued" | "terminal" | "paused" | "awaiting-human" | "conflict";
+  | "transitioned" | "waiting" | "enqueued" | "terminal" | "paused" | "awaiting-human" | "awaiting-info" | "conflict";
 export interface TickResult { state: JobState; action: TickAction; detail?: string }
 
 const sha = (h: string) => /^[a-f0-9]{40}$/.test(h);
@@ -107,6 +109,7 @@ export class Orchestrator {
         return this.move(job, "BUILDING", { round: job.round + 1 }, async (tx) => { await (tx as Sql)`UPDATE jobs SET current_round = current_round + 1 WHERE id = ${job.id}`; });
       }
       case "PREMERGE": return this.premerge(job);
+      case "NEEDS_INFO": return { state: job.state, action: "awaiting-info" };
       case "AWAITING_HUMAN": return { state: job.state, action: "awaiting-human" };
       default: return { state: job.state, action: "waiting", detail: "no handler" };
     }
@@ -114,11 +117,17 @@ export class Orchestrator {
 
   private async runAgentSteps(job: JobCtx, stage: NonNullable<(typeof AGENT_STAGES)[JobState]>): Promise<TickResult> {
     const q = this.o.sql;
+    if (job.state === "INTAKE" && this.o.intake) {
+      const pre = await this.o.intake.pre(job);
+      if (pre) return this.applyIntake(job, pre);
+    }
+    const intakeN = ((await q<{ c: number }[]>`SELECT count(*)::int AS c FROM events WHERE job_id = ${job.id} AND type = 'job.feedback'`)[0]?.c) ?? 0;
     for (const step of stage.steps) {
-      const kind = artifactKind(step, job.round);
+      const n = step.scope === "intake" ? intakeN : job.round;
+      const kind = artifactKind(step, n);
       const [have] = await q<{ digest: string }[]>`SELECT digest FROM artifacts WHERE job_id = ${job.id} AND kind = ${kind} LIMIT 1`;
       if (have) continue;
-      const taskId = await enqueueTask(q, { jobId: job.id, stage: taskStage(job.state, step, job.round), role: step.role });
+      const taskId = await enqueueTask(q, { jobId: job.id, stage: taskStage(job.state, step, n), role: step.role });
       await this.hit("after-enqueue");
       const [t] = await q<{ status: string }[]>`SELECT status FROM tasks WHERE id = ${taskId}`;
       if (t?.status === "failed") return this.fail(job, `task-failed:${step.role}`);
@@ -126,6 +135,7 @@ export class Orchestrator {
       return { state: job.state, action: t?.status === "pending" ? "enqueued" : "waiting", detail: `${step.role}:${t?.status}` };
     }
     // All artifacts present. Stage-specific bookkeeping happens atomically with the transition.
+    if (job.state === "INTAKE" && this.o.intake) return this.applyIntake(job, await this.o.intake.decide(job));
     if (job.state === "BUILDING") {
       const { headSha } = await this.o.ports.scm.commitCandidate(job, job.round);
       await this.hit("after-port:scm.commitCandidate");
@@ -137,6 +147,13 @@ export class Orchestrator {
       return this.move(job, stage.next, { spec: spec?.digest }, async (tx) => { await (tx as Sql)`UPDATE jobs SET spec_digest = ${spec?.digest ?? null} WHERE id = ${job.id}`; });
     }
     return this.move(job, stage.next, {});
+  }
+
+  private async applyIntake(job: JobCtx, r: import("./ports").IntakeResult): Promise<TickResult> {
+    return this.move(job, r.next, { intake: r.next, risk: r.risk }, async (tx) => {
+      await (tx as Sql)`UPDATE jobs SET risk = ${r.risk}, risk_classified = true WHERE id = ${job.id}`;
+      for (const e of r.events) await appendEvent(tx, { jobId: job.id, type: e.type, source: "orchestrator", payload: e.payload });
+    });
   }
 
   private async gate(job: JobCtx): Promise<TickResult> {
@@ -182,9 +199,10 @@ export class Orchestrator {
     await this.hit("after-port:scm.ensureDraftPr");
     return this.move(job, "AWAITING_HUMAN", { policy: pol.policyDigest, pr: pr.prNumber }, async (tx) => {
       const q = tx as Sql;
-      await q`UPDATE jobs SET policy_digest = ${pol.policyDigest}, pr_number = ${pr.prNumber}, risk = ${pol.risk} WHERE id = ${job.id}`;
+      const risk = maxRisk(job.risk, pol.risk); // risk only ratchets up
+      await q`UPDATE jobs SET policy_digest = ${pol.policyDigest}, pr_number = ${pr.prNumber}, risk = ${risk}, risk_classified = true WHERE id = ${job.id}`;
       await q`INSERT INTO policy_decisions (job_id, head_sha, policy_digest, risk, eligible, reasons)
-        SELECT ${job.id}, ${head}, ${pol.policyDigest}, ${pol.risk}, ${pol.eligible && (pol.risk === "LOW" || pol.risk === "MEDIUM")}, ${q.json(pol.reasons as never)}
+        SELECT ${job.id}, ${head}, ${pol.policyDigest}, ${risk}, ${pol.eligible && (risk === "LOW" || risk === "MEDIUM")}, ${q.json(pol.reasons as never)}
         WHERE NOT EXISTS (SELECT 1 FROM policy_decisions WHERE job_id = ${job.id} AND head_sha = ${head} AND policy_digest = ${pol.policyDigest})`;
       await appendEvent(q, { jobId: job.id, type: "approval.requested", source: "orchestrator", payload: { head_sha: head, pr_number: pr.prNumber, reasons: pol.reasons } });
     });

@@ -63,6 +63,7 @@ export const jobs = pgTable("jobs", {
   state: text("state").notNull().default("QUEUED"),
   version: integer("version").notNull().default(1),
   risk: text("risk").notNull().default("CRITICAL"),
+  riskClassified: boolean("risk_classified").notNull().default(false),
   priority: text("priority").notNull().default("normal"),
   policyDigest: text("policy_digest"),
   specDigest: text("spec_digest"),
