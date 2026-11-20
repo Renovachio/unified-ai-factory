@@ -118,3 +118,4 @@ export async function runOnce(cfg: RunnerConfig, workerId: string, executor: Tas
   const lease = await claimTask(cfg.sql, { workerId, ...(roles ? { roles } : {}), ...(cfg.leaseTtlMs ? { ttlMs: cfg.leaseTtlMs } : {}) });
   return lease ? runLeasedTask(cfg, workerId, lease, executor) : null;
 }
+export * from "./select";
