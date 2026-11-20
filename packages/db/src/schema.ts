@@ -713,5 +713,7 @@ export const contextPacks = pgTable("context_packs", {
   retrievalEventId: uuid("retrieval_event_id").notNull().references(() => memoryRetrievalEvents.id),
   manifest: jsonb("manifest").notNull(),
   packDigest: text("pack_digest").notNull(),
+  renderedDigest: text("rendered_digest").notNull(),
+  renderedUri: text("rendered_uri").notNull(),
   createdAt: created(),
 });

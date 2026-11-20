@@ -55,7 +55,9 @@ export type MemoryErrorCode =
   | "INVALID_ROLE"
   | "ROLE_CAP_EXCEEDED"
   | "BUDGET_EXCEEDED"
-  | "PACK_NOT_FOUND";
+  | "PACK_NOT_FOUND"
+  | "PACK_INVALID"
+  | "PACK_INTEGRITY";
 
 export class MemoryError extends Error {
   constructor(readonly code: MemoryErrorCode, message: string) {

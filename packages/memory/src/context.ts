@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Sql } from "@factory/db";
 import { AGENT_ROLES, type AgentRole } from "@factory/runtimes";
 import { digestOf } from "@factory/telemetry";
@@ -49,6 +50,12 @@ export function escapeData(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** Content-addressed, write-once text store. FileArtifactStore from @factory/orchestrator satisfies this structurally. */
+export interface PackTextStore {
+  put(text: string): { digest: string; uri: string };
+  get(digest: string): Buffer;
+}
+
 export interface PackRequest {
   projectId: string;
   modelRole: string;
@@ -87,6 +94,7 @@ export interface PackManifest {
   selected: PackItemRecord[];
   omitted: { budget: number; memoryIds: string[] };
   semanticEnabled: false;
+  renderedDigest: string;
 }
 
 export interface BuiltPack {
@@ -99,6 +107,14 @@ export interface BuiltPack {
   packDigest: string;
 }
 
+export const PACK_URI_PREFIX = "context-pack:";
+export function packIdFromUri(uri: string): string {
+  if (!uri.startsWith(PACK_URI_PREFIX)) throw new MemoryError("PACK_NOT_FOUND", "not a context pack URI");
+  const id = uri.slice(PACK_URI_PREFIX.length);
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new MemoryError("PACK_NOT_FOUND", "malformed context pack id");
+  return id;
+}
+
 type Row = Record<string, unknown>;
 
 function renderItem(hit: { memoryId: string; kind: MemoryKind; claim: string; recordVersion: number; approvedBy: string; sources: Array<{ sourceKind: SourceKind; sourceId: string; digest: string }> }, stage: "summary" | "expanded"): string {
@@ -108,7 +124,7 @@ function renderItem(hit: { memoryId: string; kind: MemoryKind; claim: string; re
   return `<memory id="${hit.memoryId}" kind="${hit.kind}" version="${hit.recordVersion}" approved_by="${hit.approvedBy}" sources="${escapeData(detail)}">${escapeData(hit.claim)}</memory>\n`;
 }
 
-export async function buildContextPack(sql: Sql, actor: Actor, req: PackRequest): Promise<BuiltPack> {
+export async function buildContextPack(sql: Sql, actor: Actor, req: PackRequest, store: PackTextStore): Promise<BuiltPack> {
   await requireActor(sql, actor, READER_ROLES);
   await requireProject(sql, actor.organizationId, req.projectId);
 
@@ -176,19 +192,22 @@ export async function buildContextPack(sql: Sql, actor: Actor, req: PackRequest)
     })),
     omitted: { budget: omittedIds.length, memoryIds: omittedIds },
     semanticEnabled: false as const,
-  } satisfies PackManifest;
-  const packDigest = digestOf(manifestBody);
+  } satisfies Omit<PackManifest, "renderedDigest">;
+  // The text is stored first (content-addressed, write-once); its digest is bound into the manifest before the pack is hashed.
+  const stored = store.put(text);
+  const manifest: PackManifest = { ...manifestBody, renderedDigest: stored.digest };
+  const packDigest = digestOf(manifest);
 
   const [row] = await sql<Row[]>`INSERT INTO context_packs (organization_id, project_id, actor_id, model_role, max_input_tokens, estimated_tokens,
-      retrieval_event_id, manifest, pack_digest)
+      retrieval_event_id, manifest, pack_digest, rendered_digest, rendered_uri)
     VALUES (${actor.organizationId}, ${req.projectId}, ${actor.userId}, ${role}, ${req.maxInputTokens}, ${estimated},
-      ${retrieval.requestId}, ${sql.json(manifestBody as never)}, ${packDigest})
+      ${retrieval.requestId}, ${sql.json(manifest as never)}, ${packDigest}, ${stored.digest}, ${stored.uri})
     RETURNING id`;
   if (!row) throw new MemoryError("DB_REJECTED", "context pack was not recorded");
   const packId = row.id as string;
   await sql`INSERT INTO audit_entries (organization_id, actor, action, resource, result, reason, digest)
     VALUES (${actor.organizationId}, ${actor.userId}, 'memory.context_pack', ${`context-pack:${packId}`}, 'ok', null, ${packDigest})`;
-  return { packId, manifestUri: `context-pack:${packId}`, text, manifest: manifestBody, packDigest };
+  return { packId, manifestUri: `${PACK_URI_PREFIX}${packId}`, text, manifest, packDigest };
 }
 
 export interface PackValidity {
@@ -205,7 +224,10 @@ export async function checkContextPack(sql: Sql, actor: Actor, projectId: string
   await requireActor(sql, actor, READER_ROLES);
   const [p] = await sql<Row[]>`SELECT manifest FROM context_packs WHERE id = ${packId} AND organization_id = ${actor.organizationId} AND project_id = ${projectId}`;
   if (!p) throw new MemoryError("PACK_NOT_FOUND", "no such context pack in this project");
-  const manifest = p.manifest as PackManifest;
+  return validityOf(sql, p.manifest as PackManifest);
+}
+
+async function validityOf(sql: Sql, manifest: PackManifest): Promise<PackValidity> {
   const ids = manifest.selected.map((s) => s.memoryId);
   if (ids.length === 0) return { valid: true, invalidMemoryIds: [] };
   const current = await sql<Row[]>`SELECT r.id, r.status, r.record_version, r.valid_to,
@@ -220,4 +242,27 @@ export async function checkContextPack(sql: Sql, actor: Actor, projectId: string
     return !r || r.status !== "approved" || r.record_version !== s.recordVersion || r.valid_to !== null || r.revoked === true || r.project_revoked === true;
   }).map((s) => s.memoryId);
   return { valid: invalid.length === 0, invalidMemoryIds: invalid };
+}
+
+export interface ResolvedPack { packId: string; packDigest: string; text: string }
+
+/**
+ * Runtime-side resolution of `context-pack:<id>` (the loadContext hook). This is a SYSTEM path: it has no user actor, so
+ * it must only be reachable from the trusted runner, never from an API request. It fails closed: the pack must exist, its
+ * stored text must match the digest bound into its manifest, and every selected memory must still be valid.
+ */
+export async function resolveContextPack(sql: Sql, uri: string, store: PackTextStore): Promise<ResolvedPack> {
+  const packId = packIdFromUri(uri);
+  const [p] = await sql<Row[]>`SELECT manifest, pack_digest, rendered_digest FROM context_packs WHERE id = ${packId}`;
+  if (!p) throw new MemoryError("PACK_NOT_FOUND", "no such context pack");
+  const manifest = p.manifest as PackManifest;
+  if (digestOf(manifest) !== p.pack_digest) throw new MemoryError("PACK_INTEGRITY", "stored manifest does not match its pack digest");
+  const validity = await validityOf(sql, manifest);
+  if (!validity.valid) throw new MemoryError("PACK_INVALID", `pack refused: ${validity.invalidMemoryIds.length} memory(ies) no longer valid`);
+  const bytes = store.get(p.rendered_digest as string);
+  const hex = createHash("sha256").update(bytes).digest("hex");
+  if (`sha256:${hex}` !== p.rendered_digest || manifest.renderedDigest !== p.rendered_digest) {
+    throw new MemoryError("PACK_INTEGRITY", "stored pack text does not match the digest bound into its manifest");
+  }
+  return { packId, packDigest: p.pack_digest as string, text: bytes.toString("utf8") };
 }
