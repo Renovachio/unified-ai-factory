@@ -43,3 +43,23 @@ Status: **implemented in part, local checks only.** Not independently reviewed. 
 - Tests (6 new, 21 in the file): refused while the consolidated memory is approved; restore after revocation with retrieval and transition evidence; refused for viewers and disabled users; all-or-nothing on a revoked source; raw-SQL loophole checks (a superseded plain revision stays unrecoverable even when its successor is revoked; a consolidation original cannot be restored by SQL while its consolidated memory is approved).
 - Results: full suite 1455 pass, 0 fail, 90 files. Typecheck, lint, gates lock, package validation and license all exit 0.
 - Remaining decision: the restore rule is narrow but is a real change to the lifecycle guard. Independent review of migration 0024 is required before it is merged.
+
+## Addendum 2: independent review fixes (migration 0025)
+
+Fixes for the findings of the independent review of dev/mem-01..dev/mem-05 (tip 6f1296e):
+
+- **High, superseded_by not enforced:** `superseded_by` changes only by supersession (approved to superseded, successor in the same organization and project) and by restore. Re-pointing or clearing a live supersession is refused. Test: raw SQL on a live consolidation's original.
+- **High, approval not enforced by the database:** `approved_by` is set once, on proposed to approved, by an enabled approver or admin of the same organization. Viewers and other-organization approvers are refused. Every row is born proposed, with no approver, successor or validity window. Tests cover each case.
+- **Medium, transition trail skippable:** every status change and every insert needs a `memory_transitions` row in the same transaction, checked at commit (deferred constraint trigger). Test: a raw status change with no transition is refused.
+- **Medium, links to a plain memory:** `is_consolidation` is set at creation and immutable. Links attach only to a proposed consolidated memory of the same kind whose originals are approved. An identical claim and source set that already exists as a plain memory is refused by the service, and raw links to it are refused by the database.
+- **Medium, rollback bypass:** the 0025 rollback refuses if any restore or consolidated memory exists. The 0024 guard is restored exactly on rollback.
+- **Low, current memories without sources:** `listCurrentMemories` requires at least one source.
+
+Not changed (documented, not fixed in this round):
+- `restoreConsolidation` keeps the original approver on the row. The restoring approver is recorded in `memory_transitions`.
+- `resolveContextPack` selects by pack id only. It is a system path and is not reachable in this build (no adapter is wired). It must be project-scoped before any adapter uses it.
+- Consent for ingestion is caller-asserted (the grantor must be an enabled organization member; the grant is not verified).
+- Ingestion writes each proposal in its own transaction before its run record. A retry is idempotent.
+
+Results: `packages/memory` and `packages/db`: 160 pass, 0 fail. Full suite: 1460 pass, 0 fail, 90 files. Typecheck, lint, gates lock, package validation and license all exit 0.
+Remaining: a fresh independent review of migration 0025 and its tests is required before merge.

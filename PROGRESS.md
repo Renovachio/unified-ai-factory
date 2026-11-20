@@ -166,7 +166,7 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
 - work_package: MEM-05
   status: implemented_partial   # local checks only: consolidation with human approval and lineage, read-only review candidates; 15 consolidation tests, full suite 1449/0. NOT built: retention (needs operator policy), stale priority. Reversal built as restore after the consolidated memory ends (migration 0024). NOT independently reviewed; no pilot.
   evidence: evidence/MEM-05/report.md
-  followup: restore after consolidation ended built (migration 0024, guard exception limited to consolidated originals; see evidence addendum); blockers: [retention policy not set by operator, independent review of migration 0024 and the stack open, pilot open, backup drill not run]
+  followup: restore after consolidation ended (migration 0024); independent review (tip 6f1296e) found DB gaps, fixed in migration 0025 (superseded_by and approved_by enforced, transition record required, consolidation links limited to consolidated memories); blockers: [fresh review of 0025 open, retention policy not set by operator, pilot open, backup drill not run]
 - work_package: MEM-06
   status: not_started   # depends on MEM-03/04/05 and SAI-11 (v2.2, not verified)
 - work_package: MEM-07
