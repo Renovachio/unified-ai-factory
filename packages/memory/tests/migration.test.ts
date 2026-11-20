@@ -93,3 +93,15 @@ describe("migration 0017 (MEM-01): upgrade, parity and rollback", () => {
     expect(m!.down.length).toBeGreaterThan(0);
   });
 });
+
+describe("ownership: control roles never own memory tables", () => {
+  test("no memory table or context_packs is owned by a factory role (an owner could disable the guards)", async () => {
+    const db = await createTestDb();
+    try {
+      const rows = await db.sql<{ tablename: string; tableowner: string }[]>`SELECT tablename, tableowner FROM pg_tables
+        WHERE schemaname = 'public' AND (tablename LIKE 'memory%' OR tablename = 'context_packs')`;
+      expect(rows.length).toBeGreaterThan(0);
+      for (const r of rows) expect(r.tableowner.startsWith("factory_")).toBe(false);
+    } finally { await db.drop(); }
+  });
+});
