@@ -651,3 +651,29 @@ export const memorySourceRevocations = pgTable("memory_source_revocations", {
   revokedBy: uuid("revoked_by").notNull().references(() => users.id),
   createdAt: created(),
 });
+
+// Adaptive Memory v2.5 (MEM-02), migration 0018.
+export const memoryIngestionRuns = pgTable("memory_ingestion_runs", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  sourceKind: text("source_kind").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  sourceDigest: text("source_digest").notNull(),
+  extractorId: text("extractor_id").notNull(),
+  consent: jsonb("consent").notNull(),
+  candidatesTotal: integer("candidates_total").notNull(),
+  proposed: integer("proposed").notNull(),
+  droppedSecret: integer("dropped_secret").notNull(),
+  droppedInjection: integer("dropped_injection").notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: created(),
+});
+
+export const memoryIngestionLinks = pgTable("memory_ingestion_links", {
+  runId: uuid("run_id").notNull().references(() => memoryIngestionRuns.id),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  spanStart: integer("span_start").notNull(),
+  spanEnd: integer("span_end").notNull(),
+  marker: text("marker").notNull(),
+});

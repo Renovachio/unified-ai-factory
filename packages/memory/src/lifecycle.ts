@@ -96,13 +96,13 @@ function mapDbError(e: unknown): never {
   throw e;
 }
 
-async function requireActor(q: Q, actor: Actor, roles: readonly string[]): Promise<string> {
+export async function requireActor(q: Q, actor: Actor, roles: readonly string[]): Promise<string> {
   const [u] = await q<{ role: string; disabled_at: Date | null }[]>`SELECT role, disabled_at FROM users WHERE id = ${actor.userId} AND organization_id = ${actor.organizationId}`;
   if (!u || u.disabled_at || !roles.includes(u.role)) throw new MemoryError("FORBIDDEN", "actor lacks the role for this memory operation");
   return u.role;
 }
 
-async function requireProject(q: Q, organizationId: string, projectId: string): Promise<void> {
+export async function requireProject(q: Q, organizationId: string, projectId: string): Promise<void> {
   const [p] = await q`SELECT id FROM repositories WHERE id = ${projectId} AND organization_id = ${organizationId}`;
   if (!p) throw new MemoryError("NOT_FOUND", "no such project");
 }
@@ -183,7 +183,7 @@ function sourceDigestOf(sources: SourceRef[]): string {
  * Every source must be an artifact or event of THIS project (through its job), in this organization, and its digest must
  * match what is stored. A mismatch is reported as SCOPE_MISMATCH without revealing whether the other row exists.
  */
-async function sourceInProject(q: Q, organizationId: string, projectId: string, kind: SourceKind, id: string): Promise<boolean> {
+export async function sourceInProject(q: Q, organizationId: string, projectId: string, kind: SourceKind, id: string): Promise<boolean> {
   const rows = kind === "artifact"
     ? await q`SELECT a.id FROM artifacts a JOIN jobs j ON j.id = a.job_id JOIN repositories r ON r.id = j.repository_id
         WHERE a.id = ${id} AND r.id = ${projectId} AND r.organization_id = ${organizationId}`

@@ -46,7 +46,11 @@ export type MemoryErrorCode =
   | "SOURCE_REVOKED"
   | "SCOPE_MISMATCH"
   | "INVALID_CLAIM"
-  | "DB_REJECTED";
+  | "DB_REJECTED"
+  | "CONSENT_REQUIRED"
+  | "SOURCE_UNVERIFIED"
+  | "SOURCE_TOO_LARGE"
+  | "NOT_INGESTIBLE";
 
 export class MemoryError extends Error {
   constructor(readonly code: MemoryErrorCode, message: string) {
