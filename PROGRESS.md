@@ -145,7 +145,7 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
   status: verified   # local checks only: 71 memory/db tests on real PostgreSQL 17, full suite 1354/0, lint, typecheck, package validation, license, gates lock. NOT independently reviewed; no pilot.
   commits: [a2b98c5, 64d3361]
   evidence: evidence/MEM-01/report.md
-  blockers: [independent review, per-project membership model decision (org roles only today)]
+  blockers: [independent review (open by operator decision), real authorized pilot (open by operator decision); project access is organization-role only by operator decision]
 - work_package: MEM-02
   status: not_started   # depends on MEM-01 acceptance
 - work_package: MEM-03

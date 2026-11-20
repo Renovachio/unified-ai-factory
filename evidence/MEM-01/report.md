@@ -100,11 +100,11 @@ Pre-existing flake observed: `db.test.ts` "concurrent migrators do not double-ap
 
 ## Blockers and known limitations
 - **Not independently reviewed.** Per AGENTS.md, nothing here is accepted by the implementer.
-- **Project access is organization-role only.** The repo has no per-project membership; any editor in the organization can propose to any project in it. Needs a product decision before MEM-03 retrieval ships.
+- **Project access is organization-role only (accepted for now by the operator).** The repo has no per-project membership; any editor in the organization can propose to any project in it. Revisit before MEM-03 retrieval ships if per-project isolation is required.
 - **Artifact redaction status is not checked** when a source is attached. MEM-02 must require redaction before a source is eligible.
 - **Erasure does not yet purge indexes, caches, summaries or backups.** `purge_status` records only `canonical: erased`; projections arrive with MEM-03..05, and backup behaviour is a documented operator procedure still to be written.
 - **No real pilot.** MEM-01 is a schema and lifecycle slice; its tests run against fixtures in a throwaway PostgreSQL 17, not a live, authorized project. The pilot step in the work order is marked not run.
 - MEM-02..MEM-08 are **not started**.
 
 ## Next task
-MEM-02 (evidence-based ingestion & extraction) depends on MEM-01 being accepted. Recommended first step for the reviewer: decide the project-membership model (limitation above), then review `a2b98c5` and `64d3361`.
+MEM-02 (evidence-based ingestion & extraction) depends on MEM-01 being accepted. Reviewer: review `a2b98c5` and `64d3361`. Pilot and independent review remain open by operator decision.
