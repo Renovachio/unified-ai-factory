@@ -40,3 +40,19 @@ Status: **implemented, local checks only.** Not independently reviewed. No real 
 - Role caps are unvalidated numbers.
 - Packs are not yet consumed by any runtime, so the end-to-end path (memory to agent prompt) is unproven.
 - Independent review and real pilot are still open.
+
+## Addendum: pack text stored, runtime resolution, opt-in wiring
+
+Decisions taken: store rendered text (not in-memory only); opt-in roles `spec` and `builder` only.
+
+- **Storage (migration 0022):** `context_packs` gains required `rendered_digest` and `rendered_uri`. The digest of the rendered text is bound into the manifest before the pack is hashed. Migration refuses if packs already exist without stored text. Down refuses while packs exist.
+- **Write path:** `buildContextPack` takes a content-addressed text store (`FileArtifactStore` satisfies it). Text is written before the pack row.
+- **Runtime resolution:** `resolveContextPack(sql, "context-pack:<id>", store)` is a SYSTEM path with no user actor. It fails closed on: unknown pack (`PACK_NOT_FOUND`), manifest not matching its pack digest (`PACK_INTEGRITY`), any selected memory no longer valid (`PACK_INVALID`), stored text not matching the digest (`PACK_INTEGRITY`). It must only be reachable from the trusted runner.
+- **Orchestrator opt-in (`packages/orchestrator/src/memory-context.ts`):** `memoryContextUri` gives `context-pack:<id>` for `spec` and `builder`; other roles keep the fallback URI. A failed pack build fails the run (no silent fallback). Budgets above the role cap are refused, not clipped. `memoryContextLoader` is the runtime's `loadContext` hook.
+- **Not activated in any app:** production code never constructs `agentTaskExecutor`, so this opt-in does not run in production yet. Activation needs the composition root to supply `packInputFor` (actor, project, task, system instructions). That supply path is not built.
+
+Tests added: 5 loader tests (text identical to pack, revoked memory refused, tampered text refused, edited manifest refused, malformed and unknown URIs) and 6 orchestrator tests (opt-in roles, non-opted roles create no pack, build failure refuses run, over-cap refused, unverifiable text fails closed).
+
+Results: full suite 1423 pass, 0 fail, 87 files. Typecheck, lint, gates lock, package validation and license exit 0.
+
+Remaining gaps: the composition root that supplies `packInputFor` is not built; the runtime does not yet receive the loader in any app; the pilot and independent review are still open.
