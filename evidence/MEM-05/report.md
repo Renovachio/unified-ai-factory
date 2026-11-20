@@ -139,3 +139,15 @@ Limits (stated, not closed):
 Deployment (operator): create a LOGIN role, grant it factory_approval, and set DATABASE_APPROVAL_URL for multi-user API processes. Login uses DATABASE_LOGIN_URL (migration 0027).
 
 Results: full suite 1475 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+## Addendum 8: product artifact approval (migration 0029)
+
+- Approving or superseding a product artifact, and setting approved_by, is allowed only from factory_approval or a superuser (trigger `product_artifacts_approval_role`). A trigger is needed because control and approval both write the `state` column; column grants cannot separate them.
+- factory_control can still submit a draft for review (draft to in_review).
+- The product approve route uses the approval connection.
+- Tests: a direct control-role approval is refused and the artifact stays in_review; the approval role approves the exact digest; the existing product suite still passes (15 tests).
+- Limit: the approver identity is still the one the API resolved; the existing CHECK ensures approver is not the author.
+
+Results: full suite 1477 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+Not done in this round: a fresh independent review of migrations 0026 to 0029. Recommended before merge; it needs a reviewer run that the operator has not yet authorized in this round.

@@ -73,14 +73,14 @@ export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: H
       return { status: 201, body: { id: a.id, version: a.version, state: a.state, digest: a.digest } };
     } catch (e) { const p = artifactProblem(e); if (p) throw p; throw e; }
   } },
-  { method: "POST", pattern: /^\/product\/artifacts\/[^/]+\/(review|approve)$/, handler: async ({ req, sql, actor, maxBody, key, mutating }) => {
+  { method: "POST", pattern: /^\/product\/artifacts\/[^/]+\/(review|approve)$/, handler: async ({ req, sql, approvalSql, actor, maxBody, key, mutating }) => {
     const parts = segs(req); const id = parts[3] as string; const verb = parts[4] as string;
     if (!uuid.test(id)) throw problems.notFound("artifact not found");
     try {
       if (verb === "review") { require_(actor, "product:write"); mutating(); key(); const a = await submitForReview(sql, actor.orgId, id); return { status: 200, body: { id: a.id, state: a.state, digest: a.digest } }; }
       require_(actor, "approval:decide"); mutating(); key();
       const b = await body(req, maxBody);
-      const a = await approveArtifact(sql, { organizationId: actor.orgId, id, approverId: actor.userId, digest: str(b, "digest") });
+      const a = await approveArtifact(approvalSql, { organizationId: actor.orgId, id, approverId: actor.userId, digest: str(b, "digest") });
       return { status: 200, body: { id: a.id, state: a.state, digest: a.digest, approvedBy: a.approvedBy } };
     } catch (e) { const p = artifactProblem(e); if (p) throw p; throw e; }
   } },
