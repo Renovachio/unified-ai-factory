@@ -105,3 +105,20 @@ describe("ownership: control roles never own memory tables", () => {
     } finally { await db.drop(); }
   });
 });
+
+describe("migration 0027 (login session boundary): round trip", () => {
+  test("up creates the login role and session function; down removes both and restores control's session grant", async () => {
+    const db = await createTestDb({ migrate: false });
+    try {
+      await migrateUp(db.sql);
+      const count = async (q: Promise<{ n: number }[]>) => (await q)[0]!.n;
+      expect(await count(db.sql`SELECT count(*)::int n FROM pg_roles WHERE rolname = 'factory_login'`)).toBe(1);
+      await migrateDown(db.sql, { steps: 1 });
+      expect(await count(db.sql`SELECT count(*)::int n FROM pg_roles WHERE rolname = 'factory_login'`)).toBe(0);
+      expect(await count(db.sql`SELECT count(*)::int n FROM pg_proc WHERE proname = 'create_auth_session'`)).toBe(0);
+      expect((await db.sql<{ p: boolean }[]>`SELECT has_table_privilege('factory_control', 'auth_sessions', 'INSERT') AS p`)[0]!.p).toBe(true);
+      await migrateUp(db.sql);
+      expect(await count(db.sql`SELECT count(*)::int n FROM pg_roles WHERE rolname = 'factory_login'`)).toBe(1);
+    } finally { await db.drop(); }
+  }, 60000);
+});

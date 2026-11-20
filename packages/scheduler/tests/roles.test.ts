@@ -53,9 +53,12 @@ describe("database privilege separation (SEC-05)", () => {
   });
   test("control plane: administers approvals/users/sessions/policy but CANNOT write merge intents (only the merge authority merges)", async () => {
     for (const [t, p] of [["merge_intents", "INSERT"], ["merge_intents", "UPDATE"], ["merge_intents", "DELETE"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(false);
-    for (const [t, p] of [["approvals", "INSERT"], ["auth_sessions", "INSERT"], ["auto_merge_global", "UPDATE"], ["merge_intents", "SELECT"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(true);
+    for (const [t, p] of [["approvals", "INSERT"], ["auto_merge_global", "UPDATE"], ["merge_intents", "SELECT"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(true);
     // Migration 0026 (operator decision, Option A): user records are written by the database owner only. The control plane may read them.
     for (const p of ["INSERT", "UPDATE"] as const) expect(await can("factory_control", "users", p), `users:${p}`).toBe(false);
+    // Migration 0027 (Option a): sessions are created only by the login role through create_auth_session. Control may read them.
+    for (const p of ["INSERT", "UPDATE", "DELETE"] as const) expect(await can("factory_control", "auth_sessions", p), `auth_sessions:${p}`).toBe(false);
+    expect(await can("factory_control", "auth_sessions", "SELECT")).toBe(true);
     expect(await denied("factory_control", `UPDATE merge_intents SET status = 'merged'`)).toBe("denied");
   });
   test("append-only guarantees still hold for every role, including the control plane", async () => {
@@ -63,5 +66,28 @@ describe("database privilege separation (SEC-05)", () => {
       const r = await denied(role, `DELETE FROM events`);
       expect(["denied", "other: error: events is append-only"].some((x) => r.startsWith(x.slice(0, 6))) || /append-only|denied/.test(r), `${role}: ${r}`).toBe(true);
     }
+  });
+});
+
+describe("login session boundary (migration 0027)", () => {
+  test("factory_login creates a session only for an enabled user through create_auth_session", async () => {
+    const [u] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role) VALUES (${org}, 'login-ok', 'approver') RETURNING id`;
+    const h = "login-ok-" + Date.now();
+    const r = await as("factory_login", (tx) => tx`SELECT create_auth_session(${h}::text, ${u!.id}::uuid, 'csrf', now(), now() + interval '1 hour', NULL::text)`.then(() => "ok", (e) => String(e)));
+    expect(r).toBe("ok");
+    const [row] = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM auth_sessions WHERE id_hash = ${h}`;
+    expect(row!.n).toBe(1);
+  });
+
+  test("create_auth_session refuses a disabled user", async () => {
+    const [u] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role, disabled_at) VALUES (${org}, 'login-off', 'approver', now()) RETURNING id`;
+    let err = "";
+    try { await as("factory_login", (tx) => tx`SELECT create_auth_session(${"off-" + Date.now()}::text, ${u!.id}::uuid, 'csrf', now(), now() + interval '1 hour', NULL::text)`); } catch (e) { err = String(e); }
+    expect(err).toMatch(/not an enabled account/);
+  });
+
+  test("the control role cannot insert a session for any user", async () => {
+    const [u] = await db.sql<{ id: string }[]>`SELECT id FROM users WHERE auth_subject = 'u'`;
+    expect(await denied("factory_control", `INSERT INTO auth_sessions (id_hash, user_id, csrf, expires_at) VALUES ('ctl-${Date.now()}', '${u!.id}', 'c', now() + interval '1 hour')`)).toBe("denied");
   });
 });

@@ -104,3 +104,19 @@ Verdict: 0026 is NOT safe to merge while the session path below is open.
 Results: full suite 1470 pass, 0 fail, 90 files. Typecheck, lint, gates, package validation and license pass.
 
 Open decision before merge: how sessions and approval records are written. Options: (a) a database function that creates sessions only after credential checks, executed by a login role separate from factory_control, with factory_control denied direct writes to auth_sessions, approvals and approval_decisions; (b) keep the current grants and document that the control plane is trusted for approver identity.
+
+## Addendum 6: login session boundary (migration 0027, option a)
+
+Change:
+- Login sessions are created or rotated only by `create_auth_session()` (SECURITY DEFINER). It refuses unknown or disabled users.
+- Login runs on its own role, `factory_login`, granted only what login needs: read users, read/update sessions, consume login transactions, write audit rows. Its connection is `DATABASE_LOGIN_URL`, required whenever `OIDC_CLIENT_ID` is set.
+- `factory_control` loses INSERT, UPDATE and DELETE on `auth_sessions`. It keeps SELECT.
+- Migration down restores the 0010 session grant and removes the role and function; covered by a round-trip test.
+
+Deployment step (operator): create a LOGIN role, grant it `factory_login`, and set `DATABASE_LOGIN_URL` for the API process. Without it the API refuses to start when OIDC login is enabled.
+
+Results: full suite 1474 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+Still open:
+- approvals (0001/0010) and approval_decisions (0011) are written by the control role. Approver identity there is bound by the API session check, not by the database. Session-bound approval functions are the next change if the operator wants the database to enforce approver identity.
+- Whether the operator's deployed roles match this model is not verified; this is a repository check only.

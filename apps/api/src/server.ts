@@ -30,7 +30,9 @@ if (localTokenFile) {
 let login: OidcLogin | undefined;
 if (env.OIDC_CLIENT_ID) {
   const issuer = need("OIDC_ISSUER");
-  login = new OidcLogin(sql, {
+  // Login runs on its own database role (factory_login, migration 0027): it can create sessions only through create_auth_session.
+  const loginSql = connect(need("DATABASE_LOGIN_URL"));
+  login = new OidcLogin(loginSql, {
     issuer, clientId: env.OIDC_CLIENT_ID, ...(env.OIDC_CLIENT_SECRET ? { clientSecret: env.OIDC_CLIENT_SECRET } : {}),
     redirectUri: need("OIDC_REDIRECT_URI"), authorizationEndpoint: need("OIDC_AUTHORIZATION_ENDPOINT"), tokenEndpoint: need("OIDC_TOKEN_ENDPOINT"),
     keys: createRemoteJWKSet(new URL(env.OIDC_JWKS_URI ?? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json`)),
