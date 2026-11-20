@@ -11,6 +11,7 @@
   "dependencies": {
     "@factory/db": "workspace:*",
     "@factory/telemetry": "workspace:*",
-    "postgres": "4.1.1"
+    "postgres": "4.1.1",
+    "@factory/runtimes": "workspace:*"
   }
 }

@@ -51,7 +51,11 @@ export type MemoryErrorCode =
   | "SOURCE_UNVERIFIED"
   | "SOURCE_TOO_LARGE"
   | "NOT_INGESTIBLE"
-  | "INVALID_QUERY";
+  | "INVALID_QUERY"
+  | "INVALID_ROLE"
+  | "ROLE_CAP_EXCEEDED"
+  | "BUDGET_EXCEEDED"
+  | "PACK_NOT_FOUND";
 
 export class MemoryError extends Error {
   constructor(readonly code: MemoryErrorCode, message: string) {

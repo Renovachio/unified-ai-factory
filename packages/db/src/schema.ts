@@ -700,3 +700,18 @@ export const memoryRetrievalEvents = pgTable("memory_retrieval_events", {
   omitted: jsonb("omitted").notNull(),
   createdAt: created(),
 });
+
+// Adaptive Memory v2.5 (MEM-04), migration 0021.
+export const contextPacks = pgTable("context_packs", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  actorId: uuid("actor_id").notNull().references(() => users.id),
+  modelRole: text("model_role").notNull(),
+  maxInputTokens: integer("max_input_tokens").notNull(),
+  estimatedTokens: integer("estimated_tokens").notNull(),
+  retrievalEventId: uuid("retrieval_event_id").notNull().references(() => memoryRetrievalEvents.id),
+  manifest: jsonb("manifest").notNull(),
+  packDigest: text("pack_digest").notNull(),
+  createdAt: created(),
+});

@@ -209,6 +209,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@factory/db": "workspace:*",
+        "@factory/runtimes": "workspace:*",
         "@factory/telemetry": "workspace:*",
         "postgres": "4.1.1",
       },
