@@ -1,4 +1,4 @@
-import { bigint, boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, bigint, boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const created = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -580,4 +580,74 @@ export const workRuns = pgTable("work_runs", {
   decidedAt: timestamp("decided_at", { withTimezone: true }),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Adaptive Memory v2.5 (MEM-01), migration 0017. Keep nullability in step with the SQL: the parity test checks it.
+export const memoryRecords = pgTable("memory_records", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  kind: text("kind").notNull(),
+  claim: text("claim").notNull(),
+  normalizedClaimHash: text("normalized_claim_hash").notNull(),
+  sourceDigest: text("source_digest").notNull(),
+  status: text("status").notNull().default("proposed"),
+  sensitivity: text("sensitivity").notNull().default("internal"),
+  recordVersion: integer("record_version").notNull().default(1),
+  supersedesId: uuid("supersedes_id").references((): AnyPgColumn => memoryRecords.id),
+  supersededBy: uuid("superseded_by").references((): AnyPgColumn => memoryRecords.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  approvedBy: uuid("approved_by").references(() => users.id),
+  validFrom: timestamp("valid_from", { withTimezone: true }).notNull().defaultNow(),
+  validTo: timestamp("valid_to", { withTimezone: true }),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const memorySources = pgTable("memory_sources", {
+  id: id(),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  artifactId: uuid("artifact_id").references(() => artifacts.id),
+  eventId: uuid("event_id").references(() => events.id),
+  sourceDigest: text("source_digest").notNull(),
+  sourceSpan: jsonb("source_span"),
+  extractionMethod: text("extraction_method").notNull(),
+  aclDigest: text("acl_digest").notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: created(),
+});
+
+export const memoryTransitions = pgTable("memory_transitions", {
+  id: id(),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  recordVersion: integer("record_version").notNull(),
+  actorId: uuid("actor_id").references(() => users.id),
+  actor: text("actor").notNull(),
+  reason: text("reason"),
+  evidenceDigest: text("evidence_digest").notNull(),
+  createdAt: created(),
+});
+
+export const memoryTombstones = pgTable("memory_tombstones", {
+  memoryId: uuid("memory_id").primaryKey().references(() => memoryRecords.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  requestedBy: uuid("requested_by").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  purgeStatus: jsonb("purge_status").notNull().default({ canonical: "erased" }),
+  createdAt: created(),
+});
+
+export const memorySourceRevocations = pgTable("memory_source_revocations", {
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  sourceKind: text("source_kind").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  reason: text("reason").notNull(),
+  revokedBy: uuid("revoked_by").notNull().references(() => users.id),
+  createdAt: created(),
 });
