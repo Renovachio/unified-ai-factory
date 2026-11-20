@@ -214,8 +214,12 @@ export async function insertProposal(
   const hash = claimHash(i.claim);
   const sourceDigest = sourceDigestOf(i.sources);
   const [existing] = await tx<Row[]>`SELECT * FROM memory_records WHERE organization_id = ${actor.organizationId} AND project_id = ${i.projectId}
-    AND normalized_claim_hash = ${hash} AND source_digest = ${sourceDigest} AND record_version = ${i.recordVersion} AND status <> 'deleted'`;
+    AND normalized_claim_hash = ${hash} AND source_digest = ${sourceDigest} AND record_version = ${i.recordVersion} AND status <> 'deleted'
+    AND kind = ${i.kind} AND is_consolidation = ${i.isConsolidation === true}`;
   if (existing) return one(await viewsOf(tx, [existing]), "existing memory"); // idempotent: the same claim from the same sources is one record
+  const [clash] = await tx<Row[]>`SELECT id FROM memory_records WHERE organization_id = ${actor.organizationId} AND project_id = ${i.projectId}
+    AND normalized_claim_hash = ${hash} AND source_digest = ${sourceDigest} AND record_version = ${i.recordVersion} AND status <> 'deleted'`;
+  if (clash) throw new MemoryError("WRONG_STATE", "an identical claim and sources already exist with a different kind or consolidation status");
   const row = one(await tx<Row[]>`INSERT INTO memory_records (organization_id, project_id, kind, claim, normalized_claim_hash, source_digest, sensitivity,
       record_version, supersedes_id, created_by, is_consolidation)
     VALUES (${actor.organizationId}, ${i.projectId}, ${i.kind}, ${i.claim}, ${hash}, ${sourceDigest}, ${i.sensitivity},

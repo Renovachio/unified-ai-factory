@@ -12,6 +12,8 @@
 --     originals of the same kind. A plain memory can never receive links.
 
 ALTER TABLE memory_records ADD COLUMN is_consolidation boolean NOT NULL DEFAULT false;
+-- Backfill: every memory that already has consolidation links is a consolidated memory. Runs before the guard enforces the flag.
+UPDATE memory_records SET is_consolidation = true WHERE id IN (SELECT consolidated_id FROM memory_consolidations);
 
 CREATE OR REPLACE FUNCTION memory_records_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE approver record;
@@ -39,6 +41,9 @@ BEGIN
       IF NOT memory_restore_allowed(OLD) THEN
         RAISE EXCEPTION 'illegal memory transition % -> %', OLD.status, NEW.status;
       END IF;
+      IF NEW.superseded_by IS NOT NULL OR NEW.valid_to IS NOT NULL THEN
+        RAISE EXCEPTION 'restoring memory record % must clear its successor and validity window', OLD.id;
+      END IF;
     ELSIF NOT memory_transition_allowed(OLD.status, NEW.status) THEN
       RAISE EXCEPTION 'illegal memory transition % -> %', OLD.status, NEW.status;
     END IF;
@@ -47,9 +52,19 @@ BEGIN
   -- superseded_by: set only by supersession, cleared only by restore, never re-pointed.
   IF NEW.superseded_by IS DISTINCT FROM OLD.superseded_by THEN
     IF OLD.superseded_by IS NULL AND OLD.status = 'approved' AND NEW.status = 'superseded' AND NEW.superseded_by IS NOT NULL THEN
+      IF NEW.superseded_by = NEW.id THEN
+        RAISE EXCEPTION 'memory % cannot supersede itself', OLD.id;
+      END IF;
       IF NOT EXISTS (SELECT 1 FROM memory_records s WHERE s.id = NEW.superseded_by
           AND s.organization_id = NEW.organization_id AND s.project_id = NEW.project_id) THEN
         RAISE EXCEPTION 'successor of memory % must be in the same organization and project', OLD.id;
+      END IF;
+      -- A consolidated successor supersedes only through its links, and only once it is approved.
+      IF EXISTS (SELECT 1 FROM memory_records s WHERE s.id = NEW.superseded_by AND s.is_consolidation) THEN
+        IF NOT EXISTS (SELECT 1 FROM memory_records s WHERE s.id = NEW.superseded_by AND s.status = 'approved')
+           OR NOT EXISTS (SELECT 1 FROM memory_consolidations c WHERE c.consolidated_id = NEW.superseded_by AND c.original_id = NEW.id) THEN
+          RAISE EXCEPTION 'memory % can be superseded by a consolidated memory only through its approved consolidation', OLD.id;
+        END IF;
       END IF;
     ELSIF OLD.status = 'superseded' AND NEW.status = 'approved' AND NEW.superseded_by IS NULL AND memory_restore_allowed(OLD) THEN
       NULL; -- restore clears the successor

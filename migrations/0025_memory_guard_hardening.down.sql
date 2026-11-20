@@ -4,7 +4,7 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM memory_transitions t WHERE t.from_status = 'superseded' AND t.to_status = 'approved') THEN
     RAISE EXCEPTION 'cannot roll back 0025: a consolidation restore has happened and is audit history';
   END IF;
-  IF EXISTS (SELECT 1 FROM memory_records WHERE is_consolidation) THEN
+  IF EXISTS (SELECT 1 FROM memory_consolidations) THEN
     RAISE EXCEPTION 'cannot roll back 0025: consolidated memories exist and are audit history';
   END IF;
 END $$;

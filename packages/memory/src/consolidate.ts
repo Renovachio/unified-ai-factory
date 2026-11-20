@@ -113,7 +113,7 @@ export async function findReviewCandidates(sql: Sql, actor: Actor, projectId: st
 /**
  * Restores the originals of a consolidated memory that has ENDED (revoked or erased). Human approval only. Every original must
  * still be superseded by this consolidated memory and must have no revoked source, or nothing changes. The consolidated memory
- * itself is not touched. The guard in migration 0024 is the only database path that allows superseded -> approved, and only here.
+ * itself is not touched. The guard (migrations 0024 and 0025) is the only database path that allows superseded -> approved, and only here.
  */
 export async function restoreConsolidation(sql: Sql, actor: Actor, projectId: string, consolidatedId: string): Promise<string[]> {
   try {

@@ -391,3 +391,50 @@ describe("database guard after the independent review (migration 0025)", () => {
       VALUES (${org}, ${projA}, ${plain.id}, ${a.id}, ${author})`)).toMatch(/links can be attached only to a consolidated memory/);
   });
 });
+
+describe("second review fixes (migration 0025)", () => {
+  test("a raw restore that keeps the successor or validity window is refused", async () => {
+    const a = await approvedIn(projA, "Second review restore alpha");
+    const b = await approvedIn(projA, "Second review restore beta");
+    const c = await proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, b.id], claim: "second review restore consolidated", sources: await srcFor(projA) });
+    await approveMemory(db.sql, A(approver), projA, c.id);
+    const [cs] = await db.sql<{ artifact_id: string }[]>`SELECT artifact_id FROM memory_sources WHERE memory_id = ${c.id}`;
+    await revokeSource(db.sql, A(steward), projA, { kind: "artifact", id: cs!.artifact_id }, "ended");
+    expect(await rawErr(db.sql`UPDATE memory_records SET status = 'approved' WHERE id = ${a.id}`)).toMatch(/must clear its successor and validity window/);
+    expect((await statusOf(a.id)).status).toBe("superseded");
+  });
+
+  test("a memory cannot supersede itself", async () => {
+    const v = await approvedIn(projA, "Second review self probe");
+    const msg = await rawErr(db.sql.begin(async (tx) => {
+      await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+        VALUES (${v.id}, 'approved', 'superseded', 1, ${approver}, 'raw', ${"sha256:" + "f".repeat(64)})`;
+      await tx`UPDATE memory_records SET status = 'superseded', superseded_by = ${v.id}, valid_to = now() WHERE id = ${v.id}`;
+    }));
+    expect(msg).toMatch(/cannot supersede itself/);
+  });
+
+  test("a consolidated memory can supersede only through its approved consolidation (raw SQL)", async () => {
+    const a = await approvedIn(projA, "Second review successor alpha");
+    const other = await approvedIn(projA, "Second review successor other");
+    const pending = await proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, other.id], claim: "second review pending consolidated", sources: await srcFor(projA) });
+    const supersedeBy = (id: string) => rawErr(db.sql.begin(async (tx) => {
+      await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+        VALUES (${a.id}, 'approved', 'superseded', 1, ${approver}, 'raw', ${"sha256:" + "a".repeat(64)})`;
+      await tx`UPDATE memory_records SET status = 'superseded', superseded_by = ${id}, valid_to = now() WHERE id = ${a.id}`;
+    }));
+    expect(await supersedeBy(pending.id)).toMatch(/only through its approved consolidation/);
+    expect((await statusOf(a.id)).status).toBe("approved");
+  });
+
+  test("a plain proposal that matches an existing consolidation's claim and sources is refused, not silently merged", async () => {
+    const a = await approvedIn(projA, "Second review clash alpha");
+    const b = await approvedIn(projA, "Second review clash beta");
+    const src = await srcFor(projA);
+    await proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, b.id], claim: "second review clash claim", sources: src });
+    let code = "";
+    try { await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "second review clash claim", sources: src }); }
+    catch (e) { code = e instanceof MemoryError ? e.code : String(e); }
+    expect(code).toBe("WRONG_STATE");
+  });
+});
