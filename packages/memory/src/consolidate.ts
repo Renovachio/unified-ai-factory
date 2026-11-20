@@ -50,7 +50,11 @@ export async function proposeConsolidation(sql: Sql, actor: Actor, projectId: st
         .reduce((a, b) => (SENSITIVITY_RANK[b] > SENSITIVITY_RANK[a] ? b : a));
       const view = await insertProposal(tx, actor, {
         projectId, kind: [...kinds][0] as MemoryKind, claim, sources: input.sources, sensitivity, recordVersion: 1, supersedesId: null,
+        isConsolidation: true,
       });
+      // An identical claim and source set may already exist as a PLAIN memory. That record must never receive links.
+      const [flag] = await tx<{ is_consolidation: boolean }[]>`SELECT is_consolidation FROM memory_records WHERE id = ${view.id}`;
+      if (flag?.is_consolidation !== true) throw new MemoryError("WRONG_STATE", "an identical claim and sources already exist as a plain memory");
       // An identical proposal (same claim and sources) returns the existing record. Its links must be exactly the requested set.
       const existing = (await tx<{ original_id: string }[]>`SELECT original_id FROM memory_consolidations WHERE consolidated_id = ${view.id}`).map((r) => r.original_id).sort();
       const requested = [...ids].sort();

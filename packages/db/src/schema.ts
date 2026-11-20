@@ -592,6 +592,7 @@ export const memoryRecords = pgTable("memory_records", {
   normalizedClaimHash: text("normalized_claim_hash").notNull(),
   sourceDigest: text("source_digest").notNull(),
   status: text("status").notNull().default("proposed"),
+  isConsolidation: boolean("is_consolidation").notNull().default(false),
   sensitivity: text("sensitivity").notNull().default("internal"),
   recordVersion: integer("record_version").notNull().default(1),
   supersedesId: uuid("supersedes_id").references((): AnyPgColumn => memoryRecords.id),

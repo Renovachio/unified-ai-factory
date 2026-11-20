@@ -305,7 +305,7 @@ describe("restoring originals after their consolidation ended", () => {
     const v2 = await proposeRevisionFor(v1.id, "Loophole probe version two");
     await approveMemory(db.sql, A(approver), projA, v2.id);
     expect((await statusOf(v1.id)).status).toBe("superseded");
-    await db.sql`UPDATE memory_records SET status = 'revoked' WHERE id = ${v2.id}`;
+    await revokeSource(db.sql, A(steward), projA, { kind: "artifact", id: v2.sourceId }, "successor withdrawn");
     let msg = "";
     try {
       await db.sql`UPDATE memory_records SET status = 'approved', superseded_by = NULL WHERE id = ${v1.id}`;
@@ -327,6 +327,67 @@ describe("restoring originals after their consolidation ended", () => {
 
 async function proposeRevisionFor(supersedesId: string, claim: string) {
   const { proposeRevision } = await import("../src/index");
-  const [src] = await db.sql<{ artifact_id: string; digest: string }[]>`SELECT artifact_id, source_digest AS digest FROM memory_sources WHERE memory_id = ${supersedesId} LIMIT 1`;
-  return proposeRevision(db.sql, A(author), supersedesId, { claim, sources: [{ kind: "artifact", id: src!.artifact_id, digest: `sha256:${src!.digest.replace("sha256:", "")}`, extractionMethod: "user_statement", aclDigest: ACL }] });
+  const own = await artifactIn(projA, claim);
+  const rev = await proposeRevision(db.sql, A(author), supersedesId, { claim, sources: [{ kind: "artifact", id: own.id, digest: own.digest, extractionMethod: "user_statement", aclDigest: ACL }] });
+  return { ...rev, sourceId: own.id };
 }
+
+/** Runs a raw statement and returns its error message (empty string if it succeeded). */
+async function rawErr(p: Promise<unknown>): Promise<string> {
+  try { await p; return ""; } catch (e) { return String((e as Error).message); }
+}
+
+describe("database guard after the independent review (migration 0025)", () => {
+  test("a live consolidation's original cannot be re-pointed, cleared, or linked to a consolidation that is not proposed", async () => {
+    const a = await approvedIn(projA, "Guard live alpha requirement");
+    const b = await approvedIn(projA, "Guard live beta requirement");
+    const c3 = await proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, b.id], claim: "guard live consolidated", sources: await srcFor(projA) });
+    await approveMemory(db.sql, A(approver), projA, c3.id);
+    const other = await approvedIn(projA, "Guard live unrelated memory");
+    expect(await rawErr(db.sql`UPDATE memory_records SET superseded_by = ${other.id} WHERE id = ${a.id}`)).toMatch(/immutable outside supersession and restore/);
+    expect(await rawErr(db.sql`UPDATE memory_records SET status = 'approved', superseded_by = NULL, valid_to = NULL WHERE id = ${a.id}`)).toMatch(/illegal memory transition superseded -> approved/);
+    expect(await rawErr(db.sql`INSERT INTO memory_consolidations (organization_id, project_id, consolidated_id, original_id, created_by)
+      VALUES (${org}, ${projA}, ${other.id}, ${a.id}, ${author})`)).toMatch(/links can be attached only to a consolidated memory|proposed consolidated/);
+    expect((await statusOf(a.id)).superseded_by).toBe(c3.id);
+    expect((await statusOf(a.id)).status).toBe("superseded");
+  });
+
+  test("a status change with no transition record in the same transaction is refused at commit", async () => {
+    const q = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "Guard no transition probe", sources: await srcFor(projA) });
+    const msg = await rawErr(db.sql.begin(async (tx) => {
+      await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver} WHERE id = ${q.id}`;
+    }));
+    expect(msg).toMatch(/no transition record/);
+    expect((await statusOf(q.id)).status).toBe("proposed");
+  });
+
+  test("raw approval by a viewer, or by an approver of another organization, is refused even with a transition record", async () => {
+    const q = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "Guard approver role probe", sources: await srcFor(projA) });
+    const approveAs = (approverId: string) => rawErr(db.sql.begin(async (tx) => {
+      await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+        VALUES (${q.id}, 'proposed', 'approved', 1, ${approverId}, 'raw', ${"sha256:" + "d".repeat(64)})`;
+      await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approverId} WHERE id = ${q.id}`;
+    }));
+    expect(await approveAs(viewer)).toMatch(/enabled approver or admin of the same organization/);
+    expect(await approveAs(orgBUser)).toMatch(/enabled approver or admin of the same organization/);
+    expect((await statusOf(q.id)).status).toBe("proposed");
+  });
+
+  test("a memory cannot be inserted already approved or with a successor", async () => {
+    const [proj] = await db.sql<{ id: string }[]>`SELECT id FROM repositories WHERE id = ${projA}`;
+    expect(await rawErr(db.sql`INSERT INTO memory_records (organization_id, project_id, kind, claim, normalized_claim_hash, source_digest, status, approved_by, created_by)
+      VALUES (${org}, ${proj!.id}, 'fact', 'born approved', 'bornhash', ${"sha256:" + "e".repeat(64)}, 'approved', ${approver}, ${author})`)).toMatch(/created only as proposed/);
+  });
+
+  test("an identical claim and source set that already exists as a plain memory is refused for consolidation and never receives links", async () => {
+    const a = await approvedIn(projA, "Plain collision alpha requirement");
+    const b = await approvedIn(projA, "Plain collision beta requirement");
+    const src = await srcFor(projA);
+    const plain = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "plain collision claim", sources: src });
+    await expectCode(proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, b.id], claim: "plain collision claim", sources: src }), "WRONG_STATE");
+    const links = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM memory_consolidations WHERE consolidated_id = ${plain.id}`;
+    expect(links[0]!.n).toBe(0);
+    expect(await rawErr(db.sql`INSERT INTO memory_consolidations (organization_id, project_id, consolidated_id, original_id, created_by)
+      VALUES (${org}, ${projA}, ${plain.id}, ${a.id}, ${author})`)).toMatch(/links can be attached only to a consolidated memory/);
+  });
+});

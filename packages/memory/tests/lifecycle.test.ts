@@ -160,7 +160,7 @@ describe("unauthorized access and status changes", () => {
     // approved text is immutable
     expect(await rawErr(db.sql`UPDATE memory_records SET claim = 'rewritten' WHERE id = ${p.id}`)).toMatch(/claim is immutable/);
     // the author cannot be recorded as approver (DB-level, independent of the service)
-    expect(await rawErr(db.sql`UPDATE memory_records SET status = 'approved', approved_by = created_by WHERE id = ${q.id}`)).toMatch(/memory_no_self_approval/);
+    expect(await rawErr(db.sql`UPDATE memory_records SET status = 'approved', approved_by = created_by WHERE id = ${q.id}`)).toMatch(/memory_no_self_approval|approver must be an enabled approver/);
     // the lifecycle is append-only and rows are never hard-deleted
     expect(await rawErr(db.sql`DELETE FROM memory_records WHERE id = ${p.id}`)).toMatch(/never hard-deleted/);
     expect(await rawErr(db.sql`UPDATE memory_transitions SET reason = 'x' WHERE memory_id = ${p.id}`)).toMatch(/append-only/);

@@ -50,8 +50,13 @@ describe("migration 0017 (MEM-01): upgrade, parity and rollback", () => {
       const [org] = await db.sql`INSERT INTO organizations (name) VALUES ('keep') RETURNING id`;
       const [user] = await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${org!.id}, 'u', 'editor') RETURNING id`;
       const [repo] = await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org!.id}, 'github', 'k', 'o', 'n') RETURNING id`;
-      await db.sql`INSERT INTO memory_records (organization_id, project_id, kind, claim, normalized_claim_hash, source_digest, created_by)
-        VALUES (${org!.id}, ${repo!.id}, 'note', 'kept', 'h', ${"sha256:" + "b".repeat(64)}, ${user!.id})`;
+      // Since 0025 every row needs its transition record in the same transaction.
+      await db.sql.begin(async (tx) => {
+        const [m] = await tx<{ id: string }[]>`INSERT INTO memory_records (organization_id, project_id, kind, claim, normalized_claim_hash, source_digest, created_by)
+          VALUES (${org!.id}, ${repo!.id}, 'note', 'kept', 'h', ${"sha256:" + "b".repeat(64)}, ${user!.id}) RETURNING id`;
+        await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+          VALUES (${m!.id}, NULL, 'proposed', 1, ${user!.id}, 'editor', ${"sha256:" + "c".repeat(64)})`;
+      });
       let msg = "";
       try { await migrateDown(db.sql, { steps: MEMORY_MIGRATIONS.length }); } catch (e) { msg = String((e as Error).message); }
       expect(msg).toMatch(/cannot roll back 0017/);

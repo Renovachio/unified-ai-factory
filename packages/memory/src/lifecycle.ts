@@ -209,7 +209,7 @@ export async function verifySources(q: Q, organizationId: string, projectId: str
 export async function insertProposal(
   tx: Q,
   actor: Actor,
-  i: { projectId: string; kind: MemoryKind; claim: string; sources: SourceRef[]; sensitivity: MemorySensitivity; recordVersion: number; supersedesId: string | null },
+  i: { projectId: string; kind: MemoryKind; claim: string; sources: SourceRef[]; sensitivity: MemorySensitivity; recordVersion: number; supersedesId: string | null; isConsolidation?: boolean },
 ): Promise<MemoryView> {
   const hash = claimHash(i.claim);
   const sourceDigest = sourceDigestOf(i.sources);
@@ -217,9 +217,9 @@ export async function insertProposal(
     AND normalized_claim_hash = ${hash} AND source_digest = ${sourceDigest} AND record_version = ${i.recordVersion} AND status <> 'deleted'`;
   if (existing) return one(await viewsOf(tx, [existing]), "existing memory"); // idempotent: the same claim from the same sources is one record
   const row = one(await tx<Row[]>`INSERT INTO memory_records (organization_id, project_id, kind, claim, normalized_claim_hash, source_digest, sensitivity,
-      record_version, supersedes_id, created_by)
+      record_version, supersedes_id, created_by, is_consolidation)
     VALUES (${actor.organizationId}, ${i.projectId}, ${i.kind}, ${i.claim}, ${hash}, ${sourceDigest}, ${i.sensitivity},
-      ${i.recordVersion}, ${i.supersedesId}, ${actor.userId})
+      ${i.recordVersion}, ${i.supersedesId}, ${actor.userId}, ${i.isConsolidation === true})
     RETURNING *`, "inserted memory");
   const id = row.id as string;
   for (const s of i.sources) {
@@ -424,7 +424,8 @@ export async function getMemory(sql: Sql, actor: Actor, projectId: string, memor
 export async function listCurrentMemories(sql: Sql, actor: Actor, projectId: string): Promise<MemoryView[]> {
   await requireActor(sql, actor, READER_ROLES);
   const rows = await sql<Row[]>`SELECT * FROM memory_records WHERE organization_id = ${actor.organizationId} AND project_id = ${projectId}
-    AND status = 'approved' AND valid_to IS NULL ORDER BY created_at, id`;
+    AND status = 'approved' AND valid_to IS NULL
+    AND EXISTS (SELECT 1 FROM memory_sources s WHERE s.memory_id = memory_records.id) ORDER BY created_at, id`;
   return (await viewsOf(sql, rows)).filter((v) => v.usable);
 }
 
