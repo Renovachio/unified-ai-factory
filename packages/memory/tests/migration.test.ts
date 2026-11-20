@@ -57,6 +57,28 @@ describe("migration 0017 (MEM-01): upgrade, parity and rollback", () => {
     } finally { await db.drop(); }
   });
 
+  test("least privilege: the control role can use memory; the runner and the supervisor cannot read it", async () => {
+    const db = await createTestDb();
+    try {
+      const probe = async (role: string, sqlText: string) => {
+        try {
+          await db.sql.begin(async (tx) => {
+            await tx.unsafe(`SET LOCAL ROLE ${role}`);
+            await tx.unsafe(sqlText);
+          });
+          return "allowed";
+        } catch (e) {
+          return String((e as Error).message);
+        }
+      };
+      expect(await probe("factory_control", "SELECT count(*) FROM memory_records")).toBe("allowed");
+      expect(await probe("factory_runner", "SELECT count(*) FROM memory_records")).toMatch(/permission denied/);
+      expect(await probe("factory_supervisor", "SELECT count(*) FROM memory_records")).toMatch(/permission denied/);
+      expect(await probe("factory_control", "DELETE FROM memory_records")).toMatch(/permission denied/);
+      expect(await probe("factory_control", "UPDATE memory_transitions SET reason = 'x'")).toMatch(/permission denied/);
+    } finally { await db.drop(); }
+  });
+
   test("the migration pair exists and has a rollback", () => {
     const m = loadMigrations().find((x) => x.version === "0017");
     expect(m?.name).toBe("memory_core");

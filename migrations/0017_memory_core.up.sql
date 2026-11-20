@@ -188,3 +188,11 @@ BEGIN
 END $$;
 CREATE TRIGGER memory_tombstones_append_only BEFORE UPDATE OR DELETE ON memory_tombstones
   FOR EACH ROW EXECUTE FUNCTION memory_tombstones_append_only();
+
+-- Least privilege (same roles as 0010). Only the control plane (API + orchestrator) reads or writes memory. The runner
+-- never touches memory: it executes work, and memory must not be writable from code that runs untrusted work.
+-- No role gets DELETE: erasure is a status change plus a tombstone. Transition and tombstone history is insert-only.
+GRANT SELECT, INSERT, UPDATE ON memory_records TO factory_control;
+GRANT SELECT, INSERT ON memory_sources TO factory_control;
+GRANT UPDATE (revoked_at) ON memory_sources TO factory_control;
+GRANT SELECT, INSERT ON memory_transitions, memory_tombstones, memory_source_revocations TO factory_control;
