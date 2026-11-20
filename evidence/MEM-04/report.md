@@ -56,3 +56,14 @@ Tests added: 5 loader tests (text identical to pack, revoked memory refused, tam
 Results: full suite 1423 pass, 0 fail, 87 files. Typecheck, lint, gates lock, package validation and license exit 0.
 
 Remaining gaps: the composition root that supplies `packInputFor` is not built; the runtime does not yet receive the loader in any app; the pilot and independent review are still open.
+
+## Addendum 2: composition root and end-to-end test
+
+- **Composition** (`packages/orchestrator/src/agent-composition.ts`): `composeAgentExecutor` builds the agent-role executor. Memory is OFF unless `DISPATCH_MEMORY_CONTEXT=1` (`memoryContextEnabled`). With it off, every role gets the existing context URI.
+- **Who the pack is built for:** `jobs.created_by`, the job's creator. Recorded at job creation by the API. Their current role and disabled status are checked when the run starts. A job with no creator is refused. No system identity is used.
+- **Task and instructions:** task is the request title and description (requester text, escaped inside `<task>`). System instructions are the factory role prompt (`PROMPTS/<role>.md`), never requester text.
+- **Placement:** the composition lives in the orchestrator package, not in `apps/runner`. The orchestrator depends on the runner package, so the runner cannot depend back on the orchestrator.
+- **Tests** (`packages/orchestrator/tests/agent-composition.test.ts`, 5 tests): flag parsing (only `"1"` enables); a real builder task run through `runOnce` (the runner's claim, lease and teardown loop) with the flag off (fallback URI, no pack) and on (pack URI, loaded text contains the role prompt, the escaped task and the approved memory, pack actor is the creator, manifest non-empty); creator disabled (refused before the runtime starts, no fallback); job without creator (refused).
+- **Results:** `packages/orchestrator` and `packages/memory` tests: 122 pass. Full suite 1428 pass, 0 fail, 88 files. Lint, typecheck, gates lock, package validation and license all exit 0.
+
+**Still not active in production.** No app or worker entrypoint calls `composeAgentExecutor`. The runner package has no process entrypoint that starts a worker loop, and the API does not run agent roles. Turning memory on in production needs (a) a worker entrypoint that calls `composeAgentExecutor` with the real adapter, store and model mapping, and (b) an operator decision on enabling the flag. Both are outside this change.

@@ -160,8 +160,9 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
 - work_package: MEM-04
   status: implemented   # local checks only: token estimate (no tokenizer), placeholder role caps, no runtime consumes packs yet; 16 context tests, full suite 1412/0; NOT independently reviewed; no pilot. Not called complete.
   evidence: evidence/MEM-04/report.md
-  blockers: [independent review (open by operator decision), real authorized pilot (not run), no qualified tokenizer, role caps unbenchmarked, composition root supplying packInputFor not built, so the opt-in is not active in any app]
+  blockers: [independent review (open by operator decision), real authorized pilot (not run), no qualified tokenizer, role caps unbenchmarked, no worker entrypoint calls composeAgentExecutor, so memory is not active in any app]
   followup: rendered pack text stored (migration 0022); runtime loader resolveContextPack; opt-in roles spec and builder in packages/orchestrator/src/memory-context.ts; see evidence/MEM-04/report.md addendum
+  followup2: composition root composeAgentExecutor (packages/orchestrator/src/agent-composition.ts), pack built for jobs.created_by, memory OFF unless DISPATCH_MEMORY_CONTEXT=1; end-to-end test through runOnce (5 tests). Still not active in any app: no worker entrypoint calls it; see evidence/MEM-04/report.md addendum 2
 - work_package: MEM-05
   status: not_started   # depends on MEM-01/02/03
 - work_package: MEM-06
