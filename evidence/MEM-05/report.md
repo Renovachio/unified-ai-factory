@@ -63,3 +63,21 @@ Not changed (documented, not fixed in this round):
 
 Results: `packages/memory` and `packages/db`: 160 pass, 0 fail. Full suite: 1460 pass, 0 fail, 90 files. Typecheck, lint, gates lock, package validation and license all exit 0.
 Remaining: a fresh independent review of migration 0025 and its tests is required before merge.
+
+## Addendum 3: second independent review (tip 84b8386) and fixes
+
+Fixed in this round (migration 0025 edited before any release; it is still on this unmerged branch):
+- Restore now requires the successor and validity window to be cleared in the database (regression from 0024; the rollback file already required it).
+- A memory cannot supersede itself.
+- A consolidated memory can supersede only through its approved consolidation (link present, consolidation approved).
+- Existing consolidated memories are backfilled into `is_consolidation` before the guard enforces the flag. The rollback now refuses whenever any consolidation link exists.
+- Idempotent proposals match kind and consolidation status. A plain proposal that clashes with a consolidation is refused (WRONG_STATE) instead of returning the consolidation.
+- Documentation corrected (restore is governed by migrations 0024 and 0025).
+- Tests added for each fix. Memory and db: 164 pass. Full suite: 1464 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+Open, needs an operator decision (NOT fixed here):
+1. **Control role trust boundary.** The role `factory_control` can (a) INSERT transition rows with an arbitrary actor and from_status, which satisfies the commit-time transition check; and (b) UPDATE `users.role` and `users.disabled_at`, which lets it make any user an approver and then approve as them. The approver check therefore trusts a column the same role can change. Options:
+   - A (recommended): column-level grants so `factory_control` cannot change `users.role` or `users.disabled_at`, and route transition writes through a definer function that derives the actor from the verified session, with the deferred check also verifying from_status, to_status and that approved_by matches the transition actor.
+   - B: keep the role trusted and state that approval enforcement depends on the API layer. Weaker, and it should be recorded as a decision.
+   The API may need `users` writes for user administration, so option A needs the API's user-admin path confirmed first.
+2. **Ownership.** Whether `factory_control` owns the tables (which would allow DISABLE TRIGGER) was not checked against the deployed roles.
