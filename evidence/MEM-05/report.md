@@ -81,3 +81,13 @@ Open, needs an operator decision (NOT fixed here):
    - B: keep the role trusted and state that approval enforcement depends on the API layer. Weaker, and it should be recorded as a decision.
    The API may need `users` writes for user administration, so option A needs the API's user-admin path confirmed first.
 2. **Ownership.** Whether `factory_control` owns the tables (which would allow DISABLE TRIGGER) was not checked against the deployed roles.
+
+## Addendum 4: Option A, control-role boundary (migration 0026)
+
+Operator decision: Option A. Implemented as far as the database can enforce it.
+- `factory_control` loses INSERT and UPDATE on `users`. User records are written by the database owner (operator). The control plane keeps SELECT. Checked: no application path updates or inserts users through the control role (the only inserts are the local bootstrap in apps/api/src/local.ts, which runs as the owner).
+- The commit-time transition check now matches from_status, to_status and record_version, and an approval's transition actor must equal the recorded approver.
+- SEC-05 test (packages/scheduler/tests/roles.test.ts) changed: it asserted that the control plane can UPDATE users. That assertion contradicts Option A and is now inverted, with a comment pointing to 0026. This is the one accepted design change in this round.
+- Tests: 3 new boundary tests (actor mismatch, from-status mismatch, control role cannot write users). Results: full suite 1467 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+Residual limit (NOT closed, needs a further decision): the control role can still insert a transition row naming any existing approver and approve as that approver. The database cannot tell which person a session represents. Closing this needs one of: a per-user or per-operator database identity for approvals, or a session-bound actor that the database verifies. Until then approval enforcement is only as strong as the control-plane process, and the API's approval path must be the only code that holds the control role for approvals.
