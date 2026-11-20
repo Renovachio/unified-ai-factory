@@ -50,7 +50,8 @@ export type MemoryErrorCode =
   | "CONSENT_REQUIRED"
   | "SOURCE_UNVERIFIED"
   | "SOURCE_TOO_LARGE"
-  | "NOT_INGESTIBLE";
+  | "NOT_INGESTIBLE"
+  | "INVALID_QUERY";
 
 export class MemoryError extends Error {
   constructor(readonly code: MemoryErrorCode, message: string) {

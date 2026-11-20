@@ -677,3 +677,26 @@ export const memoryIngestionLinks = pgTable("memory_ingestion_links", {
   spanEnd: integer("span_end").notNull(),
   marker: text("marker").notNull(),
 });
+
+// Adaptive Memory v2.5 (MEM-03), migration 0019.
+export const memoryIndex = pgTable("memory_index", {
+  recordId: uuid("record_id").primaryKey().references(() => memoryRecords.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  indexedClaimHash: text("indexed_claim_hash").notNull(),
+  indexVersion: integer("index_version").notNull().default(1),
+  lexical: text("lexical").notNull(),
+  indexedAt: timestamp("indexed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const memoryRetrievalEvents = pgTable("memory_retrieval_events", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  actorId: uuid("actor_id").notNull().references(() => users.id),
+  queryDigest: text("query_digest").notNull(),
+  retrievalMode: text("retrieval_mode").notNull(),
+  returnedIds: uuid("returned_ids").array().notNull(),
+  omitted: jsonb("omitted").notNull(),
+  createdAt: created(),
+});
