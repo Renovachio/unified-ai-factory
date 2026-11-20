@@ -164,7 +164,9 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
   followup: rendered pack text stored (migration 0022); runtime loader resolveContextPack; opt-in roles spec and builder in packages/orchestrator/src/memory-context.ts; see evidence/MEM-04/report.md addendum
   followup2: composition root composeAgentExecutor (packages/orchestrator/src/agent-composition.ts), pack built for jobs.created_by, memory OFF unless DISPATCH_MEMORY_CONTEXT=1; end-to-end test through runOnce (5 tests). Still not active in any app: no worker entrypoint calls it; see evidence/MEM-04/report.md addendum 2; worker entrypoint stopped by default (DISPATCH_WORKER_ENABLE=1 required) and refuses to start while no runtime adapter is registered (addendum 3)
 - work_package: MEM-05
-  status: not_started   # depends on MEM-01/02/03
+  status: implemented_partial   # local checks only: consolidation with human approval and lineage, read-only review candidates; 15 consolidation tests, full suite 1449/0. NOT built: retention (needs operator policy), stale priority, reversal of consolidation (lifecycle forbids it). NOT independently reviewed; no pilot.
+  evidence: evidence/MEM-05/report.md
+  blockers: [retention policy not set by operator, consolidation reversal needs a lifecycle decision, independent review and pilot open, backup drill not run]
 - work_package: MEM-06
   status: not_started   # depends on MEM-03/04/05 and SAI-11 (v2.2, not verified)
 - work_package: MEM-07
