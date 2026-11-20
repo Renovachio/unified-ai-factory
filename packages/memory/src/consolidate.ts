@@ -1,8 +1,8 @@
 import type { Sql } from "@factory/db";
 import {
-  insertProposal, mapDbError, requireActor, requireProject, type Actor, type MemoryView, type SourceRef, verifySources,
+  insertProposal, mapDbError, recordTransition, requireActor, requireProject, type Actor, type MemoryView, type SourceRef, verifySources,
 } from "./lifecycle";
-import { MemoryError, normalizeClaim, PROPOSER_ROLES, READER_ROLES, SENSITIVITY_RANK, validateClaim, type MemoryKind, type MemorySensitivity } from "./domain";
+import { APPROVER_ROLES, MemoryError, normalizeClaim, PROPOSER_ROLES, READER_ROLES, SENSITIVITY_RANK, validateClaim, type MemoryKind, type MemorySensitivity } from "./domain";
 
 /**
  * Consolidation (MEM-05). A consolidated memory is PROPOSED from 2..20 approved originals of one kind in one project. Proposing
@@ -105,3 +105,41 @@ export async function findReviewCandidates(sql: Sql, actor: Actor, projectId: st
   return { duplicateGroups, possibleConflicts };
 }
 
+
+/**
+ * Restores the originals of a consolidated memory that has ENDED (revoked or erased). Human approval only. Every original must
+ * still be superseded by this consolidated memory and must have no revoked source, or nothing changes. The consolidated memory
+ * itself is not touched. The guard in migration 0024 is the only database path that allows superseded -> approved, and only here.
+ */
+export async function restoreConsolidation(sql: Sql, actor: Actor, projectId: string, consolidatedId: string): Promise<string[]> {
+  try {
+    return await sql.begin(async (tx) => {
+      await requireActor(tx, actor, APPROVER_ROLES);
+      await requireProject(tx, actor.organizationId, projectId);
+      const [c] = await tx<Row[]>`SELECT status FROM memory_records WHERE id = ${consolidatedId} AND organization_id = ${actor.organizationId} AND project_id = ${projectId} FOR UPDATE`;
+      if (!c) throw new MemoryError("NOT_FOUND", "no such consolidated memory in this project");
+      if (c.status !== "revoked" && c.status !== "deleted") throw new MemoryError("WRONG_STATE", "originals can be restored only after their consolidated memory is revoked or erased");
+      const originals = await tx<Row[]>`SELECT o.id, o.status, o.superseded_by, o.record_version FROM memory_consolidations l
+        JOIN memory_records o ON o.id = l.original_id WHERE l.consolidated_id = ${consolidatedId} FOR UPDATE OF o`;
+      if (originals.length === 0) throw new MemoryError("NOT_FOUND", "no originals are linked to this consolidated memory");
+      for (const o of originals) {
+        if (o.status !== "superseded" || o.superseded_by !== consolidatedId) throw new MemoryError("WRONG_STATE", "an original is no longer superseded by this consolidation");
+        const [bad] = await tx`SELECT 1 FROM memory_sources s WHERE s.memory_id = ${o.id as string} AND (s.revoked_at IS NOT NULL
+          OR EXISTS (SELECT 1 FROM memory_source_revocations rv WHERE rv.project_id = s.project_id
+            AND rv.source_kind = CASE WHEN s.artifact_id IS NOT NULL THEN 'artifact' ELSE 'event' END
+            AND rv.source_id = COALESCE(s.artifact_id, s.event_id))) LIMIT 1`;
+        if (bad) throw new MemoryError("SOURCE_REVOKED", "an original has a revoked source and cannot be restored");
+      }
+      const restored: string[] = [];
+      for (const o of originals) {
+        const id = o.id as string;
+        await tx`UPDATE memory_records SET status = 'approved', superseded_by = NULL, valid_to = NULL, updated_at = now() WHERE id = ${id}`;
+        await recordTransition(tx, { id, organizationId: actor.organizationId, recordVersion: o.record_version as number }, "superseded", "approved", actor, `restored after consolidation ${consolidatedId} ended`, { restoredFrom: consolidatedId });
+        restored.push(id);
+      }
+      return restored;
+    });
+  } catch (e) {
+    mapDbError(e);
+  }
+}

@@ -8,7 +8,7 @@ import { createTestDb } from "../../db/src/testing";
 import { digestOf } from "../../telemetry/src/index";
 import {
   approveMemory, findReviewCandidates, MemoryError, MemoryErrorCode, proposeConsolidation, proposeMemory, rejectMemory, revokeSource,
-  searchMemories, type Actor,
+  restoreConsolidation, searchMemories, type Actor,
 } from "../src/index";
 
 type Db = Awaited<ReturnType<typeof createTestDb>>;
@@ -242,3 +242,91 @@ describe("durability, injection-as-data, review candidates", () => {
     await expectCode(findReviewCandidates(db.sql, { organizationId: orgB, userId: orgBUser }, projA), "NOT_FOUND");
   });
 });
+
+describe("restoring originals after their consolidation ended", () => {
+  async function consolidated(prefix: string) {
+    const a = await approvedIn(projA, `${prefix} alpha requirement`);
+    const b = await approvedIn(projA, `${prefix} beta requirement`);
+    const c = await proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, b.id], claim: `${prefix} consolidated`, sources: await srcFor(projA) });
+    await approveMemory(db.sql, A(approver), projA, c.id);
+    return { a, b, c };
+  }
+  const endConsolidation = async (c: string) => {
+    const [cs] = await db.sql<{ artifact_id: string }[]>`SELECT artifact_id FROM memory_sources WHERE memory_id = ${c}`;
+    await revokeSource(db.sql, A(steward), projA, { kind: "artifact", id: cs!.artifact_id }, "consolidation withdrawn");
+  };
+
+  test("refused while the consolidated memory is still approved; originals stay superseded", async () => {
+    const { a, b, c } = await consolidated("Restore still live");
+    await expectCode(restoreConsolidation(db.sql, A(approver), projA, c.id), "WRONG_STATE");
+    expect((await statusOf(a.id)).status).toBe("superseded");
+    expect((await statusOf(b.id)).status).toBe("superseded");
+  });
+
+  test("after the consolidated memory is revoked, an approver restores both originals; retrieval returns them", async () => {
+    const { a, b, c } = await consolidated("Restore ended");
+    await endConsolidation(c.id);
+    expect((await statusOf(c.id)).status).toBe("revoked");
+    const restored = await restoreConsolidation(db.sql, A(approver), projA, c.id);
+    expect(restored.sort()).toEqual([a.id, b.id].sort());
+    for (const id of [a.id, b.id]) {
+      const s = await statusOf(id);
+      expect(s.status).toBe("approved");
+      expect(s.superseded_by).toBeNull();
+    }
+    const hits = (await searchMemories(db.sql, A(viewer), projA, { query: "restore ended" })).hits.map((h) => h.memoryId);
+    expect(hits).toContain(a.id);
+    expect(hits).toContain(b.id);
+    expect(hits).not.toContain(c.id);
+    const log = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM memory_transitions WHERE memory_id = ${a.id} AND from_status = 'superseded' AND to_status = 'approved' AND reason = ${"restored after consolidation " + c.id + " ended"}`;
+    expect(log[0]!.n).toBe(1);
+  });
+
+  test("refused for a viewer and a disabled user", async () => {
+    const { c } = await consolidated("Restore authz");
+    await endConsolidation(c.id);
+    await expectCode(restoreConsolidation(db.sql, A(viewer), projA, c.id), "FORBIDDEN");
+    await expectCode(restoreConsolidation(db.sql, A(disabled), projA, c.id), "FORBIDDEN");
+  });
+
+  test("if one original has a revoked source, nothing is restored (all or nothing)", async () => {
+    const { a, b, c } = await consolidated("Restore drift");
+    await endConsolidation(c.id);
+    const [src] = await db.sql<{ artifact_id: string }[]>`SELECT artifact_id FROM memory_sources WHERE memory_id = ${b.id}`;
+    await db.sql`INSERT INTO memory_source_revocations (organization_id, project_id, source_kind, source_id, reason, revoked_by)
+      VALUES (${org}, ${projA}, 'artifact', ${src!.artifact_id}, 'withdrawn after consolidation', ${steward})`;
+    await expectCode(restoreConsolidation(db.sql, A(approver), projA, c.id), "SOURCE_REVOKED");
+    expect((await statusOf(a.id)).status).toBe("superseded");
+    expect((await statusOf(b.id)).status).toBe("superseded");
+  });
+
+  test("the guard is not a general loophole: a superseded REVISION cannot be re-approved by raw SQL, even when its successor is revoked", async () => {
+    const v1 = await approvedIn(projA, "Loophole probe version one");
+    const v2 = await proposeRevisionFor(v1.id, "Loophole probe version two");
+    await approveMemory(db.sql, A(approver), projA, v2.id);
+    expect((await statusOf(v1.id)).status).toBe("superseded");
+    await db.sql`UPDATE memory_records SET status = 'revoked' WHERE id = ${v2.id}`;
+    let msg = "";
+    try {
+      await db.sql`UPDATE memory_records SET status = 'approved', superseded_by = NULL WHERE id = ${v1.id}`;
+    } catch (e) { msg = String((e as Error).message); }
+    expect(msg).toMatch(/illegal memory transition superseded -> approved/);
+    expect((await statusOf(v1.id)).status).toBe("superseded");
+  });
+
+  test("the guard also refuses raw SQL restore of a consolidation original while its consolidated memory is still approved", async () => {
+    const { a, c } = await consolidated("Loophole consolidation live");
+    let msg = "";
+    try {
+      await db.sql`UPDATE memory_records SET status = 'approved', superseded_by = NULL WHERE id = ${a.id}`;
+    } catch (e) { msg = String((e as Error).message); }
+    expect(msg).toMatch(/illegal memory transition superseded -> approved/);
+    expect((await statusOf(c.id)).status).toBe("approved");
+  });
+});
+
+async function proposeRevisionFor(supersedesId: string, claim: string) {
+  const { proposeRevision } = await import("../src/index");
+  const [src] = await db.sql<{ artifact_id: string; digest: string }[]>`SELECT artifact_id, source_digest AS digest FROM memory_sources WHERE memory_id = ${supersedesId} LIMIT 1`;
+  return proposeRevision(db.sql, A(author), supersedesId, { claim, sources: [{ kind: "artifact", id: src!.artifact_id, digest: `sha256:${src!.digest.replace("sha256:", "")}`, extractionMethod: "user_statement", aclDigest: ACL }] });
+}
