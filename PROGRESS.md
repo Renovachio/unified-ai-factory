@@ -155,7 +155,8 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
   status: verified   # local checks only: lexical only (pgvector absent, semantic disclosed as disabled); 109 memory/db tests, full suite 1392/0; no quality benchmark. NOT independently reviewed; no pilot.
   commits: [bd95b4b]
   evidence: evidence/MEM-03/report.md
-  blockers: [MEM-01/02 not accepted, independent review and pilot (open by operator decision), no semantic retrieval (pgvector not qualified), no retrieval quality benchmark (MEM-08)]
+  blockers: [MEM-01/02 not accepted, independent review and pilot (open by operator decision), semantic retrieval off (pgvector 0.8.7 installed; no embedding model qualified in config/model-qualification.json), no retrieval quality benchmark (MEM-08)]
+  followup: migration 0020 stems English and Portuguese (index version 2); see evidence/MEM-03/report.md
 - work_package: MEM-04
   status: not_started   # depends on MEM-03; no qualified model/tokenizer available
 - work_package: MEM-05

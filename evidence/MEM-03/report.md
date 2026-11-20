@@ -91,3 +91,13 @@ Mandatory tests from the spec:
 
 ## Next task
 MEM-04 (token-aware context assembly) depends on MEM-03 being accepted and on a current model router and tokenizer interface, which this repository does not provide as a qualified path. Reviewer: review `bd95b4b` after MEM-01 and MEM-02.
+
+## Follow-up (2026-11-20): stemming and pgvector
+
+Two limitations above are now partly addressed. Commit: see `git log` on `dev/mem-03` (migration 0020).
+
+- **Stemming: solved for English and Portuguese.** The index stores the union of the English and Portuguese stems (`memory_lexical`), and queries are stemmed the same two ways. `exports`, `exporting`, `exportar` and `exportações` now match each other. Index version is 2. Existing rows were rebuilt by the migration. Rollback restores version 1. Cost: a term can match through the other language's stemmer, so some extra recall, mostly harmless because ranking still favours exact-stem matches. Language is not detected per claim.
+- **pgvector: installed and verified.** pgvector 0.8.7 (Homebrew) loads into a Postgres 17 cluster; the test suite checks that it can be created and used when available.
+- **Semantic retrieval: still off, by policy.** `semantic` now reports `extensionAvailable` (true here) and `embeddingModelQualified: false`. Local embedding models exist in Ollama (`embeddinggemma`, `nomic-embed-text`), but `config/model-qualification.json` has no qualification record, so nothing is enabled. Turning it on needs a qualification decision and a retrieval quality benchmark (MEM-08). Not done.
+
+Verification after the follow-up: `bun test --timeout 30000 packages/memory packages/db`: 113 pass; full suite 1396 pass, 0 fail; lint, typecheck, gates lock, package validation and license all exit 0.
