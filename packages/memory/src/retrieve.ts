@@ -15,7 +15,17 @@ export const MAX_LIMIT = 50;
 export const DEFAULT_LIMIT = 10;
 export const RETRIEVAL_MODE = "lexical" as const;
 export const MAX_TERMS = 20;
-const SEMANTIC_STATUS = { enabled: false as const, reason: "pgvector is not installed or qualified in this repository" };
+/** Index projection version written by migration 0020 (English + Portuguese stems). Rows with another version are stale. */
+export const INDEX_VERSION = 2;
+
+export interface SemanticStatus {
+  enabled: false;
+  /** pgvector is installed and can be created in this database. Availability is not qualification. */
+  extensionAvailable: boolean;
+  /** No embedding model has a qualification record (config/model-qualification.json). Semantic stays off until one does. */
+  embeddingModelQualified: false;
+  reason: string;
+}
 
 export type OmitReason = "stale_index" | "not_usable" | "unsourced" | "revoked_source";
 
@@ -34,7 +44,7 @@ export interface SearchResult {
   /** Id of the append-only retrieval event that records this request. */
   requestId: string;
   mode: typeof RETRIEVAL_MODE;
-  semantic: typeof SEMANTIC_STATUS;
+  semantic: SemanticStatus;
   hits: SearchHit[];
   omitted: Record<OmitReason, number>;
 }
@@ -72,7 +82,7 @@ export async function searchMemories(sql: Sql, actor: Actor, projectId: string, 
       r.record_version, i.indexed_claim_hash, i.index_version, ts_rank_cd(i.lexical, q.query) AS rank
     FROM memory_index i
     JOIN memory_records r ON r.id = i.record_id
-    CROSS JOIN to_tsquery('simple', ${tsq}) AS q(query)
+    CROSS JOIN LATERAL (SELECT to_tsquery('english', ${tsq}) || to_tsquery('portuguese', ${tsq}) AS query) q
     WHERE i.organization_id = ${actor.organizationId} AND i.project_id = ${projectId} AND i.lexical @@ q.query
     ORDER BY rank DESC, r.created_at, r.id
     LIMIT ${limit * 4}`;
@@ -90,7 +100,7 @@ export async function searchMemories(sql: Sql, actor: Actor, projectId: string, 
     if (hits.length >= limit) break;
     const id = c.id as string;
     // Fail closed, in this order: freshness, lifecycle, provenance, revocation.
-    if (c.indexed_claim_hash !== c.normalized_claim_hash || c.index_version !== 1) { omitted.stale_index++; continue; }
+    if (c.indexed_claim_hash !== c.normalized_claim_hash || c.index_version !== INDEX_VERSION) { omitted.stale_index++; continue; }
     if (c.status !== "approved" || c.valid_to !== null) { omitted.not_usable++; continue; }
     const mine = sources.filter((s) => s.memory_id === id);
     if (mine.length === 0) { omitted.unsourced++; continue; }
@@ -110,12 +120,19 @@ export async function searchMemories(sql: Sql, actor: Actor, projectId: string, 
     });
   }
 
+  const [ext] = await sql<Row[]>`SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS available`;
+  const semantic: SemanticStatus = {
+    enabled: false,
+    extensionAvailable: ext?.available === true,
+    embeddingModelQualified: false,
+    reason: "no embedding model has a qualification record in config/model-qualification.json; semantic retrieval stays off",
+  };
   const [event] = await sql<Row[]>`INSERT INTO memory_retrieval_events (organization_id, project_id, actor_id, query_digest, retrieval_mode, returned_ids, omitted)
     VALUES (${actor.organizationId}, ${projectId}, ${actor.userId}, ${digestOf({ query })}, ${RETRIEVAL_MODE},
       ${hits.map((h) => h.memoryId)}::uuid[], ${sql.json(omitted as never)})
     RETURNING id`;
   if (!event) throw new MemoryError("DB_REJECTED", "retrieval event was not recorded");
-  return { requestId: event.id as string, mode: RETRIEVAL_MODE, semantic: SEMANTIC_STATUS, hits, omitted };
+  return { requestId: event.id as string, mode: RETRIEVAL_MODE, semantic, hits, omitted };
 }
 
 /**
@@ -128,7 +145,7 @@ export async function rebuildIndex(sql: Sql, actor: Actor, projectId: string): P
   return sql.begin(async (tx) => {
     await tx`DELETE FROM memory_index WHERE organization_id = ${actor.organizationId} AND project_id = ${projectId}`;
     const rows = await tx<Row[]>`INSERT INTO memory_index (record_id, organization_id, project_id, indexed_claim_hash, index_version, lexical)
-      SELECT r.id, r.organization_id, r.project_id, r.normalized_claim_hash, 1, to_tsvector('simple', r.claim)
+      SELECT r.id, r.organization_id, r.project_id, r.normalized_claim_hash, ${INDEX_VERSION}, memory_lexical(r.claim)
       FROM memory_records r WHERE r.organization_id = ${actor.organizationId} AND r.project_id = ${projectId} AND r.status = 'approved' AND r.valid_to IS NULL
       RETURNING record_id`;
     await tx`INSERT INTO audit_entries (organization_id, actor, action, resource, result, reason, digest)

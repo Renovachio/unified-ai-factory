@@ -7,7 +7,7 @@ import { connect } from "../../db/src/index";
 import { createTestDb } from "../../db/src/testing";
 import { digestOf } from "../../telemetry/src/index";
 import {
-  approveMemory, eraseMemory, MemoryError, proposeMemory, proposeRevision, rebuildIndex, revokeSource, searchMemories, tsqueryFor,
+  approveMemory, eraseMemory, INDEX_VERSION, MemoryError, proposeMemory, proposeRevision, rebuildIndex, revokeSource, searchMemories, tsqueryFor,
   type Actor, type MemoryErrorCode,
 } from "../src/index";
 
@@ -109,7 +109,10 @@ describe("ranking and disclosure", () => {
     expect(ids(r)).toContain(weak.id);
     expect(r.mode).toBe("lexical");
     expect(r.semantic.enabled).toBe(false);
-    expect(r.semantic.reason).toMatch(/pgvector/);
+    expect(r.semantic.embeddingModelQualified).toBe(false);
+    expect(r.semantic.reason).toMatch(/qualification/);
+    const [ext] = await db.sql<{ available: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS available`;
+    expect(r.semantic.extensionAvailable).toBe(ext!.available);
     expect(r.hits[0]!.sources[0]!.digest).toBe(strong.artifact.digest);
   });
 });
@@ -154,7 +157,7 @@ describe("fail-closed double check at read time", () => {
   test("an index row planted for a non-approved memory is refused as not usable", async () => {
     const p = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "fact", claim: "IOTA-1 planted index row", sources: [src(await artifactIn(projA, "y"))] });
     await db.sql`INSERT INTO memory_index (record_id, organization_id, project_id, indexed_claim_hash, index_version, lexical)
-      SELECT id, organization_id, project_id, normalized_claim_hash, 1, to_tsvector('simple', claim) FROM memory_records WHERE id = ${p.id}`;
+      SELECT id, organization_id, project_id, normalized_claim_hash, ${INDEX_VERSION}, memory_lexical(claim) FROM memory_records WHERE id = ${p.id}`;
     const r = await searchMemories(db.sql, A(viewer), projA, { query: "IOTA-1" });
     expect(r.hits).toHaveLength(0);
     expect(r.omitted.not_usable).toBe(1);
@@ -239,6 +242,44 @@ async function expectCode(p: Promise<unknown>, code: MemoryErrorCode) {
   expect(err).toBeDefined();
   expect(err instanceof MemoryError ? err.code : "raw").toBe(code);
 }
+
+describe("stemming: English and Portuguese inflections of one stem match each other", () => {
+  test("a Portuguese claim is found by English and Portuguese forms, and an English claim by Portuguese forms", async () => {
+    const pt = await approvedIn(projA, "Exportações devem incluir a trilha de auditoria completa");
+    const en = await approvedIn(projA, "The platform team is exporting audit reports every week");
+    for (const q of ["exports", "exporting", "exportar", "exportação"]) {
+      const found = ids(await searchMemories(db.sql, A(viewer), projA, { query: q }));
+      expect(found).toContain(pt.id);
+      expect(found).toContain(en.id);
+    }
+  });
+
+  test("a plural or gerund in English finds the singular in English", async () => {
+    const m = await approvedIn(projA, "Each reviewer must record one decision per release");
+    expect(ids(await searchMemories(db.sql, A(viewer), projA, { query: "decisions" }))).toContain(m.id);
+  });
+
+  test("index rows carry the stemmed version and the rebuild writes the same version", async () => {
+    const m = await approvedIn(projA, "Stemmed index version probe claim");
+    const [row] = await db.sql<{ index_version: number }[]>`SELECT index_version FROM memory_index WHERE record_id = ${m.id}`;
+    expect(row!.index_version).toBe(INDEX_VERSION);
+    expect(INDEX_VERSION).toBe(2);
+  });
+});
+
+describe("pgvector and semantic status", () => {
+  test("if pgvector is installed it can be created in a database; semantic retrieval stays off without a qualified model", async () => {
+    const [ext] = await db.sql<{ available: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS available`;
+    if (ext!.available) {
+      await db.sql.unsafe("CREATE EXTENSION IF NOT EXISTS vector");
+      const [v] = await db.sql<{ v: string }[]>`SELECT '[1,2,3]'::vector::text AS v`;
+      expect(v!.v).toBe("[1,2,3]");
+    }
+    const r = await searchMemories(db.sql, A(viewer), projA, { query: "export" });
+    expect(r.semantic.enabled).toBe(false);
+    expect(r.semantic.extensionAvailable).toBe(ext!.available);
+  });
+});
 
 describe("query sanitizer (pure)", () => {
   test("only letter and digit terms survive; operators and quotes never reach the tsquery", () => {
