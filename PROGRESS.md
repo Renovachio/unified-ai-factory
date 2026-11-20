@@ -158,7 +158,9 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
   blockers: [MEM-01/02 not accepted, independent review and pilot (open by operator decision), semantic retrieval off (pgvector 0.8.7 installed; no embedding model qualified in config/model-qualification.json), no retrieval quality benchmark (MEM-08)]
   followup: migration 0020 stems English and Portuguese (index version 2); see evidence/MEM-03/report.md
 - work_package: MEM-04
-  status: not_started   # depends on MEM-03; no qualified model/tokenizer available
+  status: implemented   # local checks only: token estimate (no tokenizer), placeholder role caps, no runtime consumes packs yet; 16 context tests, full suite 1412/0; NOT independently reviewed; no pilot. Not called complete.
+  evidence: evidence/MEM-04/report.md
+  blockers: [independent review (open by operator decision), real authorized pilot (not run), no qualified tokenizer, role caps unbenchmarked, runtime integration of context-pack URIs not built]
 - work_package: MEM-05
   status: not_started   # depends on MEM-01/02/03
 - work_package: MEM-06
