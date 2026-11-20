@@ -67,3 +67,14 @@ Remaining gaps: the composition root that supplies `packInputFor` is not built; 
 - **Results:** `packages/orchestrator` and `packages/memory` tests: 122 pass. Full suite 1428 pass, 0 fail, 88 files. Lint, typecheck, gates lock, package validation and license all exit 0.
 
 **Still not active in production.** No app or worker entrypoint calls `composeAgentExecutor`. The runner package has no process entrypoint that starts a worker loop, and the API does not run agent roles. Turning memory on in production needs (a) a worker entrypoint that calls `composeAgentExecutor` with the real adapter, store and model mapping, and (b) an operator decision on enabling the flag. Both are outside this change.
+
+## Addendum 3: worker entrypoint (stopped by default)
+
+- `packages/orchestrator/src/worker.ts`: `agentWorkerExecutor` runs a task only when `selectRuntime` finds a candidate that is qualified for its role, policy-allowed and has an adapter in this build. Otherwise the task is not run and the block reason goes into the `runtime.selection` event. `runAgentWorker` is the loop (enrolment checks, then claim and run until aborted).
+- `packages/orchestrator/src/worker-start.ts`: `workerStartDecision` allows a start only when `DISPATCH_WORKER_ENABLE=1` and at least one adapter is registered. Memory has its own switch and cannot start a worker.
+- `packages/orchestrator/src/worker-main.ts`: entrypoint. Default: exits 0 with "worker disabled". Enabled but no adapter: exits 1 with the reason. It never starts a loop in this build.
+- `apps/runner/src/index.ts` re-exports `select.ts` so the orchestrator can use `selectingExecutor`.
+- Tests (`packages/orchestrator/tests/worker.test.ts`, 6 tests): start decision; no qualified model (adapter never started, `MODEL_NOT_QUALIFIED` recorded); qualified candidate runs through the runner and records `local-model/qwen-test`; candidate with no adapter is never selected (`RUNTIME_UNAVAILABLE`); memory on gives a pack URI on a selected run. Qualification fixture dates are generated from the current date (the registry rejects validity over 90 days).
+- Results: full suite 1434 pass, 0 fail, 89 files. Typecheck, lint, gates lock, package validation and license all exit 0.
+
+**Not done:** no adapter is registered and no process wiring exists, so no worker can run in this build. Choosing the real adapters, their model qualifications and the deployment config is an operator decision.
