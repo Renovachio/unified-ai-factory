@@ -120,3 +120,22 @@ Results: full suite 1474 pass, 0 fail. Typecheck, lint, gates, package validatio
 Still open:
 - approvals (0001/0010) and approval_decisions (0011) are written by the control role. Approver identity there is bound by the API session check, not by the database. Session-bound approval functions are the next change if the operator wants the database to enforce approver identity.
 - Whether the operator's deployed roles match this model is not verified; this is a repository check only.
+
+## Addendum 7: approval role separation (migration 0028)
+
+Change:
+- `factory_approval` (NOLOGIN group, granted to a LOGIN role by the operator) writes approval records: approvals, approval_decisions, plus the writes the two approval entry points make (job transitions, events and their outbox rows, audit, idempotency keys, skill version state). It reads broadly, but has no access to auth_sessions, auth_login_transactions or integrations.
+- `factory_control` loses INSERT, UPDATE and DELETE on approvals and approval_decisions. It keeps SELECT and the `consumed_at` column on approval_decisions, which skill activation needs.
+- The API uses `DATABASE_APPROVAL_URL` for the job decision route and the skill decision route. It is required whenever local owner mode is off. Local mode (one owner, loopback) shares the main connection, as stated.
+- Defect found and fixed during this change: revoking table-level UPDATE also removed the 0011 `consumed_at` column grant. The migration now restores that column.
+
+Verification: the 7 job-decision API tests and 12 registry API tests run with approval writes through factory_approval, so the grants are exercised by real approval paths, not just by privilege checks.
+
+Limits (stated, not closed):
+- Separation is by database connection, not by process. The same API process still holds the control connection, so a compromised process can still reach the approval connection. Splitting into a separate process is the next step if the operator wants it.
+- The approver identity is the one the API resolved from the request. The database checks the approver is an enabled user of the organization, not which person made the request. Token binding covers only OIDC database sessions; bearer tokens and the HMAC cookie create no database session.
+- Product artifact approval (packages/product, approveArtifact) records approved_by on product_artifacts through the control role. It is outside this migration and remains open.
+
+Deployment (operator): create a LOGIN role, grant it factory_approval, and set DATABASE_APPROVAL_URL for multi-user API processes. Login uses DATABASE_LOGIN_URL (migration 0027).
+
+Results: full suite 1475 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
