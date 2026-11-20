@@ -57,7 +57,8 @@ export type MemoryErrorCode =
   | "BUDGET_EXCEEDED"
   | "PACK_NOT_FOUND"
   | "PACK_INVALID"
-  | "PACK_INTEGRITY";
+  | "PACK_INTEGRITY"
+  | "INVALID_CONSOLIDATION";
 
 export class MemoryError extends Error {
   constructor(readonly code: MemoryErrorCode, message: string) {
@@ -65,6 +66,9 @@ export class MemoryError extends Error {
     this.name = "MemoryError";
   }
 }
+
+/** Sensitivity order, least to most restrictive. A consolidation inherits the most restrictive sensitivity of its originals. */
+export const SENSITIVITY_RANK: Readonly<Record<MemorySensitivity, number>> = { public: 0, internal: 1, confidential: 2, restricted: 3 };
 
 export function canTransition(from: MemoryStatus, to: MemoryStatus): boolean {
   return MEMORY_TRANSITIONS[from].includes(to);

@@ -82,14 +82,14 @@ export interface MemoryView {
 type Row = Record<string, unknown>;
 
 /** First element or a loud internal error; used where the database guarantees a row (RETURNING, FOR UPDATE). */
-function one<T>(rows: readonly T[], what: string): T {
+export function one<T>(rows: readonly T[], what: string): T {
   const r = rows[0];
   if (r === undefined) throw new Error(`internal: expected a row for ${what}`);
   return r;
 }
 
 /** Database rejections from the guards/constraints become typed errors; anything else is rethrown untouched. */
-function mapDbError(e: unknown): never {
+export function mapDbError(e: unknown): never {
   if (e instanceof MemoryError) throw e;
   const code = (e as { code?: string }).code;
   if (code === "P0001" || code === "23514" || code === "23505") throw new MemoryError("DB_REJECTED", String((e as Error).message).slice(0, 200));
@@ -107,13 +107,13 @@ export async function requireProject(q: Q, organizationId: string, projectId: st
   if (!p) throw new MemoryError("NOT_FOUND", "no such project");
 }
 
-async function lockMemory(q: Q, organizationId: string, projectId: string, memoryId: string): Promise<Row> {
+export async function lockMemory(q: Q, organizationId: string, projectId: string, memoryId: string): Promise<Row> {
   const [m] = await q<Row[]>`SELECT * FROM memory_records WHERE id = ${memoryId} AND organization_id = ${organizationId} AND project_id = ${projectId} FOR UPDATE`;
   if (!m) throw new MemoryError("NOT_FOUND", "no such memory in this project");
   return m;
 }
 
-async function recordTransition(
+export async function recordTransition(
   q: Q,
   m: { id: string; organizationId: string; recordVersion: number },
   from: MemoryStatus | null,
@@ -129,7 +129,7 @@ async function recordTransition(
     VALUES (${m.organizationId}, ${actor.userId}, ${"memory." + to}, ${"memory:" + m.id}, 'ok', ${reason}, ${evidenceDigest})`;
 }
 
-async function viewsOf(q: Q, rows: Row[]): Promise<MemoryView[]> {
+export async function viewsOf(q: Q, rows: Row[]): Promise<MemoryView[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id as string);
   const srcs = await q<Row[]>`SELECT * FROM memory_sources WHERE memory_id = ANY(${ids}::uuid[]) ORDER BY created_at, id`;
@@ -192,7 +192,7 @@ export async function sourceInProject(q: Q, organizationId: string, projectId: s
   return rows.length > 0;
 }
 
-async function verifySources(q: Q, organizationId: string, projectId: string, sources: SourceRef[]): Promise<void> {
+export async function verifySources(q: Q, organizationId: string, projectId: string, sources: SourceRef[]): Promise<void> {
   if (sources.length === 0) throw new MemoryError("NO_SOURCE", "a memory needs at least one source; abstain instead of inventing one");
   for (const s of sources) {
     const [revoked] = await q`SELECT 1 FROM memory_source_revocations WHERE project_id = ${projectId} AND source_kind = ${s.kind} AND source_id = ${s.id}`;
@@ -206,7 +206,7 @@ async function verifySources(q: Q, organizationId: string, projectId: string, so
   }
 }
 
-async function insertProposal(
+export async function insertProposal(
   tx: Q,
   actor: Actor,
   i: { projectId: string; kind: MemoryKind; claim: string; sources: SourceRef[]; sensitivity: MemorySensitivity; recordVersion: number; supersedesId: string | null },
@@ -296,8 +296,16 @@ export async function approveMemory(sql: Sql, actor: Actor, projectId: string, m
       if (srcs.length === 0) throw new MemoryError("NO_SOURCE", "memory has no source");
       if (srcs.some((s) => s.revoked_at != null)) throw new MemoryError("SOURCE_REVOKED", "a source of this memory was revoked");
       const view = { id: memoryId, organizationId: actor.organizationId, recordVersion: m.record_version as number };
+      // A consolidated memory supersedes its originals ONLY if every original is still approved. Otherwise fail closed.
+      const originals = await tx<Row[]>`SELECT o.id, o.status, o.record_version FROM memory_consolidations c
+        JOIN memory_records o ON o.id = c.original_id WHERE c.consolidated_id = ${memoryId} FOR UPDATE OF o`;
+      if (originals.some((o) => o.status !== "approved")) throw new MemoryError("WRONG_STATE", "an original of this consolidation is no longer approved; re-propose the consolidation");
       await tx`UPDATE memory_records SET status = 'approved', approved_by = ${actor.userId}, updated_at = now() WHERE id = ${memoryId}`;
       await recordTransition(tx, view, from, "approved", actor, null, {});
+      for (const o of originals) {
+        await tx`UPDATE memory_records SET status = 'superseded', superseded_by = ${memoryId}, valid_to = now(), updated_at = now() WHERE id = ${o.id as string}`;
+        await recordTransition(tx, { id: o.id as string, organizationId: actor.organizationId, recordVersion: o.record_version as number }, "approved", "superseded", actor, `consolidated into ${memoryId}`, { successor: memoryId });
+      }
       const supersedes = m.supersedes_id as string | null;
       if (supersedes) {
         const [old] = await tx<Row[]>`SELECT * FROM memory_records WHERE id = ${supersedes} FOR UPDATE`;
@@ -313,7 +321,7 @@ export async function approveMemory(sql: Sql, actor: Actor, projectId: string, m
   }
 }
 
-async function reload(q: Q, memoryId: string): Promise<Row> {
+export async function reload(q: Q, memoryId: string): Promise<Row> {
   const [r] = await q<Row[]>`SELECT * FROM memory_records WHERE id = ${memoryId}`;
   if (!r) throw new MemoryError("NOT_FOUND", "no such memory");
   return r;

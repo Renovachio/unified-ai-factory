@@ -717,3 +717,14 @@ export const contextPacks = pgTable("context_packs", {
   renderedUri: text("rendered_uri").notNull(),
   createdAt: created(),
 });
+
+// Adaptive Memory v2.5 (MEM-05), migration 0023.
+export const memoryConsolidations = pgTable("memory_consolidations", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  consolidatedId: uuid("consolidated_id").notNull().references(() => memoryRecords.id),
+  originalId: uuid("original_id").notNull().references(() => memoryRecords.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: created(),
+});
