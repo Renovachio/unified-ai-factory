@@ -147,7 +147,10 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
   evidence: evidence/MEM-01/report.md
   blockers: [independent review (open by operator decision), real authorized pilot (open by operator decision); project access is organization-role only by operator decision]
 - work_package: MEM-02
-  status: not_started   # depends on MEM-01 acceptance
+  status: verified   # local checks only: 92 memory/db tests, full suite 1375/0; deterministic extraction only (no model); consent is asserted by the caller. NOT independently reviewed; no pilot.
+  commits: [85320ba]
+  evidence: evidence/MEM-02/report.md
+  blockers: [MEM-01 not accepted, independent review (open by operator decision), real authorized pilot (open by operator decision), per-participant consent workflow for real transcripts]
 - work_package: MEM-03
   status: not_started   # depends on MEM-01/02; needs full-text index decision; pgvector not present in repo
 - work_package: MEM-04
