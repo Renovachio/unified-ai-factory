@@ -220,6 +220,7 @@
       "dependencies": {
         "@factory/db": "workspace:*",
         "@factory/domain": "workspace:*",
+        "@factory/memory": "workspace:*",
         "@factory/runner": "workspace:*",
         "@factory/runtimes": "workspace:*",
         "@factory/sandboxes": "workspace:*",
