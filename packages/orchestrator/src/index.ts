@@ -9,3 +9,4 @@ export * from "./snapshot";
 export * from "./decisions";
 export * from "./auto-merge";
 export * from "./memory-context";
+export * from "./agent-composition";
