@@ -151,3 +151,16 @@ Results: full suite 1475 pass, 0 fail. Typecheck, lint, gates, package validatio
 Results: full suite 1477 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
 
 Not done in this round: a fresh independent review of migrations 0026 to 0029. Recommended before merge; it needs a reviewer run that the operator has not yet authorized in this round.
+
+## Addendum 9: independent review of 0026-0029 (tip 7fcddff) and fixes
+
+Verdict of the review: not safe to merge as it stood. Findings and fixes (all on dev/mem-05; migrations 0026-0029 are unmerged, so they were corrected in place):
+- HIGH-1 (product artifacts): the approval trigger fired only on UPDATE, so factory_control could INSERT a row already approved. Fixed: the trigger is BEFORE INSERT OR UPDATE (migration 0029). Test: control insert refused.
+- HIGH-2 (sessions): create_auth_session used SET search_path = public, so a temp table named users could shadow the enabled-user check and create a live session for a disabled account. Fixed: search_path ends with pg_temp last (migration 0027, pg_catalog, public, pg_temp). Mutation check: removing the fix makes the test fail.
+- MEDIUM-1 (approval records): nothing checked the approver on approvals rows or on product approvals. Fixed: approvals_actor_guard (migration 0030) requires an enabled approver or admin of the job organization; the product trigger checks approved_by is an enabled approver or admin of the artifact organization, when it is set or changes. Superusers are exempt in both, as in the existing guards.
+- MEDIUM-2 (0028 down): the rollback widened control's grants (full UPDATE on approval_decisions). Fixed: the down restores INSERT/UPDATE on approvals, INSERT on approval_decisions, and UPDATE(consumed_at) on approval_decisions. Test: round trip checks the restored privileges.
+- LOW-1: 0028 comments corrected (the column-grant observation is a probe result, not a documented PostgreSQL behavior).
+- Not changed: LOW-2 (factory_approval keeps UPDATE on skill_versions): the rejection path in decideApproval needs it; control has had the same write since 0011; activation still requires a decision row.
+- Not changed, documented: local owner mode shares the control connection (DATABASE_URL). If that role is a superuser or owner, the grants do not apply. The launcher's role was not verified in this review. Multi-user deployments fail closed without DATABASE_APPROVAL_URL.
+
+Results: full suite 1482 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.

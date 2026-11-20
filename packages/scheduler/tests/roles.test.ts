@@ -104,3 +104,32 @@ describe("approval role boundary (migration 0028)", () => {
     expect(await can("factory_approval", "users", "SELECT")).toBe(true);
   });
 });
+
+describe("approval and session guards hold against the approval and login roles (review of 0026-0030)", () => {
+  const refusal = async (fn: () => Promise<unknown>) => { try { await fn(); return "allowed"; } catch (e) { return String(e); } };
+  test("create_auth_session cannot be defeated by a temp table shadowing users (pg_temp is searched last)", async () => {
+    const [u] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role, disabled_at) VALUES (${org}, 'shadow-off', 'approver', now()) RETURNING id`;
+    const err = await refusal(() => as("factory_login", async (tx) => {
+      await tx.unsafe("CREATE TEMP TABLE users (id uuid, organization_id uuid, role text, disabled_at timestamptz)");
+      await tx.unsafe(`INSERT INTO pg_temp.users VALUES ('${u!.id}', '${org}', 'approver', NULL)`);
+      await tx`SELECT create_auth_session(${"shadow-" + Date.now()}::text, ${u!.id}::uuid, 'csrf', now(), now() + interval '1 hour', NULL::text)`;
+    }));
+    expect(err).toMatch(/not an enabled account/);
+    const [row] = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM auth_sessions WHERE user_id = ${u!.id}`;
+    expect(row!.n).toBe(0);
+  });
+
+  test("factory_approval cannot record an approval for a viewer (approvals_actor_guard, migration 0030)", async () => {
+    const [v] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role) VALUES (${org}, 'viewer-x', 'viewer') RETURNING id`;
+    const err = await refusal(() => as("factory_approval", (tx) => tx`INSERT INTO approvals (job_id, head_sha, base_sha, policy_digest, actor_id, decision, reason)
+      VALUES (${jobId}, ${"a".repeat(40)}, ${"b".repeat(40)}, 'sha256:x', ${v!.id}, 'approve', 'probe')`));
+    expect(err).toMatch(/enabled approver or admin of the job organization/);
+  });
+
+  test("factory_approval can record an approval for an enabled approver of the job's organization", async () => {
+    const [a] = await db.sql<{ id: string }[]>`SELECT id FROM users WHERE auth_subject = 'u'`;
+    const err = await refusal(() => as("factory_approval", (tx) => tx`INSERT INTO approvals (job_id, head_sha, base_sha, policy_digest, actor_id, decision, reason)
+      VALUES (${jobId}, ${"a".repeat(40)}, ${"b".repeat(40)}, 'sha256:x', ${a!.id}, 'approve', 'probe')`));
+    expect(err).toBe("allowed");
+  });
+});

@@ -129,6 +129,18 @@ describe("artifact approval is restricted to the approval role (migration 0029)"
     expect((await getArtifact(db.sql, org, d.id)).state).toBe("in_review");
   });
 
+  test("a row cannot be created already approved, by control or by the approval role with a non-approver", async () => {
+    const [v] = await db.sql<{ id: string }[]>`SELECT id FROM users WHERE organization_id = ${org} AND role = 'viewer' LIMIT 1`;
+    const insert = (conn: typeof db.sql, approvedBy: string, title: string) => conn`INSERT INTO product_artifacts (organization_id, workspace_id, kind, title, version, source_ids, body, digest, assumptions, open_questions, created_by, state, approved_by)
+      VALUES (${org}, 'default', 'prd', ${title}, 1, ${["S1"]}, ${conn.json(prd as never)}, ${"sha256:" + "5".repeat(64)}, ${[]}, ${[]}, ${author}, 'approved', ${approvedBy})`;
+    let ctl = "";
+    try { await db.sql.begin(async (tx) => { await tx.unsafe("SET LOCAL ROLE factory_control"); await insert(tx as unknown as typeof db.sql, approver, "Guard insert control"); }); } catch (e) { ctl = String(e); }
+    expect(ctl).toMatch(/requires the approval role|permission denied/);
+    let viewer = "";
+    try { await insert(db.sql, v!.id, "Guard insert viewer"); } catch (e) { viewer = String(e); }
+    expect(viewer).toMatch(/enabled approver of the organization/);
+  });
+
   test("the approval role approves an exact digest; the control role can still submit for review", async () => {
     const d = await createDraft(db.sql, { organizationId: org, kind: "prd", title: "Guard probe B", body: prd, sourceIds: ["S1"], createdBy: author });
     const r = await submitForReview(db.sql, org, d.id);

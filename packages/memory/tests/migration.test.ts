@@ -123,3 +123,20 @@ describe("migration 0027 (login session boundary): round trip", () => {
     } finally { await db.drop(); }
   }, 60000);
 });
+
+describe("migration 0028 (approval role) down restores the earlier grants exactly", () => {
+  test("after rolling back 0028, control again has table INSERT/UPDATE on approvals, INSERT and consumed_at only on approval_decisions", async () => {
+    const db = await createTestDb({ migrate: false });
+    try {
+      await migrateUp(db.sql);
+      const above = loadMigrations().filter((m) => m.version >= "0028").length;
+      await migrateDown(db.sql, { steps: above });
+      const p = async (sql: string) => (await db.sql.unsafe<{ p: boolean }[]>(sql))[0]!.p;
+      expect(await p(`SELECT has_table_privilege('factory_control','approvals','INSERT') p`)).toBe(true);
+      expect(await p(`SELECT has_table_privilege('factory_control','approvals','UPDATE') p`)).toBe(true);
+      expect(await p(`SELECT has_table_privilege('factory_control','approval_decisions','INSERT') p`)).toBe(true);
+      expect(await p(`SELECT has_table_privilege('factory_control','approval_decisions','UPDATE') p`)).toBe(false);
+      expect(await p(`SELECT has_column_privilege('factory_control','approval_decisions','consumed_at','UPDATE') p`)).toBe(true);
+    } finally { await db.drop(); }
+  }, 120000);
+});

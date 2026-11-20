@@ -4,8 +4,9 @@
 -- factory_approval runs ONLY the two approval entry points: recordDecision (job approvals, orchestrator/src/decisions.ts)
 -- and decideApproval (skill approvals, skills/src/registry.ts). Its writes are the ones those paths make; its reads are broad
 -- because the evidence binding and the approval guards read many tables. It has NO access to session, login or credential tables.
--- Limit (stated): the approver identity is still the one the API resolved from the authenticated request. The database checks
--- that the approver is an enabled user of the organization, not which person made the request.
+-- Limit (stated): the approver identity is still the one the API resolved from the authenticated request. Guards check that the
+-- approver is an enabled approver of the organization (approval_decisions: migration 0011; approvals: migration 0030; product
+-- artifacts: migration 0029), not which person made the request.
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'factory_approval') THEN CREATE ROLE factory_approval NOLOGIN; END IF;
 END $$;
@@ -19,5 +20,6 @@ GRANT DELETE ON idempotency_keys TO factory_approval; -- a failed claim is remov
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO factory_approval;
 
 REVOKE INSERT, UPDATE, DELETE ON approvals, approval_decisions FROM factory_control;
--- Revoking table-level UPDATE also removed the column grant from 0011. Restore exactly that column: skill activation marks consumed_at.
+-- Observed: revoking table-level UPDATE also removed the 0011 column grant (probe, before this line). Restore exactly that column:
+-- skill activation marks consumed_at.
 GRANT UPDATE (consumed_at) ON approval_decisions TO factory_control;

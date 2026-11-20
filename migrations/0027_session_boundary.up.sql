@@ -19,7 +19,7 @@ GRANT INSERT ON audit_entries TO factory_login;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO factory_login;
 
 CREATE FUNCTION create_auth_session(p_id_hash text, p_user_id uuid, p_csrf text, p_now timestamptz,
-    p_expires_at timestamptz, p_replacing text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+    p_expires_at timestamptz, p_replacing text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_user_id AND disabled_at IS NULL) THEN
     RAISE EXCEPTION 'session refused: user is not an enabled account';
