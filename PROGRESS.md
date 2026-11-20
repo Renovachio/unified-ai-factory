@@ -135,3 +135,30 @@ Spec package: `../dispatch-v2.3`. Branch `dev/v23-dispatch` (on `dev/v22-sai`, w
 Agent work on local folders (migrations 0015-0016, `dispatch code` in-place mode with snapshot, plan-scoped guard and per-wave leases, `dispatch work`, `dispatch mcp`, plugin `packaging/dispatch/claude-plugin`) is implemented and tested; the plugin, restricted launch, write guard and leases were verified live against a real Claude session on synthetic folders (`docs/dispatch/AGENTS.md`), but the Dispatch MCP tools and the full `dispatch work`/`dispatch code` flows were not: DSP-10 stays blocked until the operator records provider terms and a supervised first run is done. Local-folder projects (migration 0014, `/new <folder>`, `dispatch --project`) are implemented and tested; jobs on them still cannot run (no worker, and the SCM/PR flow is GitHub-only). Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Package sha256 (darwin-arm64 tarball): `f7ccc285995d18087383a8acd003eeec5717f0b554776bb7f2fb2824b0e31eb0`.
 
 Also fixed while verifying: a v2.2 idempotent-activation race (`packages/skills/src/registry.ts`), found by the full suite.
+
+## v2.5 Adaptive Memory (MEM-01..MEM-08)
+
+Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`, stacked on `dev/v23-dispatch`; nothing is merged. Work is done one task at a time (AGENTS.md); later tasks wait for MEM-01 to be accepted.
+
+```yaml
+- work_package: MEM-01
+  status: verified   # local checks only: 71 memory/db tests on real PostgreSQL 17, full suite 1354/0, lint, typecheck, package validation, license, gates lock. NOT independently reviewed; no pilot.
+  commits: [a2b98c5, 64d3361]
+  evidence: evidence/MEM-01/report.md
+  blockers: [independent review, per-project membership model decision (org roles only today)]
+- work_package: MEM-02
+  status: not_started   # depends on MEM-01 acceptance
+- work_package: MEM-03
+  status: not_started   # depends on MEM-01/02; needs full-text index decision; pgvector not present in repo
+- work_package: MEM-04
+  status: not_started   # depends on MEM-03; no qualified model/tokenizer available
+- work_package: MEM-05
+  status: not_started   # depends on MEM-01/02/03
+- work_package: MEM-06
+  status: not_started   # depends on MEM-03/04/05 and SAI-11 (v2.2, not verified)
+- work_package: MEM-07
+  status: not_started   # depends on MEM-01/03/05 and v2.4 browser UI (not present in this branch)
+- work_package: MEM-08
+  status: blocked       # release gate: needs a qualified runtime, a real authorized pilot and quality benchmarks; none exist (see DSP-10, EVAL-001)
+  blockers: [no qualified model or authorized runtime, no authorized pilot project, v2.1 gates NOT READY]
+```
