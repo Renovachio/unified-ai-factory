@@ -6,6 +6,7 @@ import { cmdDoctor, cmdMigrate, cmdStart, cmdStatus, cmdStop, launchBrowser, sta
 import { cmdServe } from "./commands/serve";
 import { cmdGuardWrite, cmdMcp } from "./commands/agent";
 import { cmdWork } from "./commands/work";
+import { cmdPlugin } from "./commands/plugin";
 import { cmdChanges, cmdCode, cmdUndo } from "./commands/code";
 import { makeCtx } from "./launcher/context";
 import { HEADER, safe, sym } from "./render";
@@ -23,6 +24,7 @@ Usage:
   dispatch doctor          diagnose prerequisites and settings (read-only)
   dispatch stop [--yes]    graceful shutdown of services Dispatch owns (warns about running jobs)
   dispatch migrate [--yes] apply pending database migrations (explicit; never automatic on an existing database)
+  dispatch plugin install  add Dispatch to Claude Code as a plugin: then run “claude” anywhere and use /dispatch:do <request> (Dispatch launches nothing)
   dispatch code [request]  Claude Code in THIS folder, on your real files (Opus plans, Haiku/Sonnet execute); snapshot first
   dispatch changes | undo  show / revert what changed since that snapshot (undo needs --yes)
   dispatch work            have Claude Code (Opus plans, cheaper agents execute) do the next queued job in a work copy
@@ -39,6 +41,7 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "--version" || cmd === "-v") { console.log(`dispatch ${DISPATCH_VERSION}`); return 0; }
   if (cmd === "mcp") return cmdMcp();
   if (cmd === "work") return cmdWork();
+  if (cmd === "plugin") return cmdPlugin(rest);
   if (cmd === "code") return cmdCode(rest);
   if (cmd === "changes") return cmdChanges(process.cwd(), makeCtx({ create: false }).paths.home, (s) => console.log(s), (s) => console.error(s));
   if (cmd === "undo") return cmdUndo(process.cwd(), makeCtx({ create: false }).paths.home, rest.includes("--yes"), (s) => console.log(s), (s) => console.error(s));

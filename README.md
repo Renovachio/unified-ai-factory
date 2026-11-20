@@ -57,6 +57,7 @@ Needs macOS (Apple silicon) and PostgreSQL 17 (`brew install postgresql@17`); Bu
 | `dispatch` / `--no-browser` | start or attach (idempotent, lock-protected), open the dashboard, enter the prompt |
 | `dispatch <request>` / `/dispatch <request>` | same, plus create a new request in the active (or only) project |
 | `dispatch --project <folder> [request]` / `/new <folder>` | use a folder on this machine as the project (GitHub is optional) |
+| `dispatch plugin install` | add Dispatch to Claude Code as a plugin: start `claude` yourself in any folder and use `/dispatch:do <request>`; Dispatch launches nothing, so no provider-terms file is involved (what you give up: `docs/dispatch/AGENTS.md`) |
 | `dispatch code [request]` / `changes` / `undo` | Claude Code in the folder you are in, on the real files (Opus plans, cheaper agents execute); Dispatch tools, plan-scoped guard, snapshot first; keep or restore with `/accept` `/discard`, or `dispatch undo`; same terms approval as `work`; not run live yet |
 | `dispatch work` | have Claude Code do the next queued job in a copy of the folder (Opus plans, cheaper agents execute in parallel); you approve the diff with `/runs` `/review` `/accept` (needs your provider-terms approval first; see `docs/dispatch/AGENTS.md`) |
 | `dispatch start` / `status` / `doctor` | start missing services / report real health / diagnose without changing anything |

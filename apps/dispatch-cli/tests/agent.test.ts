@@ -10,12 +10,12 @@ const ok: ApiCall = async (m, p, b) => { calls.push([m, p, b]); return { ok: tru
 const rpc = (method: string, params?: Record<string, unknown>, id = 1) => ({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) });
 
 describe("dispatch mcp: the Claude-facing tool server", () => {
-  test("handshake and tool list: exactly four tools and NOTHING that can approve, apply or decide", async () => {
+  test("handshake and tool list: exactly five tools and NOTHING that can approve, apply or decide", async () => {
     const h = createMcpHandler(ok);
     expect(await h(rpc("initialize", { protocolVersion: "2024-11-05" }))).toMatchObject({ result: { capabilities: { tools: {} }, serverInfo: { name: "dispatch" } } });
     const l = (await h(rpc("tools/list")) as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
-    expect(l).toEqual(["dispatch_next_job", "dispatch_start_run", "dispatch_progress", "dispatch_finish_run"]);
-    expect(l.join(" ")).not.toMatch(/approve|apply|decide|decision|reject/); expect(TOOLS.length).toBe(4);
+    expect(l).toEqual(["dispatch_begin", "dispatch_next_job", "dispatch_start_run", "dispatch_progress", "dispatch_finish_run"]);
+    expect(l.join(" ")).not.toMatch(/approve|apply|decide|decision|reject/); expect(TOOLS.length).toBe(5);
     expect(await h({ jsonrpc: "2.0", method: "notifications/initialized" })).toBeNull(); // notifications are never answered
     expect(await h(rpc("ping"))).toMatchObject({ result: {} });
   });
@@ -64,5 +64,22 @@ describe("dispatch guard-write: Claude may write only inside the Dispatch work c
     expect(g("Bash", join(work, "a")).allow).toBe(false); expect(g("Write", `${work}/a\0b`).allow).toBe(false);
     expect(guardWrite(JSON.stringify({ tool_name: "Write", tool_input: { file_path: join(work, "a") } }), join(base, "does-not-exist")).allow).toBe(false);
     const r = g("Write", "/etc/passwd"); if (!r.allow) expect(r.reason).toContain("only allowed inside");
+  });
+});
+
+describe("dispatch_begin: plugin mode creates the job for the folder Claude was started in", () => {
+  test("registers the server's own folder (never a path the model supplies), then queues the request", async () => {
+    const seen: Array<[string, string, Record<string, unknown>]> = [];
+    const api: ApiCall = async (m, p, b) => { seen.push([m, p, b as Record<string, unknown>]); return p.endsWith("/projects") ? { ok: true, status: 201, body: { id: "p1", name: "proj", path: "/work/proj" } } : { ok: true, status: 202, body: { jobId: "j1" } }; };
+    const r = (await createMcpHandler(api, "/work/proj")(rpc("tools/call", { name: "dispatch_begin", arguments: { request: "add a footer", path: "/etc" } }))) as { result: { content: Array<{ text: string }> } };
+    expect(seen[0]).toEqual(["POST", "/api/v2/dispatch/projects", { path: "/work/proj" }]);
+    expect(seen[1]?.[1]).toBe("/api/v1/jobs"); expect(seen[1]?.[2]).toMatchObject({ repositoryId: "p1", request: { type: "feature", title: "add a footer", description: "add a footer" } });
+    expect(JSON.parse(r.result.content[0]!.text)).toEqual({ job: { id: "j1", title: "add a footer", request: "add a footer" }, project: { id: "p1", name: "proj", path: "/work/proj" } });
+  });
+  test("a refused folder stops before any job is created; the request is required", async () => {
+    const seen: string[] = []; const api: ApiCall = async (_m, p) => { seen.push(p); return { ok: false, status: 422, body: { detail: "the folder is not allowed" } }; };
+    const r = (await createMcpHandler(api, "/")(rpc("tools/call", { name: "dispatch_begin", arguments: { request: "x" } }))) as { result: { isError: boolean; content: Array<{ text: string }> } };
+    expect(r.result.isError).toBe(true); expect(r.result.content[0]?.text).toContain("not allowed"); expect(seen).toEqual(["/api/v2/dispatch/projects"]);
+    expect(((await createMcpHandler(api)(rpc("tools/call", { name: "dispatch_begin", arguments: {} }))) as { result: { isError: boolean } }).result.isError).toBe(true);
   });
 });

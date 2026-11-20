@@ -65,3 +65,13 @@ The folder you are in becomes the project (GitHub is not needed), the request is
 - Restricted mode alone still exposed WebSearch and claude.ai connectors; `--tools` and `--strict-mcp-config` fixed that (init event lists exactly the six built-in tools and the Dispatch server).
 - Hook input carries `agent_id`/`agent_type` for subagents. Three parallel writers with a plan scope of `src/`: one claimed `src/shared.txt`, the second was blocked by the lease (`shared.txt` contained only the first agent's text), a write to `outside.txt` was blocked by the scope, and the allowed write succeeded.
 - **Still not run live:** `dispatch code` / `dispatch work` end to end (needs the provider-terms approval, which only you record), the Dispatch MCP tools from a real Claude session, `/review` `/accept` `/discard` on a real run.
+
+## Plugin mode: use Dispatch from inside Claude (no provider-terms file needed)
+```sh
+dispatch plugin install        # once: builds a local marketplace from the shipped plugin and installs it with `claude plugin install`
+cd ~/some/folder && claude     # you start Claude yourself
+/dispatch:do add a footer to every page
+```
+Here **Dispatch launches nothing**: you run Claude Code, and Dispatch is a plugin (command `/dispatch:do`, five MCP tools, a write-guard hook). That is why the launcher's provider-terms gate (`dispatch work`, `dispatch code`) does not apply: Dispatch does not automate your subscription, you use Claude Code interactively. Whether that is acceptable under Anthropic's terms is your call; Dispatch does not decide it.
+What it does: `dispatch_begin` registers the folder Claude was started in and queues your request (it starts the factory if it is not running), Opus plans with `dispatch_start_run` (validated, snapshot, plan scope), cheaper agents execute in parallel, `dispatch_finish_run` measures the diff; you keep or restore with `/accept` `/discard` in `dispatch`, or `dispatch undo` in the folder.
+**Compared with the launcher modes you lose:** `--restricted` and the explicit tool list (plain Claude keeps Bash and the web: the write guard covers only Write/Edit tools, so a Bash command can still write anywhere your Claude permissions allow), strict MCP (your other connectors stay), the scrubbed environment, and the guarantee that a run happens through Dispatch at all (nothing forces you to use `/dispatch:do`). The guard hook is installed for every session while the plugin is enabled, but acts only while a Dispatch run is active for the folder; before `dispatch_start_run` and after the run ends, Claude writes unguarded. At finish Dispatch still recomputes the diff and fails the run if anything changed outside the plan.
