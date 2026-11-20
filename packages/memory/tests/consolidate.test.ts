@@ -458,7 +458,7 @@ describe("control-role boundary (migration 0026)", () => {
         VALUES (${q.id}, 'rejected', 'approved', 1, ${approver}, 'raw', ${"sha256:" + "2".repeat(64)})`;
       await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver} WHERE id = ${q.id}`;
     }));
-    expect(msg).toMatch(/no matching transition record/);
+    expect(msg).toMatch(/no transition record|no matching transition record/);
   });
 
   test("the control role cannot write user records", async () => {
@@ -468,5 +468,29 @@ describe("control-role boundary (migration 0026)", () => {
     }));
     expect(msg).toMatch(/permission denied/);
     expect((await db.sql<{ role: string }[]>`SELECT role FROM users WHERE id = ${viewer}`)[0]!.role).toBe("viewer");
+  });
+});
+
+describe("transition check predicates (migration 0026)", () => {
+  test("a transition row committed in an EARLIER transaction does not satisfy a later status change", async () => {
+    const q = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "Stale transition probe", sources: await srcFor(projA) });
+    await db.sql`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+      VALUES (${q.id}, 'proposed', 'approved', 1, ${approver}, 'raw', ${"sha256:" + "3".repeat(64)})`;
+    const msg = await rawErr(db.sql.begin(async (tx) => {
+      await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver} WHERE id = ${q.id}`;
+    }));
+    expect(msg).toMatch(/no matching transition record|must be recorded by the approver/);
+    expect((await statusOf(q.id)).status).toBe("proposed");
+  });
+
+  test("a transition row for another record_version does not satisfy the change", async () => {
+    const q = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "Record version probe", sources: await srcFor(projA) });
+    const msg = await rawErr(db.sql.begin(async (tx) => {
+      await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+        VALUES (${q.id}, 'proposed', 'approved', 2, ${approver}, 'raw', ${"sha256:" + "4".repeat(64)})`;
+      await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver} WHERE id = ${q.id}`;
+    }));
+    expect(msg).toMatch(/no matching transition record|must be recorded by the approver/);
+    expect((await statusOf(q.id)).status).toBe("proposed");
   });
 });

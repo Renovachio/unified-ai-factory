@@ -91,3 +91,16 @@ Operator decision: Option A. Implemented as far as the database can enforce it.
 - Tests: 3 new boundary tests (actor mismatch, from-status mismatch, control role cannot write users). Results: full suite 1467 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
 
 Residual limit (NOT closed, needs a further decision): the control role can still insert a transition row naming any existing approver and approve as that approver. The database cannot tell which person a session represents. Closing this needs one of: a per-user or per-operator database identity for approvals, or a session-bound actor that the database verifies. Until then approval enforcement is only as strong as the control-plane process, and the API's approval path must be the only code that holds the control role for approvals.
+
+## Addendum 5: third review of migration 0026 (tip a167d4b)
+
+Verdict: 0026 is NOT safe to merge while the session path below is open.
+
+- **High, not in the earlier residual:** `factory_control` can INSERT into `auth_sessions` for any user (0010 blanket grant; the control-plane test asserts it). A session for an enabled approver lets the control role act as that approver; the 0025/0026 approver checks then bind nothing. Disabled users are rejected at session read time in the API, not by the database. The same class exists in `approval_decisions` (0011) and `approvals` (0001, via 0010). Not fixed: closing it changes how login writes sessions, which is a decision (see the operator's options below).
+- **Medium, fixed:** the stale-transition and record-version checks had no tests. Added: a transition committed in an earlier transaction does not satisfy a later change; a transition for another record_version does not satisfy the change.
+- **Low, fixed:** the 0025 test no longer depends on the 0026 wording.
+- **Low, open:** the control-plane test asserts that the control role CAN insert `auth_sessions`. That is the current behaviour and must change on purpose when the session path is closed.
+
+Results: full suite 1470 pass, 0 fail, 90 files. Typecheck, lint, gates, package validation and license pass.
+
+Open decision before merge: how sessions and approval records are written. Options: (a) a database function that creates sessions only after credential checks, executed by a login role separate from factory_control, with factory_control denied direct writes to auth_sessions, approvals and approval_decisions; (b) keep the current grants and document that the control plane is trusted for approver identity.
