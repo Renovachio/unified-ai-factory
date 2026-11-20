@@ -4,6 +4,10 @@ import { runRepl } from "./repl/repl";
 import { getSummary } from "./launcher/api";
 import { cmdDoctor, cmdMigrate, cmdStart, cmdStatus, cmdStop, launchBrowser, startFactory } from "./commands/lifecycle";
 import { cmdServe } from "./commands/serve";
+import { cmdGuardWrite, cmdMcp } from "./commands/agent";
+import { cmdWork } from "./commands/work";
+import { cmdPlugin } from "./commands/plugin";
+import { cmdChanges, cmdCode, cmdUndo } from "./commands/code";
 import { makeCtx } from "./launcher/context";
 import { HEADER, safe, sym } from "./render";
 import { DISPATCH_VERSION } from "./version";
@@ -20,6 +24,11 @@ Usage:
   dispatch doctor          diagnose prerequisites and settings (read-only)
   dispatch stop [--yes]    graceful shutdown of services Dispatch owns (warns about running jobs)
   dispatch migrate [--yes] apply pending database migrations (explicit; never automatic on an existing database)
+  dispatch plugin install  add Dispatch to Claude Code as a plugin: then run “claude” anywhere and use /dispatch:do <request> (Dispatch launches nothing)
+  dispatch code [request]  Claude Code in THIS folder, on your real files (Opus plans, Haiku/Sonnet execute); snapshot first
+  dispatch changes | undo  show / revert what changed since that snapshot (undo needs --yes)
+  dispatch work            have Claude Code (Opus plans, cheaper agents execute) do the next queued job in a work copy
+  dispatch mcp             (used by Claude Code) the Dispatch tool server; never run by hand
   dispatch --version | --help
 
 Security: Dispatch never uses usage-billed model APIs or API keys, never stores provider credentials,
@@ -30,6 +39,13 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "__serve") return cmdServe(rest[0] ?? "");
   if (cmd === "--help" || cmd === "-h" || cmd === "help") { console.log(HELP); return 0; }
   if (cmd === "--version" || cmd === "-v") { console.log(`dispatch ${DISPATCH_VERSION}`); return 0; }
+  if (cmd === "mcp") return cmdMcp();
+  if (cmd === "work") return cmdWork();
+  if (cmd === "plugin") return cmdPlugin(rest);
+  if (cmd === "code") return cmdCode(rest);
+  if (cmd === "changes") return cmdChanges(process.cwd(), makeCtx({ create: false }).paths.home, (s) => console.log(s), (s) => console.error(s));
+  if (cmd === "undo") return cmdUndo(process.cwd(), makeCtx({ create: false }).paths.home, rest.includes("--yes"), (s) => console.log(s), (s) => console.error(s));
+  if (cmd === "guard-write") return cmdGuardWrite(rest);
   if (cmd === "start") return cmdStart(rest);
   if (cmd === "status") return cmdStatus();
   if (cmd === "doctor") return cmdDoctor();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bindingFor, COMMANDS, ConfirmationStore, deterministic, interpret, parseLine, shellRequestText, validateIntent, type Intent, type NlInterpreter } from "../src/index";
+import { unescapePath, bindingFor, COMMANDS, ConfirmationStore, deterministic, interpret, parseLine, shellRequestText, validateIntent, type Intent, type NlInterpreter } from "../src/index";
 
 describe("intent schema is strict and fails closed (DSP-04)", () => {
   test("every contract intent type validates; unknown types/fields, wrong types, missing fields and injection-shaped ids are rejected", () => {
@@ -14,8 +14,8 @@ describe("intent schema is strict and fails closed (DSP-04)", () => {
 describe("slash commands (COMMANDS.md)", () => {
   test("every documented command parses to a typed intent, a local action or a usage hint; none is treated as text", () => {
     const seen = new Set<string>();
-    for (const c of COMMANDS) { const line = c.usage.replace("<id>", "x1").replace("<jobId>", "j1").replace("<folder>", "~/code/x").replace("<request>", "do a thing").replace("[clear]", "").replace("use x1", "use x1").trim(); const p = parseLine(line); seen.add(c.name); expect(p.kind === "text" || p.kind === "unknown").toBe(false); }
-    expect(seen.size).toBe(20);
+    for (const c of COMMANDS) { const line = c.usage.replace("<id>", "x1").replace("<jobId>", "j1").replace("<folder>", "~/code/x").replace("<request>", "do a thing").replace("[run]", "").replace("[clear]", "").replace("use x1", "use x1").trim(); const p = parseLine(line); seen.add(c.name); expect(p.kind === "text" || p.kind === "unknown").toBe(false); }
+    expect(seen.size).toBe(24);
   });
   test("argument handling: /project use, /new, pause/resume/cancel/approve map to the right intents; malformed arguments give usage, not execution", () => {
     expect(parseLine("/project use p-1")).toMatchObject({ kind: "intent", intent: { type: "project.select", projectId: "p-1" } });
@@ -31,6 +31,27 @@ describe("slash commands (COMMANDS.md)", () => {
     for (const l of ["/rm -rf /", "/statu", "/shell id", "/etc/passwd", "//", "/ exit"]) { const p = parseLine(l); expect(p.kind).toBe("unknown"); }
     expect(parseLine("/statu")).toMatchObject({ suggestions: expect.arrayContaining(["/status"]) });
     expect(parseLine("show projects").kind).toBe("text"); expect(parseLine("").kind).toBe("text");
+  });
+});
+
+describe("agent run commands", () => {
+  test("/runs, /review, /accept and /discard parse to run actions; refs must be hex id prefixes", () => {
+    expect(parseLine("/runs")).toEqual({ kind: "run", action: "list" });
+    expect(parseLine("/review 3F9a1c2e")).toEqual({ kind: "run", action: "review", ref: "3f9a1c2e" });
+    expect(parseLine("/accept 3f9a1c2e")).toEqual({ kind: "run", action: "accept", ref: "3f9a1c2e" });
+    expect(parseLine("/discard 3f9a1c2e-0000")).toMatchObject({ kind: "run", action: "discard" });
+    expect(parseLine("/review")).toEqual({ kind: "run", action: "review" }); expect(parseLine("/accept")).toEqual({ kind: "run", action: "accept" });
+    for (const bad of ["/accept zz", "/accept ../x", "/accept 12", "/runs now", "/discard a b c"]) expect(parseLine(bad).kind).toBe("usage");
+  });
+});
+
+describe("folder arguments typed shell-style", () => {
+  test("escaped spaces, quotes and plain paths all resolve to the same text", () => {
+    expect(parseLine("/new /Users/me/Documents/ScribeDeck\\ Transcripts")).toEqual({ kind: "local-project", path: "/Users/me/Documents/ScribeDeck Transcripts" });
+    expect(parseLine('/new "/Users/me/My Docs"')).toEqual({ kind: "local-project", path: "/Users/me/My Docs" });
+    expect(parseLine("/project add '/Users/me/My Docs'")).toEqual({ kind: "local-project", path: "/Users/me/My Docs" });
+    expect(parseLine("/new ~/code/x y")).toEqual({ kind: "local-project", path: "~/code/x y" });
+    expect(unescapePath("a\\ b")).toBe("a b"); expect(unescapePath("plain")).toBe("plain");
   });
 });
 

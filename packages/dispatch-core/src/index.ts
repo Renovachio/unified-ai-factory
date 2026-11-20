@@ -7,3 +7,7 @@ export * from "./env";
 export * from "./services";
 export * from "./intent/index";
 export * from "./localpath";
+export * from "./plan";
+export * from "./workcopy";
+export * from "./terms";
+export * from "./snapshot";

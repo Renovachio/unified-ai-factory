@@ -5,19 +5,19 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { DispatchClient } from "@factory/dispatch-client";
 import { createTestDb } from "../../../packages/db/src/testing";
-import { bootstrapLocalOwner, CompositeAuthenticator, createApi, LocalBrowserEntry, LocalOwnerAuthenticator, SessionManager } from "../../../apps/api/src/index";
+import { bootstrapLocalOwner, CompositeAuthenticator, createApi, LOCAL_AGENT_SUBJECT, LocalBrowserEntry, LocalOwnerAuthenticator, SessionManager } from "../../../apps/api/src/index";
 import type { Ctx } from "../src/launcher/context";
 import { Executor } from "../src/repl/executor";
 import { runRepl, type ReplHooks } from "../src/repl/repl";
 import { Session } from "../src/repl/session";
 
 let db: Awaited<ReturnType<typeof createTestDb>>; let server: ReturnType<typeof Bun.serve>; let base = ""; let org = ""; let repoId = ""; let home = ""; let n = 0;
-const TOKEN = "r".repeat(48); let calls: string[] = [];
+const TOKEN = "r".repeat(48); const AGENT_TOKEN = "g".repeat(48); let calls: string[] = [];
 beforeAll(async () => {
   process.env.DISPATCH_CONFIG_DIR = join(import.meta.dir, "../../../config"); process.env.DISPATCH_LOCAL_TOKEN_FILE = "/unused"; // enables local-project routes
   db = await createTestDb(); org = await bootstrapLocalOwner(db.sql); home = mkdtempSync(join(tmpdir(), "dsp-repl-"));
   const sm = new SessionManager("y".repeat(40));
-  const api = createApi({ sql: db.sql, rateLimit: { capacity: 100000, refillPerSec: 100000 }, authenticator: new CompositeAuthenticator([new LocalOwnerAuthenticator(TOKEN), sm]), local: { entry: new LocalBrowserEntry(sm, "http://127.0.0.1:3000") } });
+  const api = createApi({ sql: db.sql, rateLimit: { capacity: 100000, refillPerSec: 100000 }, authenticator: new CompositeAuthenticator([new LocalOwnerAuthenticator(TOKEN), new LocalOwnerAuthenticator(AGENT_TOKEN, LOCAL_AGENT_SUBJECT), sm]), local: { entry: new LocalBrowserEntry(sm, "http://127.0.0.1:3000") } });
   server = Bun.serve({ port: 0, hostname: "127.0.0.1", idleTimeout: 30, fetch: (r) => { calls.push(`${r.method} ${new URL(r.url).pathname}`); return api(r); } }); base = `http://127.0.0.1:${server.port}`;
   repoId = (await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'github', 'rr', 'acme', 'clip') RETURNING id`)[0]?.id as string;
 });
@@ -128,10 +128,54 @@ describe("interactive REPL against the real API (DSP-03/06/08)", () => {
   test("dangerous or invalid folders are refused with the reason and nothing is registered", async () => {
     const before = Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c);
     const { out } = await session(["/new /", "/new /etc", "/new ~", "/new /no/such/folder", `/new ${join(home, "..", "..")}`, "/exit"]);
-    expect(out).toContain("refusing"); expect(out).toContain("no such folder"); expect(Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c)).toBe(before);
+    expect(out).toContain("refusing"); expect(out).toContain("cannot create folders inside"); // an unwritable parent is refused rather than offered
+    expect(Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c)).toBe(before);
   });
   test("the DB refuses a local project without a path and a github one with a path", async () => {
     await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'local', 'zz', 'local', 'zz')`).rejects.toThrow();
     await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name, local_path) VALUES (${org}, 'github', 'zy', 'o', 'n', '/x')`).rejects.toThrow();
+  });
+
+  test("our own colour codes survive, untrusted escape sequences do not; shell-escaped folder paths work", async () => {
+    const dir = join(home, "Scribe Deck Transcripts"); (await import("node:fs")).mkdirSync(dir, { recursive: true });
+    const had = Object.getOwnPropertyDescriptor(process.stdout, "isTTY"); Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true }); // colours on, as in a real terminal
+    let a: { out: string; result: string };
+    try { a = await session([`/new ${join(home, "Scribe\\ Deck\\ Transcripts")}`, "/new /no/such/\u001b[2Jfolder", "/exit"]); }
+    finally { if (had) Object.defineProperty(process.stdout, "isTTY", had); else Reflect.deleteProperty(process.stdout, "isTTY"); }
+    expect(a.out).toContain("Added: Scribe Deck Transcripts"); expect(a.out).not.toContain("\u001b[2J");   // untrusted escape removed
+    expect(a.out).toContain("\u001b[33m!\u001b[0m"); expect(a.out).not.toContain("·[33m");               // our own marker intact, not mangled
+  });
+
+  test("/new <missing folder> asks, creates only on yes, and registers it; refusing leaves the disk untouched; dangerous places are refused without asking", async () => {
+    const fs = await import("node:fs"); const nu = join(home, "MeetingNotes"); const no = join(home, "NotCreated");
+    const declined = await session([`/new ${no}`, "n", "/exit"]); expect(declined.out).toContain("does not exist. Create it?"); expect(declined.out).toContain("Nothing was created"); expect(fs.existsSync(no)).toBe(false);
+    const yes = await session([`/new ${nu}`, "y", "/dispatch first note", "/exit"]); expect(yes.out).toContain("Created and added: MeetingNotes"); expect(fs.existsSync(nu)).toBe(true); expect(yes.out).toContain("Request created");
+    const again = await session([`/new ${nu}`, "/exit"]); expect(again.out).toContain("Already added: MeetingNotes"); expect(again.out).not.toContain("Create it?");
+    const bad = await session(["/new /etc/mynotes", "/new /System/x", "/exit"]); expect(bad.out).not.toContain("Create it?"); expect(bad.out).toContain("refusing a system folder"); expect(fs.existsSync("/etc/mynotes")).toBe(false);
+  });
+
+  test("agent runs: /runs, /review (diff), /accept needs a typed word and applies exactly what was shown, /discard touches nothing", async () => {
+    const fs = await import("node:fs"); const dhome = fs.realpathSync(mkdtempSync(join(tmpdir(), "dsp-dhome-"))); const prev = process.env.DISPATCH_HOME; process.env.DISPATCH_HOME = dhome;
+    const agent = async (method: string, path: string, body?: unknown) => { const r = await fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${AGENT_TOKEN}`, "content-type": "application/json", "idempotency-key": `ag${++n}` }, ...(body ? { body: JSON.stringify(body) } : {}) }); return (await r.json()) as Record<string, any>; }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    try {
+      const proj = join(home, "RunsProj"); fs.mkdirSync(join(proj, "notes"), { recursive: true }); fs.writeFileSync(join(proj, "notes/a.txt"), "alpha\n");
+      const plan = (w: string) => ({ summary: "tidy notes", tasks: [{ id: "read", goal: "read the notes", model: "haiku", reads: ["notes/"], writes: [], dependsOn: [] }, { id: "edit", goal: "uppercase a", model: "sonnet", reads: [], writes: [w], dependsOn: ["read"] }] });
+      await session([`/new ${proj}`, "/dispatch uppercase notes", "/exit"]);
+      const jobsOf = async () => (await db.sql`SELECT j.id FROM jobs j JOIN repositories r ON r.id = j.repository_id WHERE r.local_path = ${fs.realpathSync(proj)} ORDER BY j.created_at`).map((x) => x.id as string);
+      const [first] = await jobsOf(); const run = await agent("POST", "/api/v2/dispatch/runs", { jobId: first, plan: plan("notes/") }); fs.writeFileSync(join(run.workspace, "notes/a.txt"), "ALPHA\n");
+      await agent("POST", `/api/v2/dispatch/runs/${run.runId}/finish`, { summary: "uppercased a.txt" });
+      const id8 = (run.runId as string).slice(0, 8);
+      const r1 = await session(["/runs", `/review ${id8}`, `/accept ${id8}`, "no", "/exit"]);
+      expect(r1.out).toContain("awaiting_approval"); expect(r1.out).toContain("1×sonnet"); expect(r1.out).toContain("+ALPHA"); expect(r1.out).toContain("-alpha"); expect(r1.out).toContain("haiku"); expect(r1.out).toContain("Nothing was applied");
+      expect(fs.readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("alpha\n");
+      const r2 = await session([`/accept ${id8}`, "apply", "/runs", "/exit"]); expect(r2.out).toContain("Applied 1 change(s)"); expect(fs.readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("ALPHA\n"); expect(r2.out).toContain("applied");
+      const again = await session([`/accept ${id8}`, "/exit"]); expect(again.out).toContain("applied; there is nothing to apply");
+      // a second run: discard leaves the folder alone
+      await session(["/dispatch second pass", "/exit"]); const second = (await jobsOf())[1];
+      const r3 = await agent("POST", "/api/v2/dispatch/runs", { jobId: second, plan: plan("out/") }); fs.mkdirSync(join(r3.workspace, "out"), { recursive: true }); fs.writeFileSync(join(r3.workspace, "out/x.md"), "x\n");
+      await agent("POST", `/api/v2/dispatch/runs/${r3.runId}/finish`, { summary: "x" });
+      const d = await session(["/discard " + (r3.runId as string).slice(0, 8), "/exit"]); expect(d.out).toContain("your folder was not touched"); expect(fs.existsSync(join(proj, "out"))).toBe(false); expect(fs.existsSync(r3.workspace)).toBe(false);
+      expect((await session(["/review zzzzzz", "/exit"])).out).toContain("Usage:"); expect((await session(["/review 0000000a", "/exit"])).out).toContain("No such run");
+    } finally { if (prev === undefined) delete process.env.DISPATCH_HOME; else process.env.DISPATCH_HOME = prev; fs.rmSync(dhome, { recursive: true, force: true }); }
   });
 });

@@ -152,6 +152,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@factory/telemetry": "workspace:*",
+        "zod": "4.6.7",
       },
     },
     "packages/domain": {

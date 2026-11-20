@@ -71,15 +71,80 @@ export class Executor {
   async addLocalProject(path: string): Promise<Outcome> {
     try {
       const abs = path.trim().startsWith("~") || path.trim().startsWith("/") ? path.trim() : resolvePath(process.cwd(), path.trim());
-      const r = await this.c.send<{ id: string; name: string; path: string; created: boolean; isGit: boolean }>(this.c.mutation("POST", "/api/v2/dispatch/projects", { path: abs }));
+      type R = { id?: string; name: string; path: string; created?: boolean; isGit?: boolean; missing?: boolean; folderCreated?: boolean };
+      let r = await this.c.send<R>(this.c.mutation("POST", "/api/v2/dispatch/projects", { path: abs }));
+      if (r.missing) { // the folder does not exist: offer to create exactly that path
+        const ans = (await this.io.ask(`${r.path} does not exist. Create it? (y/N) `)).trim().toLowerCase();
+        if (ans !== "y" && ans !== "yes") return blocked("not-confirmed", "Nothing was created.");
+        r = await this.c.send<R>(this.c.mutation("POST", "/api/v2/dispatch/projects", { path: abs, create: true }));
+      }
+      if (!r.id) return blocked("folder-refused", "The folder could not be added.");
       this.session.setProject(r.id, r.name);
-      return done(`${r.created ? "Added" : "Already added"}: ${r.name} (${r.path})${r.isGit ? "" : "\nNote: this folder is not a git repository. Requests can be recorded, but changes to it will not be tracked until it is one."}\nActive project: ${r.name}`);
+      return done(`${r.folderCreated ? "Created and added" : r.created ? "Added" : "Already added"}: ${r.name} (${r.path})${r.isGit ? "" : "\nNote: this folder is not a git repository, so changes to it cannot be tracked until it is one."}\nActive project: ${r.name}`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) return blocked("folder-refused", e.detail ?? e.title);
       return this.explain(e);
     }
   }
   /** `/dispatch <request>`: pick the project (active one; else the only one; else ask), then create the request through the normal idempotent job API. */
+  private async findRun(ref?: string): Promise<{ id: string } | Outcome> {
+    const l = await this.c.get<{ items: Array<{ id: string; status: string }> }>("/api/v2/dispatch/runs");
+    const hits = ref ? l.items.filter((r) => r.id.startsWith(ref)) : l.items.filter((r) => r.status === "awaiting_approval");
+    if (hits.length === 1 && hits[0]) return { id: hits[0].id };
+    return blocked(hits.length ? "ambiguous" : "not-found", hits.length ? "That matches more than one run; type more of the id (see /runs)." : "No such run. See /runs.");
+  }
+  async runs(): Promise<Outcome> {
+    try {
+      const l = await this.c.get<{ items: Array<{ id: string; status: string; project: string; summary: string | null; failure: string | null; changes: unknown[]; plan: { tasks: Array<{ model: string }> } }> }>("/api/v2/dispatch/runs");
+      if (!l.items.length) return done("No agent runs yet.");
+      const models = (r: (typeof l.items)[number]) => ["opus", "sonnet", "haiku"].map((m) => [m, r.plan.tasks.filter((t) => t.model === m).length] as const).filter(([, n]) => n).map(([m, n]) => `${n}×${m}`).join(" ");
+      return done(l.items.map((r) => `${r.id.slice(0, 8)}  ${r.status.padEnd(17)} ${r.project.slice(0, 20).padEnd(20)} ${String(r.changes.length).padStart(3)} change(s)  ${models(r)}${r.status === "failed" && r.failure ? `  ✗ ${r.failure.slice(0, 60)}` : r.status === "awaiting_approval" ? "  ← /review " + r.id.slice(0, 8) : ""}`).join("\n"));
+    } catch (e) { return this.explain(e); }
+  }
+  /** Show a run: what the agents were asked, what they did, and the diff. Nothing is applied. */
+  async reviewRun(ref?: string): Promise<Outcome> {
+    try {
+      const f = await this.findRun(ref); if (!("id" in f)) return f;
+      const r = await this.c.get<{ id: string; status: string; project: string; summary: string | null; plan: { summary: string; tasks: Array<{ id: string; model: string; goal: string }> }; changes: Array<{ path: string; kind: string }>; diff?: string; log: Array<{ note: string }> }>(`/api/v2/dispatch/runs/${f.id}`);
+      const warn = r.log.filter((l) => l.note.startsWith("WARNING")).map((l) => l.note);
+      return done([`Run ${r.id.slice(0, 8)} on ${r.project} — ${r.status}`, `Plan: ${r.plan.summary}`, ...r.plan.tasks.map((t) => `  ${t.model.padEnd(6)} ${t.id}: ${t.goal.slice(0, 100)}`), `Agent says: ${r.summary ?? "(nothing)"}`, ...warn, `${r.changes.length} change(s): ${r.changes.map((c) => `${c.kind} ${c.path}`).join(", ")}`, "", r.diff ?? "(diff is only available while a run is awaiting approval)", r.status === "awaiting_approval" ? `\n/accept ${r.id.slice(0, 8)} to apply these changes, or /discard ${r.id.slice(0, 8)}.` : ""].join("\n"));
+    } catch (e) { return this.explain(e); }
+  }
+  /** Apply a run. You are shown the diff again and must type a word; the approval carries the digest of exactly what was shown. */
+  async acceptRun(ref?: string): Promise<Outcome> {
+    try {
+      const f = await this.findRun(ref); if (!("id" in f)) return f;
+      const r = await this.c.get<{ id: string; status: string; mode?: string; project: string; digest: string | null; changes: Array<{ path: string; kind: string }>; diff?: string }>(`/api/v2/dispatch/runs/${f.id}`);
+      if (r.status !== "awaiting_approval" || !r.digest) return blocked("not-awaiting", `That run is ${r.status}; there is nothing to apply.`);
+      if (r.mode === "in_place") {
+        this.io.out(r.diff ?? ""); this.io.out(`${r.changes.length} change(s) are ALREADY in your folder for ${r.project}.`);
+        if ((await this.io.ask("Type “keep” to accept them (they stay as they are), anything else leaves the run open: ")).trim().toLowerCase() !== "keep") return blocked("not-confirmed", "Nothing was decided; the changes are still in your folder.");
+        await this.c.send(this.c.mutation("POST", `/api/v2/dispatch/runs/${r.id}/decision`, { decision: "approve", digest: r.digest }));
+        return done(`Kept ${r.changes.length} change(s) in ${r.project}.`);
+      }
+      this.io.out(r.diff ?? ""); this.io.out(`${r.changes.length} change(s) will be written into your folder for ${r.project}.`);
+      if ((await this.io.ask("Type “apply” to write them, anything else cancels: ")).trim().toLowerCase() !== "apply") return blocked("not-confirmed", "Nothing was applied.");
+      const d = await this.c.send<{ status: string; applied: number }>(this.c.mutation("POST", `/api/v2/dispatch/runs/${r.id}/decision`, { decision: "approve", digest: r.digest }));
+      return done(`Applied ${d.applied} change(s) to ${r.project}.`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) return blocked("refused", `${e.detail ?? e.title}`);
+      return this.explain(e);
+    }
+  }
+  async discardRun(ref?: string): Promise<Outcome> {
+    try {
+      const f = await this.findRun(ref); if (!("id" in f)) return f;
+      const r = await this.c.get<{ mode?: string; digest: string | null; changes: unknown[]; project: string }>(`/api/v2/dispatch/runs/${f.id}`);
+      if (r.mode === "in_place") {
+        if ((await this.io.ask(`This RESTORES ${r.project} to the snapshot taken before the run (${r.changes.length} file(s) change back). Type “restore” to do it: `)).trim().toLowerCase() !== "restore") return blocked("not-confirmed", "Nothing was restored.");
+        await this.c.send(this.c.mutation("POST", `/api/v2/dispatch/runs/${f.id}/decision`, { decision: "reject", digest: r.digest ?? "" }));
+        return done(`Restored ${r.project} to the snapshot; the run is closed.`);
+      }
+      await this.c.send(this.c.mutation("POST", `/api/v2/dispatch/runs/${f.id}/decision`, { decision: "reject", digest: "" }));
+      return done("Run discarded; its work copy was deleted and your folder was not touched.");
+    } catch (e) { if (e instanceof ApiError && e.status === 409) return blocked("refused", `${e.detail ?? e.title}`); return this.explain(e); }
+  }
+
   async submitRequest(text: string): Promise<Outcome> {
     try {
       let pid = await this.activeProject();
@@ -95,7 +160,7 @@ export class Executor {
   private async createJob(projectId: string, text: string): Promise<Outcome> {
     const m = this.c.mutation("POST", "/api/v1/jobs", { repositoryId: projectId, request: { type: "feature", title: text.slice(0, 120), description: text, sourceId: `dispatch-${this.session.id}-${m_counter()}` } });
     const r = await this.c.send<{ jobId: string; state: string }>(m);
-    return done(`Request created: job ${r.jobId.slice(0, 8)} (${r.state}). It will wait in the queue until a worker with a qualified, authorized model is available; check /jobs.`);
+    return done(`Request created: job ${r.jobId.slice(0, 8)} (${r.state}). It stays queued until you run “dispatch work” in a terminal: Claude Code (Opus plans, cheaper agents execute) then does it in a copy of the folder, and you approve the result with /runs. (That needs your recorded provider-terms approval; see docs/dispatch/AGENTS.md.)`);
   }
   private async jobAction(i: Extract<Intent, { type: "job.pause" | "job.resume" | "job.cancel" }>): Promise<Outcome> {
     const r = resolveJob(await this.jobs(), i.jobId); if (!r.ok) return { status: "needs-input", message: r.message };

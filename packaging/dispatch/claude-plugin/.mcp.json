@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "dispatch": { "command": "dispatch", "args": ["mcp"] }
+  }
+}

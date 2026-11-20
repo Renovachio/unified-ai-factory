@@ -8,21 +8,23 @@ import { SessionManager } from "./auth";
 import { problems } from "./problem";
 
 export const LOCAL_OWNER_SUBJECT = "dispatch-local-owner";
+/** The identity model-driven agents use. Role `editor`: may read and create jobs and runs, may NOT decide/approve anything (enforced by the RBAC matrix). */
+export const LOCAL_AGENT_SUBJECT = "dispatch-local-agent";
 const sha = (s: string) => createHash("sha256").update(s).digest();
 
 export class LocalOwnerAuthenticator implements Authenticator {
   private readonly want: Buffer;
-  constructor(token: string) {
-    if (token.length < 32) throw new Error("local owner token must be at least 32 characters");
+  constructor(token: string, private readonly subject: string = LOCAL_OWNER_SUBJECT) {
+    if (token.length < 32) throw new Error("local token must be at least 32 characters");
     this.want = sha(token);
   }
-  static fromFile(path: string): LocalOwnerAuthenticator { return new LocalOwnerAuthenticator(readFileSync(path, "utf8").trim()); }
+  static fromFile(path: string, subject: string = LOCAL_OWNER_SUBJECT): LocalOwnerAuthenticator { return new LocalOwnerAuthenticator(readFileSync(path, "utf8").trim(), subject); }
   async authenticate(req: Request) {
     const h = req.headers.get("authorization");
     const m = h ? /^Bearer\s+([A-Za-z0-9._~+/-]+=*)$/.exec(h) : null;
     if (!m) return null; // not ours: let the next authenticator (OIDC) look at it
     const got = sha(m[1] as string);
-    return got.length === this.want.length && timingSafeEqual(got, this.want) ? { subject: LOCAL_OWNER_SUBJECT, via: "bearer" as const } : null;
+    return got.length === this.want.length && timingSafeEqual(got, this.want) ? { subject: this.subject, via: "bearer" as const } : null;
   }
 }
 
@@ -31,9 +33,13 @@ export async function bootstrapLocalOwner(sql: Sql): Promise<string> {
   return sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(7426002)`;
     const [org0] = await tx<{ id: string }[]>`SELECT o.id FROM organizations o JOIN users u ON u.organization_id = o.id WHERE u.auth_subject = ${LOCAL_OWNER_SUBJECT} LIMIT 1`;
-    if (org0) return org0.id;
+    if (org0) {
+      await tx`INSERT INTO users (organization_id, auth_subject, role) SELECT ${org0.id}, ${LOCAL_AGENT_SUBJECT}, 'editor' WHERE NOT EXISTS (SELECT 1 FROM users WHERE auth_subject = ${LOCAL_AGENT_SUBJECT})`;
+      return org0.id;
+    }
     const [org] = await tx<{ id: string }[]>`INSERT INTO organizations (name) VALUES ('Dispatch (local)') RETURNING id`;
     await tx`INSERT INTO users (organization_id, auth_subject, role) VALUES (${(org as { id: string }).id}, ${LOCAL_OWNER_SUBJECT}, 'admin')`;
+    await tx`INSERT INTO users (organization_id, auth_subject, role) VALUES (${(org as { id: string }).id}, ${LOCAL_AGENT_SUBJECT}, 'editor')`;
     return (org as { id: string }).id;
   });
 }

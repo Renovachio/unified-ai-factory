@@ -36,6 +36,7 @@ export interface ApiConfig {
 
 import type { LocalBrowserEntry } from "./local";
 import { dispatchRoutes } from "./dispatch";
+import { runRoutes } from "./runs";
 function withSecurityHeaders(res: Response): Response { for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v); return res; }
 const BASE = "/api/v1";
 const BASE2 = "/api/v2";
@@ -75,7 +76,7 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
     }
     if (path.startsWith(`${BASE2}/`)) {
       const sub = path.slice(BASE2.length);
-      const hit = [...registryRoutes, ...dispatchRoutes].filter((r) => r.pattern.test(sub));
+      const hit = [...registryRoutes, ...dispatchRoutes, ...runRoutes].filter((r) => r.pattern.test(sub));
       if (hit.length === 0) throw problems.notFound("no such route");
       const route2 = hit.find((r) => r.method === m);
       if (!route2) throw problems.methodNotAllowed([...new Set(hit.map((r) => r.method))]);

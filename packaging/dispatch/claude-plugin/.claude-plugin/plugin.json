@@ -1,0 +1,8 @@
+{
+  "name": "dispatch",
+  "version": "2.3.0",
+  "description": "Dispatch for Claude Code: /dispatch:do plans with Opus, runs cheaper agents (Haiku, Sonnet) in parallel on the real files in this folder, validates the plan, snapshots first and enforces it; you keep or restore the result.",
+  "author": {
+    "name": "Dispatch (local)"
+  }
+}
