@@ -53,7 +53,9 @@ describe("database privilege separation (SEC-05)", () => {
   });
   test("control plane: administers approvals/users/sessions/policy but CANNOT write merge intents (only the merge authority merges)", async () => {
     for (const [t, p] of [["merge_intents", "INSERT"], ["merge_intents", "UPDATE"], ["merge_intents", "DELETE"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(false);
-    for (const [t, p] of [["approvals", "INSERT"], ["users", "UPDATE"], ["auth_sessions", "INSERT"], ["auto_merge_global", "UPDATE"], ["merge_intents", "SELECT"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(true);
+    for (const [t, p] of [["approvals", "INSERT"], ["auth_sessions", "INSERT"], ["auto_merge_global", "UPDATE"], ["merge_intents", "SELECT"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(true);
+    // Migration 0026 (operator decision, Option A): user records are written by the database owner only. The control plane may read them.
+    for (const p of ["INSERT", "UPDATE"] as const) expect(await can("factory_control", "users", p), `users:${p}`).toBe(false);
     expect(await denied("factory_control", `UPDATE merge_intents SET status = 'merged'`)).toBe("denied");
   });
   test("append-only guarantees still hold for every role, including the control plane", async () => {

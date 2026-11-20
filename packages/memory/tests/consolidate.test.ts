@@ -357,7 +357,7 @@ describe("database guard after the independent review (migration 0025)", () => {
     const msg = await rawErr(db.sql.begin(async (tx) => {
       await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver} WHERE id = ${q.id}`;
     }));
-    expect(msg).toMatch(/no transition record/);
+    expect(msg).toMatch(/no matching transition record/);
     expect((await statusOf(q.id)).status).toBe("proposed");
   });
 
@@ -436,5 +436,37 @@ describe("second review fixes (migration 0025)", () => {
     try { await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "second review clash claim", sources: src }); }
     catch (e) { code = e instanceof MemoryError ? e.code : String(e); }
     expect(code).toBe("WRONG_STATE");
+  });
+});
+
+describe("control-role boundary (migration 0026)", () => {
+  test("an approval whose audit row names a different actor than the recorded approver is refused", async () => {
+    const q = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "Boundary actor mismatch probe", sources: await srcFor(projA) });
+    const msg = await rawErr(db.sql.begin(async (tx) => {
+      await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+        VALUES (${q.id}, 'proposed', 'approved', 1, ${viewer}, 'raw', ${"sha256:" + "1".repeat(64)})`;
+      await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver} WHERE id = ${q.id}`;
+    }));
+    expect(msg).toMatch(/must be recorded by the approver/);
+    expect((await statusOf(q.id)).status).toBe("proposed");
+  });
+
+  test("a transition row whose from-status does not match the change is refused", async () => {
+    const q = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "requirement", claim: "Boundary from-status probe", sources: await srcFor(projA) });
+    const msg = await rawErr(db.sql.begin(async (tx) => {
+      await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+        VALUES (${q.id}, 'rejected', 'approved', 1, ${approver}, 'raw', ${"sha256:" + "2".repeat(64)})`;
+      await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver} WHERE id = ${q.id}`;
+    }));
+    expect(msg).toMatch(/no matching transition record/);
+  });
+
+  test("the control role cannot write user records", async () => {
+    const msg = await rawErr(db.sql.begin(async (tx) => {
+      await tx.unsafe("SET LOCAL ROLE factory_control");
+      await tx`UPDATE users SET role = 'admin' WHERE id = ${viewer}`;
+    }));
+    expect(msg).toMatch(/permission denied/);
+    expect((await db.sql<{ role: string }[]>`SELECT role FROM users WHERE id = ${viewer}`)[0]!.role).toBe("viewer");
   });
 });
