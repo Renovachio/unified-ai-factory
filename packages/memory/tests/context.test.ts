@@ -62,6 +62,7 @@ class MemStore {
     if (!b) throw new Error("missing");
     return b;
   }
+  delete(digest: string): boolean { return this.blobs.delete(digest); }
 }
 const store = new MemStore();
 const bcp = (actor: Actor, req: Parameters<typeof buildContextPack>[2]) => buildContextPack(db.sql, actor, req, store);

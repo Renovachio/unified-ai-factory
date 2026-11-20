@@ -5,3 +5,4 @@ export * from "./ingest";
 export * from "./retrieve";
 export * from "./context";
 export * from "./consolidate";
+export * from "./retention";

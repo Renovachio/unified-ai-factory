@@ -54,6 +54,8 @@ export function escapeData(text: string): string {
 export interface PackTextStore {
   put(text: string): { digest: string; uri: string };
   get(digest: string): Buffer;
+  /** Removes the text for a digest (retention and erasure). Returns false when it was already absent. */
+  delete(digest: string): boolean;
 }
 
 export interface PackRequest {

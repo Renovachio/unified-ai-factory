@@ -164,3 +164,25 @@ Verdict of the review: not safe to merge as it stood. Findings and fixes (all on
 - Not changed, documented: local owner mode shares the control connection (DATABASE_URL). If that role is a superuser or owner, the grants do not apply. The launcher's role was not verified in this review. Multi-user deployments fail closed without DATABASE_APPROVAL_URL.
 
 Results: full suite 1482 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+## Addendum 10: retention policy (operator decision)
+
+Policy as decided:
+- Proposed memory: erased after 90 days (age from creation).
+- Rejected memory: erased after 30 days (age from the rejection, updated_at).
+- Approved memory: never expires automatically. Erasure only by a steward. The rule "expire when a new approval conflicts and the user accepts the erasure" is NOT built yet: it needs a conflict detector and a user-acceptance step, which are separate work.
+- Pack text (rendered context that copies claims): deleted after 30 days. Pack rows keep ids and digests only, so they remain as an audit trail.
+- Erasure runs as a named steward (STEWARD_ROLES), so every erasure is attributed in the transition record and tombstone. No separate system identity was created.
+
+What was built (packages/memory/src/retention.ts):
+- eraseMemoryText: erases one memory (content, index row through the existing trigger) and deletes every stored pack text that selected it. Idempotent: a retry after a failed blob deletion removes the remaining text.
+- runRetention: applies the policy to one project. Requires a steward. Safe to run repeatedly.
+- PackTextStore and FileArtifactStore gained delete (idempotent; the file's read-only mode is cleared before unlinking).
+- Retrieval events store digests only (checked), so they need no erasure.
+
+Not built (stated):
+- The scheduler that runs runRetention. Nothing calls it yet; it must be run by an operator or a scheduled job.
+- Backup expiry: the operator's backup retention is outside the repository. Deleted content can persist in backups until they expire; this must be documented in the operator's runbook.
+- Conflict-driven erasure of approved memory (see first bullet).
+
+Results: full suite 1489 pass, 0 fail (7 new retention tests). Typecheck, lint, gates, package validation and license pass.
