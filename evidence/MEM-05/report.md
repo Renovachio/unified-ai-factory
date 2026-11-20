@@ -35,3 +35,11 @@ Status: **implemented in part, local checks only.** Not independently reviewed. 
 4. **Conflicts are detected, not resolved.** Token overlap is not contradiction. Each flagged pair needs human judgement.
 5. **Backup:** no separate backup procedure was tested. Durability of the lineage across connections is tested; a full dump-and-restore drill is not.
 6. Independent review and real pilot remain open.
+
+## Addendum: restore after consolidation ended (migration 0024)
+
+- `restoreConsolidation` (approver only): originals of a consolidated memory return to approved only if that consolidated memory is now revoked or erased, every original is still superseded by it, and no original has a revoked source (directly or via a project revocation). All or nothing, in one transaction. Each restore writes a transition with reason `restored after consolidation <id> ended`.
+- Guard change (migration 0024): one exception in `memory_records_guard`. Superseded to approved is allowed only when `memory_restore_allowed` holds (the original's successor is a consolidated memory that is now revoked or erased). The generic matrix (TypeScript and SQL, checked by the parity test) is unchanged. Down restores the 0017 guard and refuses if any restore has happened.
+- Tests (6 new, 21 in the file): refused while the consolidated memory is approved; restore after revocation with retrieval and transition evidence; refused for viewers and disabled users; all-or-nothing on a revoked source; raw-SQL loophole checks (a superseded plain revision stays unrecoverable even when its successor is revoked; a consolidation original cannot be restored by SQL while its consolidated memory is approved).
+- Results: full suite 1455 pass, 0 fail, 90 files. Typecheck, lint, gates lock, package validation and license all exit 0.
+- Remaining decision: the restore rule is narrow but is a real change to the lifecycle guard. Independent review of migration 0024 is required before it is merged.
