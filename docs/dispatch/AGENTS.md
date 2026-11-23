@@ -81,7 +81,7 @@ What it does: `dispatch_begin` registers the folder Claude was started in and qu
 
 ## Project memory (what Claude remembers about a project)
 * **You** record and approve it, in the project folder: `dispatch memory note <text>` (becomes *proposed*, inert), `dispatch memory list proposed`, `dispatch memory approve <id>` or `reject <id>`. `dispatch memory revise <id> <text>` proposes a correction to an approved memory (approve it to replace the old one), `erase <id>` removes a proposed/rejected/superseded memory, `export` prints everything as JSON. `dispatch memory consent on|off` controls whether anonymous "memory was missing" signals go to the improvement supervisor (default off).
-* **Claude** gets two extra tools, `dispatch_memory` (read approved memory relevant to the task, framed as reference data) and `dispatch_memory_feedback` (useful / wrong / stale / missing). It cannot write, approve, reject, erase or change consent; the API refuses the agent token for those routes.
+* **Claude** gets two extra tools, `dispatch_memory` (read approved memory relevant to the task, framed as reference data) and `dispatch_memory_feedback` (useful / wrong / stale / missing). It cannot write, approve, reject, erase, list unapproved memory or change consent; the API refuses the agent token for those routes (review fix: listing was open to the agent token and is now human-only).
 * Notes are proposed by the dispatch agent identity and approved by you, so the "author cannot approve their own memory" rule holds for one person.
 * Retrieval is lexical (no embedding model is qualified). Rendered packs are stored under `<Dispatch home>/memory-packs`. The retention sweep (`docs/operator/MEMORY_RETENTION.md`) is not scheduled yet.
 

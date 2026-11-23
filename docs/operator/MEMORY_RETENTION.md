@@ -63,3 +63,5 @@ For an erased memory:
 
 A steward cannot erase approved memory directly. If a legal or privacy request requires erasing approved memory that no new approval overlaps, the operator must decide how that is handled (for example, a separate, audited procedure). Until that decision is made, that request cannot be served by this system.
 - Pack text for memories erased before the sweep existed is removed only when the sweep next runs.
+
+Note for Dispatch local mode: the pack text lives under `<DISPATCH_HOME>/memory-packs`, so `DISPATCH_ARTIFACT_ROOT` for the sweep must be exactly that folder, or the sweep will not delete it.

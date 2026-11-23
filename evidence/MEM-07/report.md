@@ -1,6 +1,6 @@
 # MEM-07: browser memory controls (slice 1: review, notes, overlap approval, consent)
 
-Status: implemented_partial, local checks only. Not committed, not independently reviewed, no pilot.
+Status: implemented_partial, local checks only. Committed locally and on PR #7 (draft). One independent adversarial review done (see addendum); no pilot.
 Built by a delegated Opus agent; the coordinating session re-verified files, the API memory + web tests (42 pass) and lint. The browser run and the full-suite figure below are the agent's own reports, not re-run by the coordinator.
 
 ## Dependency audit (reuse vs gap)
@@ -44,3 +44,16 @@ Not checked: screen reader or keyboard-only use, light colour scheme, narrow vie
 - Each preview records a context pack, like a real run.
 - Overlap is checked for the first 50 proposed items only (stated on the page).
 - No pilot, no independent review.
+
+## Addendum: independent review (read-only, Opus) and what was done
+Verified by the reviewer with probes against the real API, then fixed here: (1) the agent token could list proposed/rejected memory text via `GET /memory`: now `job:decide` only (test added); (2) the idempotency key is required but results are not replayed, so a repeated note created a duplicate proposal: identical note text in a project now reuses the existing event (test added; feedback/decision/consent still have no replay); CLI: status is URL-encoded, and an approval refused for overlap now points to the dashboard.
+Stated corrections: MEM-06 addendum 8 said "reject: tested 403 for the agent"; that test did not exist until now (added). The MEM-06 claim that the agent can only read *approved* memory was wrong for the listing route until this fix.
+Left as designed or open (not fixed):
+- **Authorship:** notes are proposed under the dispatch agent identity so the human can approve alone; `created_by` and the ingest audit row therefore name the agent for text a human wrote (the human is in `consent.grantedBy` and the event actor). Any holder of `job:decide` can write and approve their own note. This is a policy decision for the operator, not a defect fixed here.
+- Feedback has no per-memory dedupe and accepts any status; with consent on, an agent can emit one signal per call.
+- Every context read, including the web preview (a GET with `?task=`), writes a pack, audit row and retrieval event; only the global rate limiter applies.
+- `?error=`/`?notice=` text is reflected (escaped, not XSS) on the memory page, as on other pages.
+- CSS: `main a` and global `fieldset/legend/textarea` rules affect other pages.
+- CLI: `byPrefix` searches only the first 200 items; approve-with-erasure exists only in the browser.
+- No CSRF cookie-session test for memory routes; pack-erasure propagation not tested through the API; the runbook should state that the sweep's `DISPATCH_ARTIFACT_ROOT` must be `<DISPATCH_HOME>/memory-packs`.
+- Could not verify: whether a Claude session or its subagents can read the token files and call the API directly.

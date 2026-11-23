@@ -80,9 +80,9 @@ export const memoryRoutes: Array<{ method: string; pattern: RegExp; handler: Han
       return { status: 200, body: { packId: pack.packId, memoryIds: pack.manifest.selected.map((s) => s.memoryId), omitted: pack.manifest.omitted.memoryIds.length, text: pack.text } };
     });
   } },
-  // Human: list a project's memory (proposed first) for review.
+  // Human: list a project's memory, ALL statuses (proposed and rejected text included), for review. The agent token must not see unapproved text.
   { method: "GET", pattern: /^\/dispatch\/memory$/, handler: async ({ req, sql, actor }) => {
-    localOnly(); require_(actor, "job:read");
+    localOnly(); require_(actor, "job:decide");
     const q = new URL(req.url).searchParams;
     const projectId = uuid(q.get("projectId"), "projectId");
     const status = q.get("status");
@@ -125,7 +125,10 @@ export const memoryRoutes: Array<{ method: string; pattern: RegExp; handler: Han
         : await sql`SELECT j.id FROM jobs j JOIN repositories r ON r.id = j.repository_id WHERE r.id = ${projectId} AND r.organization_id = ${actor.orgId} ORDER BY j.created_at DESC LIMIT 1`;
       if (!job) throw new MemoryError("NOT_FOUND", "this project has no job yet; start one with `dispatch code` first");
       const jobId = job.id as string;
-      const ev = await appendEvent(sql, { jobId, type: "human.note", source: "api", actorId: actor.userId, payload: { text: note } });
+      // The same note text sent twice (a retry, a double click) is the same note: reuse its event, so no duplicate proposal is created.
+      const [dup] = await sql`SELECT e.id FROM events e JOIN jobs j ON j.id = e.job_id JOIN repositories r ON r.id = j.repository_id
+        WHERE e.type = 'human.note' AND r.id = ${projectId} AND r.organization_id = ${actor.orgId} AND e.payload_redacted->>'text' = ${note} ORDER BY e.created_at LIMIT 1`;
+      const ev = dup ? { id: dup.id as string } : await appendEvent(sql, { jobId, type: "human.note", source: "api", actorId: actor.userId, payload: { text: note } });
       // The extractor proposes; the human who wrote the note consents and later approves. The dispatch agent identity is the proposer so the
       // memory package's "author cannot approve their own memory" rule still holds for a single user.
       const r = await ingestSource(sql, await proposerActor(sql, actor), { projectId, source: { kind: "event", id: ev.id }, consent: { purpose: "project_memory", grantedBy: actor.userId } });

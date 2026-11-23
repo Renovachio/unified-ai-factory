@@ -138,4 +138,15 @@ describe("review support for the browser (MEM-07)", () => {
     expect((await call(`/memory/${id2}/erase`, { method: "POST", body: { projectId: p.projectId, reason: "user request" } })).status).toBe(200);
     expect(JSON.stringify((await call(`/memory/export?projectId=${p.projectId}`)).body)).not.toContain("Friday afternoons");
   });
+
+  test("review fixes: the agent cannot list unapproved text or reject; the same note sent twice is one proposal", async () => {
+    const p = await project();
+    const r = await call("/memory/note", { method: "POST", body: { ...p, text: NOTE } });
+    const id = r.body.memoryIds[0];
+    expect((await call(`/memory?projectId=${p.projectId}&status=proposed`, { token: AGENT })).status).toBe(403);
+    expect((await call(`/memory/${id}/decision`, { method: "POST", token: AGENT, body: { projectId: p.projectId, decision: "reject", reason: "x" } })).status).toBe(403);
+    const again = await call("/memory/note", { method: "POST", body: { ...p, text: NOTE } });
+    expect(again.status).toBe(201); expect(again.body.memoryIds).toEqual([id]);
+    expect((await call(`/memory?projectId=${p.projectId}`)).body.items.length).toBe(1);
+  });
 });

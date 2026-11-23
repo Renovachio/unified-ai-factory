@@ -28,7 +28,7 @@ export async function cmdMemory(args: string[], cwd = process.cwd(), out: (s: st
     const project = list.find((p) => p.path === real);
     if (!project) { err(`${sym.fail()} This folder is not a Dispatch project yet. Run \`dispatch code "<request>"\` here once.`); return 1; }
     const pid = project.id; const base = "/api/v2/dispatch/memory";
-    const items = async (status?: string) => (await client.get<{ items: Item[] }>(`${base}?projectId=${pid}${status ? `&status=${status}` : ""}`)).items;
+    const items = async (status?: string) => (await client.get<{ items: Item[] }>(`${base}?projectId=${pid}${status ? `&status=${encodeURIComponent(status)}` : ""}`)).items;
     const post = async (path: string, body: Record<string, unknown>) => client.send<Record<string, unknown>>(client.mutation("POST", path, { projectId: pid, ...body }));
     const byPrefix = async (prefix: string | undefined): Promise<Item | string> => {
       if (!prefix || prefix.length < 4) return "give at least the first 4 characters of the memory id (see `dispatch memory list`)";
@@ -74,5 +74,8 @@ export async function cmdMemory(args: string[], cwd = process.cwd(), out: (s: st
       return 0;
     }
     err(`${sym.fail()} unknown memory command "${safe(sub).slice(0, 30)}".\n${MEMORY_HELP}`); return 2;
-  } catch (e) { err(`${sym.fail()} ${safe((e as Error).message)}`); return 1; }
+  } catch (e) {
+    const msg = safe((e as Error).message);
+    err(`${sym.fail()} ${msg}${/overlap|conflict/i.test(msg) ? "\n  This memory overlaps an approved one. Approving it must name what to erase: do that in the dashboard (Memory page), which shows the overlap." : ""}`); return 1;
+  }
 }
