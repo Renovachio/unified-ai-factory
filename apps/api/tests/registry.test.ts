@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { makeWritable, ReportSigner, type ValidationPolicy } from "@factory/skills";
+import { connect, type Sql } from "@factory/db";
 import { createTestDb } from "../../../packages/db/src/testing";
 import { makeZip } from "../../../packages/skills/tests/zip-helper";
 import { CompositeAuthenticator, createApi, OidcAuthenticator } from "../src/index";
 
 const ISS = "https://idp.example.test", AUD = "factory-api";
-let db: Awaited<ReturnType<typeof createTestDb>>; let privateKey: CryptoKey; let api: (r: Request) => Promise<Response>;
+let db: Awaited<ReturnType<typeof createTestDb>>; let approval: Sql; let privateKey: CryptoKey; let api: (r: Request) => Promise<Response>;
 const base = mkdtempSync(join(tmpdir(), "apiskills-"));
 const POLICY: ValidationPolicy = { version: "p1", allowedLicenses: ["MIT"], deniedHosts: ["api.anthropic.com"] };
 let orgA = "", orgB = "";
@@ -21,13 +22,16 @@ beforeAll(async () => {
   db = await createTestDb();
   const kp = await generateKeyPair("RS256"); privateKey = kp.privateKey;
   const jwk: JWK = { ...(await exportJWK(kp.publicKey)), alg: "RS256", use: "sig", kid: "k1" };
-  api = createApi({ sql: db.sql, rateLimit: { capacity: 10000, refillPerSec: 10000 }, authenticator: new CompositeAuthenticator([new OidcAuthenticator({ issuer: ISS, audience: AUD, keys: createLocalJWKSet({ keys: [jwk] }) })]),
+  await db.sql.unsafe("ALTER ROLE factory_approval LOGIN");
+  const au = new URL(db.url); au.username = "factory_approval";
+  approval = connect(au.toString());
+  api = createApi({ sql: db.sql, approvalSql: approval, rateLimit: { capacity: 10000, refillPerSec: 10000 }, authenticator: new CompositeAuthenticator([new OidcAuthenticator({ issuer: ISS, audience: AUD, keys: createLocalJWKSet({ keys: [jwk] }) })]),
     skills: { quarantineDir: join(base, "q"), scratchDir: join(base, "s"), policy: POLICY, signer: new ReportSigner("api") } });
   orgA = (await db.sql`INSERT INTO organizations (name) VALUES ('A') RETURNING id`)[0]!.id; orgB = (await db.sql`INSERT INTO organizations (name) VALUES ('B') RETURNING id`)[0]!.id;
   for (const [org, sub, role] of [[orgA, "editor", "editor"], [orgA, "operator", "operator"], [orgA, "approver", "approver"], [orgA, "admin", "admin"], [orgA, "viewer", "viewer"], [orgB, "approverB", "approver"], [orgB, "operatorB", "operator"]] as const)
     await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${org}, ${sub}, ${role})`;
 });
-afterAll(async () => { await db.drop(); makeWritable(join(base, "q")); rmSync(base, { recursive: true, force: true }); });
+afterAll(async () => { await approval.end(); await db.sql.unsafe("ALTER ROLE factory_approval NOLOGIN"); await db.drop(); makeWritable(join(base, "q")); rmSync(base, { recursive: true, force: true }); });
 
 const tok = (sub: string) => new SignJWT({}).setProtectedHeader({ alg: "RS256", kid: "k1" }).setSubject(sub).setIssuer(ISS).setAudience(AUD).setIssuedAt().setExpirationTime("5m").sign(privateKey);
 let n = 0;

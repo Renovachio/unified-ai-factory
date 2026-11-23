@@ -15,6 +15,8 @@ import { registryProblem, registryRoutes, type SkillsConfig } from "./registry";
 
 export interface ApiConfig {
   sql: Sql;
+  /** Connection for approval records (factory_approval, migration 0028). Falls back to `sql` only when not configured (tests); server.ts always sets it. */
+  approvalSql?: Sql;
   authenticator: Authenticator;
   allowedOrigins?: string[];
   maxBodyBytes?: number;
@@ -37,6 +39,7 @@ export interface ApiConfig {
 import type { LocalBrowserEntry } from "./local";
 import { dispatchRoutes } from "./dispatch";
 import { runRoutes } from "./runs";
+import { memoryRoutes } from "./memory";
 function withSecurityHeaders(res: Response): Response { for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v); return res; }
 const BASE = "/api/v1";
 const BASE2 = "/api/v2";
@@ -76,13 +79,13 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
     }
     if (path.startsWith(`${BASE2}/`)) {
       const sub = path.slice(BASE2.length);
-      const hit = [...registryRoutes, ...dispatchRoutes, ...runRoutes].filter((r) => r.pattern.test(sub));
+      const hit = [...registryRoutes, ...dispatchRoutes, ...runRoutes, ...memoryRoutes].filter((r) => r.pattern.test(sub));
       if (hit.length === 0) throw problems.notFound("no such route");
       const route2 = hit.find((r) => r.method === m);
       if (!route2) throw problems.methodNotAllowed([...new Set(hit.map((r) => r.method))]);
       const actor = await authn(req); // authenticate before any state is revealed
       try {
-        const r = await route2.handler({ req, sql: cfg.sql, actor, cfg: cfg.skills, maxBody, mutating: () => mutating(req, actor), key: () => requireIdempotencyKey(req) });
+        const r = await route2.handler({ req, sql: cfg.sql, approvalSql: cfg.approvalSql ?? cfg.sql, actor, cfg: cfg.skills, maxBody, mutating: () => mutating(req, actor), key: () => requireIdempotencyKey(req) });
         return json(r);
       } catch (e) { const p = registryProblem(e); if (p) throw p; throw e; }
     }
@@ -253,7 +256,7 @@ export function createApi(cfg: ApiConfig): (req: Request) => Promise<Response> {
         throw problems.unprocessable("body must be {decision: approve|reject|rework, headSha, baseSha, policyDigest, expectedVersion, reason?}");
       await getJob(cfg.sql, actor, id);
       try {
-        const r = await recordDecision(cfg.sql, cfg.review, { jobId: id, orgId: actor.orgId, actorId: actor.userId, idempotencyKey: key, decision: b.decision as "approve" | "reject" | "rework", headSha: b.headSha, baseSha: b.baseSha, policyDigest: b.policyDigest, expectedVersion: b.expectedVersion as number, reason: b.reason as string | undefined });
+        const r = await recordDecision(cfg.approvalSql ?? cfg.sql, cfg.review, { jobId: id, orgId: actor.orgId, actorId: actor.userId, idempotencyKey: key, decision: b.decision as "approve" | "reject" | "rework", headSha: b.headSha, baseSha: b.baseSha, policyDigest: b.policyDigest, expectedVersion: b.expectedVersion as number, reason: b.reason as string | undefined });
         return json({ status: 202, body: { decisionId: r.decisionId, state: r.state, version: r.version }, headers: { etag: `"${r.version}"`, ...(r.replayed ? { "idempotency-replayed": "true" } : {}) } });
       } catch (e) {
         if (e instanceof DecisionRejected) {

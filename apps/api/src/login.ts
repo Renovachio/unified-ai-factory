@@ -119,8 +119,9 @@ export class OidcLogin implements Authenticator {
   private async createSession(userId: string, replacing?: string, inheritExpiry?: Date): Promise<{ cookieValue: string; csrf: string }> {
     const id = rnd(32), csrf = rnd(24);
     const now = this.now();
-    await this.sql`INSERT INTO auth_sessions (id_hash, user_id, csrf, created_at, last_seen_at, rotated_at, expires_at) VALUES (${sha(id)}, ${userId}, ${csrf}, ${now}, ${now}, ${now}, ${inheritExpiry ?? new Date(now.getTime() + (this.c.sessionTtlSec ?? 8 * 3600) * 1000)})`;
-    if (replacing) await this.sql`UPDATE auth_sessions SET revoked_at = ${now}, revoke_reason = 'rotated', replaced_by = ${sha(id)} WHERE id_hash = ${replacing} AND revoked_at IS NULL`;
+    // Creation and rotation go through create_auth_session (migration 0027): the database refuses disabled or unknown users.
+    const expiresAt = inheritExpiry ?? new Date(now.getTime() + (this.c.sessionTtlSec ?? 8 * 3600) * 1000);
+    await this.sql`SELECT create_auth_session(${sha(id)}::text, ${userId}::uuid, ${csrf}::text, ${now}::timestamptz, ${expiresAt}::timestamptz, ${replacing ?? null}::text)`;
     return { cookieValue: id, csrf };
   }
 

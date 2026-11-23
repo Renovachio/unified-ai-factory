@@ -26,6 +26,7 @@
         "@factory/domain": "workspace:*",
         "@factory/improvements": "workspace:*",
         "@factory/intake": "workspace:*",
+        "@factory/memory": "workspace:*",
         "@factory/orchestrator": "workspace:*",
         "@factory/product": "workspace:*",
         "@factory/sandboxes": "workspace:*",
@@ -204,12 +205,24 @@
         "@factory/scheduler": "workspace:*",
       },
     },
+    "packages/memory": {
+      "name": "@factory/memory",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/db": "workspace:*",
+        "@factory/runtimes": "workspace:*",
+        "@factory/telemetry": "workspace:*",
+        "postgres": "4.1.1",
+      },
+    },
     "packages/orchestrator": {
       "name": "@factory/orchestrator",
       "version": "0.0.0",
       "dependencies": {
+        "@factory/capabilities": "workspace:*",
         "@factory/db": "workspace:*",
         "@factory/domain": "workspace:*",
+        "@factory/memory": "workspace:*",
         "@factory/runner": "workspace:*",
         "@factory/runtimes": "workspace:*",
         "@factory/sandboxes": "workspace:*",
@@ -344,6 +357,8 @@
     "@factory/improvements": ["@factory/improvements@workspace:packages/improvements"],
 
     "@factory/intake": ["@factory/intake@workspace:packages/intake"],
+
+    "@factory/memory": ["@factory/memory@workspace:packages/memory"],
 
     "@factory/orchestrator": ["@factory/orchestrator@workspace:packages/orchestrator"],
 

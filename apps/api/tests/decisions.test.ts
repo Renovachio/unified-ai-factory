@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { connect, type Sql } from "@factory/db";
 import { createTestDb } from "../../../packages/db/src/testing";
 import { createApi, ROLES, PERMISSIONS } from "../src/index";
 
@@ -6,6 +7,8 @@ const H = "a".repeat(40); const B = "b".repeat(40);
 const POLICY = "sha256:" + "c".repeat(64);
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let api: (r: Request) => Promise<Response>;
+// Approval writes go through factory_approval (migration 0028), the same role production uses for decisions.
+let approval: Sql;
 let orgA = ""; let orgB = ""; let repoA = ""; let n = 0;
 const U: Record<string, string> = {};
 
@@ -16,12 +19,15 @@ beforeAll(async () => {
   for (const r of ROLES) U[r] = (await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${orgA}, ${"a-" + r}, ${r}) RETURNING id`)[0]!.id;
   await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${orgB}, 'b-approver', 'approver')`;
   repoA = (await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${orgA}, 'github', '1', 'o', 'a') RETURNING id`)[0]!.id;
+  await db.sql.unsafe("ALTER ROLE factory_approval LOGIN");
+  const au = new URL(db.url); au.username = "factory_approval";
+  approval = connect(au.toString());
   api = createApi({
-    sql: db.sql, review: { requiredRoles: async () => ["code"] },
+    sql: db.sql, approvalSql: approval, review: { requiredRoles: async () => ["code"] },
     authenticator: { authenticate: async (req) => { const s = req.headers.get("x-test-subject"); return s ? { subject: s, via: "bearer" as const } : null; } },
   });
 });
-afterAll(async () => { await db.drop(); });
+afterAll(async () => { await approval.end(); await db.sql.unsafe("ALTER ROLE factory_approval NOLOGIN"); await db.drop(); });
 
 /** A job parked in AWAITING_HUMAN with a complete evidence binding (head, base, passing gate, policy digest). */
 async function parked(opts: { risk?: string; createdBy?: string } = {}) {

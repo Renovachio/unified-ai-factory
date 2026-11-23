@@ -17,6 +17,11 @@ const sql = connect(need("DATABASE_URL"));
 // Dispatch local mode (launcher-managed, loopback only): a per-install owner token replaces the OIDC provider; the whole RBAC/approval model still applies.
 const localTokenFile = env.DISPATCH_LOCAL_TOKEN_FILE;
 if (localTokenFile && (env.HOST ?? "127.0.0.1") !== "127.0.0.1") throw new Error("Dispatch local mode requires HOST=127.0.0.1");
+// Approval records are written only through this connection (factory_approval, migration 0028). Required for multi-user
+// deployments. Local mode is one owner on loopback, so it shares the main connection there (stated in evidence/MEM-05).
+const approvalUrl = env.DATABASE_APPROVAL_URL;
+if (!approvalUrl && !localTokenFile) throw new Error("missing required environment variable DATABASE_APPROVAL_URL (multi-user deployments need the approval role)");
+const approvalSql = approvalUrl ? connect(approvalUrl) : undefined;
 const auths: Authenticator[] = localTokenFile ? [LocalOwnerAuthenticator.fromFile(localTokenFile)] : [new OidcAuthenticator({ issuer: need("OIDC_ISSUER"), audience: need("OIDC_AUDIENCE"), ...(env.OIDC_JWKS_URI ? { jwksUri: env.OIDC_JWKS_URI } : {}) })];
 if (localTokenFile && env.DISPATCH_LOCAL_AGENT_TOKEN_FILE) auths.push(LocalOwnerAuthenticator.fromFile(env.DISPATCH_LOCAL_AGENT_TOKEN_FILE, LOCAL_AGENT_SUBJECT));
 let local: { entry: LocalBrowserEntry } | undefined;
@@ -30,7 +35,9 @@ if (localTokenFile) {
 let login: OidcLogin | undefined;
 if (env.OIDC_CLIENT_ID) {
   const issuer = need("OIDC_ISSUER");
-  login = new OidcLogin(sql, {
+  // Login runs on its own database role (factory_login, migration 0027): it can create sessions only through create_auth_session.
+  const loginSql = connect(need("DATABASE_LOGIN_URL"));
+  login = new OidcLogin(loginSql, {
     issuer, clientId: env.OIDC_CLIENT_ID, ...(env.OIDC_CLIENT_SECRET ? { clientSecret: env.OIDC_CLIENT_SECRET } : {}),
     redirectUri: need("OIDC_REDIRECT_URI"), authorizationEndpoint: need("OIDC_AUTHORIZATION_ENDPOINT"), tokenEndpoint: need("OIDC_TOKEN_ENDPOINT"),
     keys: createRemoteJWKSet(new URL(env.OIDC_JWKS_URI ?? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json`)),
@@ -38,7 +45,7 @@ if (env.OIDC_CLIENT_ID) {
   auths.push(login);
 } else if (env.SESSION_SECRET && !localTokenFile) auths.push(new SessionManager(env.SESSION_SECRET));
 const api = createApi({
-  sql, authenticator: new CompositeAuthenticator(auths), ...(login ? { login } : {}), ...(local ? { local } : {}),
+  sql, ...(approvalSql ? { approvalSql } : {}), authenticator: new CompositeAuthenticator(auths), ...(login ? { login } : {}), ...(local ? { local } : {}),
   allowedOrigins: (env.ALLOWED_ORIGINS ?? "").split(",").filter(Boolean),
   ...(env.GITHUB_WEBHOOK_SECRET ? { githubWebhookSecret: env.GITHUB_WEBHOOK_SECRET } : {}),
   log: (l) => console.error(JSON.stringify(l)),

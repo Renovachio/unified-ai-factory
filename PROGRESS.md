@@ -135,3 +135,45 @@ Spec package: `../dispatch-v2.3`. Branch `dev/v23-dispatch` (on `dev/v22-sai`, w
 Agent work on local folders (migrations 0015-0016, `dispatch code` in-place mode with snapshot, plan-scoped guard and per-wave leases, `dispatch work`, `dispatch mcp`, plugin `packaging/dispatch/claude-plugin`) is implemented and tested; the plugin, restricted launch, write guard and leases were verified live against a real Claude session on synthetic folders (`docs/dispatch/AGENTS.md`), but the Dispatch MCP tools and the full `dispatch work`/`dispatch code` flows were not: DSP-10 stays blocked until the operator records provider terms and a supervised first run is done. Local-folder projects (migration 0014, `/new <folder>`, `dispatch --project`) are implemented and tested; jobs on them still cannot run (no worker, and the SCM/PR flow is GitHub-only). Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Package sha256 (darwin-arm64 tarball): `f7ccc285995d18087383a8acd003eeec5717f0b554776bb7f2fb2824b0e31eb0`.
 
 Also fixed while verifying: a v2.2 idempotent-activation race (`packages/skills/src/registry.ts`), found by the full suite.
+
+## v2.5 Adaptive Memory (MEM-01..MEM-08)
+
+Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`, stacked on `dev/v23-dispatch`; nothing is merged. Work is done one task at a time (AGENTS.md); later tasks wait for MEM-01 to be accepted.
+
+```yaml
+- work_package: MEM-01
+  status: verified   # local checks only: 71 memory/db tests on real PostgreSQL 17, full suite 1354/0, lint, typecheck, package validation, license, gates lock. NOT independently reviewed; no pilot.
+  commits: [a2b98c5, 64d3361]
+  evidence: evidence/MEM-01/report.md
+  blockers: [independent review (open by operator decision), real authorized pilot (open by operator decision); project access is organization-role only by operator decision]
+- work_package: MEM-02
+  status: verified   # local checks only: 92 memory/db tests, full suite 1375/0; deterministic extraction only (no model); consent is asserted by the caller. NOT independently reviewed; no pilot.
+  commits: [85320ba]
+  evidence: evidence/MEM-02/report.md
+  blockers: [MEM-01 not accepted, independent review (open by operator decision), real authorized pilot (open by operator decision), per-participant consent workflow for real transcripts]
+- work_package: MEM-03
+  status: verified   # local checks only: lexical only (pgvector absent, semantic disclosed as disabled); 109 memory/db tests, full suite 1392/0; no quality benchmark. NOT independently reviewed; no pilot.
+  commits: [bd95b4b]
+  evidence: evidence/MEM-03/report.md
+  blockers: [MEM-01/02 not accepted, independent review and pilot (open by operator decision), semantic retrieval off (pgvector 0.8.7 installed; no embedding model qualified in config/model-qualification.json), no retrieval quality benchmark (MEM-08)]
+  followup: migration 0020 stems English and Portuguese (index version 2); see evidence/MEM-03/report.md
+- work_package: MEM-04
+  status: implemented   # local checks only: token estimate (no tokenizer), placeholder role caps, no runtime consumes packs yet; 16 context tests, full suite 1412/0; NOT independently reviewed; no pilot. Not called complete.
+  evidence: evidence/MEM-04/report.md
+  blockers: [independent review (open by operator decision), real authorized pilot (not run), no qualified tokenizer, role caps unbenchmarked, no worker entrypoint calls composeAgentExecutor, so memory is not active in any app]
+  followup: rendered pack text stored (migration 0022); runtime loader resolveContextPack; opt-in roles spec and builder in packages/orchestrator/src/memory-context.ts; see evidence/MEM-04/report.md addendum
+  followup2: composition root composeAgentExecutor (packages/orchestrator/src/agent-composition.ts), pack built for jobs.created_by, memory OFF unless DISPATCH_MEMORY_CONTEXT=1; end-to-end test through runOnce (5 tests). Still not active in any app: no worker entrypoint calls it; see evidence/MEM-04/report.md addendum 2; worker entrypoint stopped by default (DISPATCH_WORKER_ENABLE=1 required) and refuses to start while no runtime adapter is registered (addendum 3)
+- work_package: MEM-05
+  status: implemented_partial   # local checks only: consolidation with human approval and lineage, read-only review candidates; 15 consolidation tests, full suite 1449/0. NOT built: retention (needs operator policy), stale priority. Reversal built as restore after the consolidated memory ends (migration 0024). NOT independently reviewed; no pilot.
+  evidence: evidence/MEM-05/report.md
+  followup: restore after consolidation ended (migration 0024); independent review (tip 6f1296e) found DB gaps, fixed in migration 0025 (superseded_by and approved_by enforced, transition record required, consolidation links limited to consolidated memories); followup3: retention policy built (eraseMemoryText, runRetention); scheduler (runRetentionSweep, scripts/memory-retention.ts, cron documented) and conflict-driven erasure of approved memory (approveWithErasure, conflict rule) built; backup expiry runbook open; role-scoped run not verified; followup2: Option A applied (migration 0026): control role cannot write users; transition checks bind actor and from-status. Residual: control role can still name an existing approver in raw SQL (needs per-user DB identity or session-bound actor, a further decision). blockers: [login sessions moved to factory_login via create_auth_session (migration 0027; operator must set DATABASE_LOGIN_URL); approvals and approval_decisions written only by factory_approval (migration 0028; operator must set DATABASE_APPROVAL_URL for multi-user); product artifact approval guarded by trigger to factory_approval (migration 0029); separation is by connection, not process; fresh review of 0026 and 0027 open, retention policy not set by operator, pilot open, backup drill not run]
+- work_package: MEM-06
+  status: implemented_partial   # slice 1: retrieval feedback (migration 0031, packages/memory/src/feedback.ts), 8 tests; full suite 1509/0. wiring adapter to SAI-11 intake (orchestrator, role-scoped test as factory_control); independent review (3895aa8) fixed; failed signals now retried once via migration 0032 (not scheduled); project consent stored and approver-set via migration 0033, not caller-asserted; review fixes in migration 0034 (control sequence grant, DB consent guard, same-scope retry key); second review: advisory consent locks, retry consent-off test, guard branch tests; open: connected identity not checked by DB, demotion timing gap also fixed atomic row-and-signal write, consent passed to intake, free-text intent removed (name leakage), per-project workspace (see evidence addendum 2). NOT built: failure taxonomy, hypotheses, evaluation triggers, any app route or UI calling it, project consent setting, pilot (no authorized pilot project)
+  evidence: evidence/MEM-06/report.md
+- work_package: MEM-07
+  status: implemented_partial   # local checks only, committed (PR #7 draft), one independent review done and its findings fixed or recorded in the report: dashboard page /projects/<id>/memory on the v2.3 Dispatch dashboard (no v2.4 UI exists in this branch): proposed vs approved, add note, approve/reject, approve-with-erasure of named overlaps, context preview, consent toggle; new read routes GET memory/:id/conflicts (job:decide) and GET memory/consent. 7 API + 11 web tests, full suite 1550/0; one live Chrome pass on an isolated local stack. NOT built: correct/suppress/delete/export, retention/deletion E2E, automated a11y test, multi-user mode. NOT independently reviewed; no pilot.
+  evidence: evidence/MEM-07/report.md
+- work_package: MEM-08
+  status: blocked       # release gate: needs a qualified runtime, a real authorized pilot and quality benchmarks; none exist (see DSP-10, EVAL-001). Operator authorized a pilot in principle; no project named, no qualified model in config/model-qualification.json
+  blockers: [no qualified model or authorized runtime, no authorized pilot project, v2.1 gates NOT READY]
+```

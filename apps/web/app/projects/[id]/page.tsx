@@ -12,6 +12,7 @@ export default async function Project({ params }: { params: Promise<{ id: string
   return (
     <Page title={p.name}>
       <ProjectsTable items={[p]} />
+      <p><a href={`/projects/${encodeURIComponent(id)}/memory`}>Project memory</a>: review what Claude may remember, add notes, approve or reject.</p>
       <Section id="p-jobs" title="Jobs in this project">{snap.ok ? <ActiveJobsTable items={snap.data.jobs.filter((j) => j.projectId === id)} empty="No jobs in this project in the last 24 hours." /> : <ErrorNote error={snap.error} />}</Section>
       <p className="note">Create work from the terminal (<code>dispatch</code>) or an existing intake channel; dashboard job creation arrives with repository linking.</p>
     </Page>

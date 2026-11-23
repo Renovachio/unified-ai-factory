@@ -53,7 +53,15 @@ describe("database privilege separation (SEC-05)", () => {
   });
   test("control plane: administers approvals/users/sessions/policy but CANNOT write merge intents (only the merge authority merges)", async () => {
     for (const [t, p] of [["merge_intents", "INSERT"], ["merge_intents", "UPDATE"], ["merge_intents", "DELETE"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(false);
-    for (const [t, p] of [["approvals", "INSERT"], ["users", "UPDATE"], ["auth_sessions", "INSERT"], ["auto_merge_global", "UPDATE"], ["merge_intents", "SELECT"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(true);
+    for (const [t, p] of [["auto_merge_global", "UPDATE"], ["merge_intents", "SELECT"], ["approvals", "SELECT"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(true);
+    // Migration 0028: approval records are written only by factory_approval. Control reads them and keeps only consumed_at on skill decisions.
+    for (const [t, p] of [["approvals", "INSERT"], ["approvals", "UPDATE"], ["approvals", "DELETE"], ["approval_decisions", "INSERT"], ["approval_decisions", "UPDATE"], ["approval_decisions", "DELETE"]] as const) expect(await can("factory_control", t, p), `${t}:${p}`).toBe(false);
+    expect((await db.sql<{ p: boolean }[]>`SELECT has_column_privilege('factory_control', 'approval_decisions', 'consumed_at', 'UPDATE') AS p`)[0]!.p).toBe(true);
+    // Migration 0026 (operator decision, Option A): user records are written by the database owner only. The control plane may read them.
+    for (const p of ["INSERT", "UPDATE"] as const) expect(await can("factory_control", "users", p), `users:${p}`).toBe(false);
+    // Migration 0027 (Option a): sessions are created only by the login role through create_auth_session. Control may read them.
+    for (const p of ["INSERT", "UPDATE", "DELETE"] as const) expect(await can("factory_control", "auth_sessions", p), `auth_sessions:${p}`).toBe(false);
+    expect(await can("factory_control", "auth_sessions", "SELECT")).toBe(true);
     expect(await denied("factory_control", `UPDATE merge_intents SET status = 'merged'`)).toBe("denied");
   });
   test("append-only guarantees still hold for every role, including the control plane", async () => {
@@ -61,5 +69,67 @@ describe("database privilege separation (SEC-05)", () => {
       const r = await denied(role, `DELETE FROM events`);
       expect(["denied", "other: error: events is append-only"].some((x) => r.startsWith(x.slice(0, 6))) || /append-only|denied/.test(r), `${role}: ${r}`).toBe(true);
     }
+  });
+});
+
+describe("login session boundary (migration 0027)", () => {
+  test("factory_login creates a session only for an enabled user through create_auth_session", async () => {
+    const [u] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role) VALUES (${org}, 'login-ok', 'approver') RETURNING id`;
+    const h = "login-ok-" + Date.now();
+    const r = await as("factory_login", (tx) => tx`SELECT create_auth_session(${h}::text, ${u!.id}::uuid, 'csrf', now(), now() + interval '1 hour', NULL::text)`.then(() => "ok", (e) => String(e)));
+    expect(r).toBe("ok");
+    const [row] = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM auth_sessions WHERE id_hash = ${h}`;
+    expect(row!.n).toBe(1);
+  });
+
+  test("create_auth_session refuses a disabled user", async () => {
+    const [u] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role, disabled_at) VALUES (${org}, 'login-off', 'approver', now()) RETURNING id`;
+    let err = "";
+    try { await as("factory_login", (tx) => tx`SELECT create_auth_session(${"off-" + Date.now()}::text, ${u!.id}::uuid, 'csrf', now(), now() + interval '1 hour', NULL::text)`); } catch (e) { err = String(e); }
+    expect(err).toMatch(/not an enabled account/);
+  });
+
+  test("the control role cannot insert a session for any user", async () => {
+    const [u] = await db.sql<{ id: string }[]>`SELECT id FROM users WHERE auth_subject = 'u'`;
+    expect(await denied("factory_control", `INSERT INTO auth_sessions (id_hash, user_id, csrf, expires_at) VALUES ('ctl-${Date.now()}', '${u!.id}', 'c', now() + interval '1 hour')`)).toBe("denied");
+  });
+});
+
+describe("approval role boundary (migration 0028)", () => {
+  const can = async (role: string, table: string, priv: string) => (await db.sql`SELECT has_table_privilege(${role}, ${table}, ${priv}) AS ok`)[0]!.ok as boolean;
+  test("factory_approval writes approval records and can read evidence, but NOT sessions, login transactions or integrations", async () => {
+    for (const [t, p] of [["approvals", "INSERT"], ["approval_decisions", "INSERT"], ["jobs", "UPDATE"], ["idempotency_keys", "DELETE"], ["outbox", "INSERT"]] as const) expect(await can("factory_approval", t, p), `${t}:${p}`).toBe(true);
+    for (const t of ["auth_sessions", "auth_login_transactions", "integrations"]) expect(await can("factory_approval", t, "SELECT"), t).toBe(false);
+    expect(await can("factory_approval", "approvals", "DELETE")).toBe(false);
+    expect(await can("factory_approval", "users", "SELECT")).toBe(true);
+  });
+});
+
+describe("approval and session guards hold against the approval and login roles (review of 0026-0030)", () => {
+  const refusal = async (fn: () => Promise<unknown>) => { try { await fn(); return "allowed"; } catch (e) { return String(e); } };
+  test("create_auth_session cannot be defeated by a temp table shadowing users (pg_temp is searched last)", async () => {
+    const [u] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role, disabled_at) VALUES (${org}, 'shadow-off', 'approver', now()) RETURNING id`;
+    const err = await refusal(() => as("factory_login", async (tx) => {
+      await tx.unsafe("CREATE TEMP TABLE users (id uuid, organization_id uuid, role text, disabled_at timestamptz)");
+      await tx.unsafe(`INSERT INTO pg_temp.users VALUES ('${u!.id}', '${org}', 'approver', NULL)`);
+      await tx`SELECT create_auth_session(${"shadow-" + Date.now()}::text, ${u!.id}::uuid, 'csrf', now(), now() + interval '1 hour', NULL::text)`;
+    }));
+    expect(err).toMatch(/not an enabled account/);
+    const [row] = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM auth_sessions WHERE user_id = ${u!.id}`;
+    expect(row!.n).toBe(0);
+  });
+
+  test("factory_approval cannot record an approval for a viewer (approvals_actor_guard, migration 0030)", async () => {
+    const [v] = await db.sql<{ id: string }[]>`INSERT INTO users (organization_id, auth_subject, role) VALUES (${org}, 'viewer-x', 'viewer') RETURNING id`;
+    const err = await refusal(() => as("factory_approval", (tx) => tx`INSERT INTO approvals (job_id, head_sha, base_sha, policy_digest, actor_id, decision, reason)
+      VALUES (${jobId}, ${"a".repeat(40)}, ${"b".repeat(40)}, 'sha256:x', ${v!.id}, 'approve', 'probe')`));
+    expect(err).toMatch(/enabled approver or admin of the job organization/);
+  });
+
+  test("factory_approval can record an approval for an enabled approver of the job's organization", async () => {
+    const [a] = await db.sql<{ id: string }[]>`SELECT id FROM users WHERE auth_subject = 'u'`;
+    const err = await refusal(() => as("factory_approval", (tx) => tx`INSERT INTO approvals (job_id, head_sha, base_sha, policy_digest, actor_id, decision, reason)
+      VALUES (${jobId}, ${"a".repeat(40)}, ${"b".repeat(40)}, 'sha256:x', ${a!.id}, 'approve', 'probe')`));
+    expect(err).toBe("allowed");
   });
 });

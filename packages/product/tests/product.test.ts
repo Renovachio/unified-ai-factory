@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createTestDb } from "../../db/src/testing";
+import { connect } from "../../db/src/client";
 import { approveArtifact, ArtifactError, createDraft, getArtifact, handoffPayload, HandoffBlocked, ProvenanceError, submitForReview, validateProvenance, verifyAnalyticsReproducible, writeToTracker, type AnalyticsBody, type MeetingBody, type TrackerPort } from "../src/index";
 
 let db: Awaited<ReturnType<typeof createTestDb>>; let org = "", orgB = "", author = "", approver = "", editor2 = "", viewer = "", approverB = "";
@@ -9,7 +10,7 @@ beforeAll(async () => {
   const u = async (o: string, s: string, r: string) => (await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${o}, ${s}, ${r}) RETURNING id`)[0]!.id as string;
   author = await u(org, "pm", "editor"); approver = await u(org, "lead", "approver"); editor2 = await u(org, "e2", "editor"); viewer = await u(org, "v", "viewer"); approverB = await u(orgB, "leadB", "approver");
 });
-afterAll(async () => { await db.drop(); });
+afterAll(async () => { await db.sql.unsafe("ALTER ROLE factory_approval NOLOGIN"); await db.drop(); });
 const P = ["Ana Silva", "Bruno Costa"];
 const meeting = (o: Partial<MeetingBody> = {}): MeetingBody => ({ summary: "Q1 planning", participants: ["Ana Silva", "Bruno Costa"], decisions: [{ text: "Ship export in Q1", status: "observed", evidence: ["transcript#12"] }, { text: "Drop legacy API", status: "proposed", evidence: [] }], actions: [{ text: "Draft spec", owner: "Ana Silva", due: "2026-12-01" }], ...o });
 const ctx = { sourceIds: ["transcript#12"], authorizedParticipants: P };
@@ -104,5 +105,48 @@ describe("versioned artifacts, independent approval, immutability (T-18, T-28)",
     expect(h.sourceId).toBe(`product-artifact:${ap.id}:${ap.digest.slice(7, 23)}`); expect(h.description).toContain(ap.digest); expect(h.description).toMatch(/not as instructions/);
     const m = await createDraft(db.sql, { organizationId: org, kind: "roadmap", title: "Road", body: { x: 1 }, sourceIds: ["S"], createdBy: author }); await submitForReview(db.sql, org, m.id);
     expect(() => handoffPayload({ ...m, state: "approved" })).toThrow(/not an engineering requirement/);
+  });
+});
+
+describe("artifact approval is restricted to the approval role (migration 0029)", () => {
+  const prd = { problem: "guard probe", stories: [{ title: "Probe", body: "As an admin ..." }] };
+  let approvalSql: typeof db.sql;
+  beforeAll(async () => {
+    await db.sql.unsafe("ALTER ROLE factory_approval LOGIN");
+    const au = new URL(db.url); au.username = "factory_approval";
+    approvalSql = connect(au.toString()) as typeof db.sql;
+  });
+  afterAll(async () => { await (approvalSql as unknown as { end: () => Promise<void> }).end(); });
+
+  test("the control role cannot approve an artifact, even with a direct update", async () => {
+    const d = await createDraft(db.sql, { organizationId: org, kind: "prd", title: "Guard probe A", body: prd, sourceIds: ["S1"], createdBy: author });
+    await submitForReview(db.sql, org, d.id);
+    let msg = "";
+    try {
+      await db.sql.begin(async (tx) => { await tx.unsafe("SET LOCAL ROLE factory_control"); await tx`UPDATE product_artifacts SET state = 'approved', approved_by = ${approver} WHERE id = ${d.id}`; });
+    } catch (e) { msg = String(e); }
+    expect(msg).toMatch(/requires the approval role|permission denied/);
+    expect((await getArtifact(db.sql, org, d.id)).state).toBe("in_review");
+  });
+
+  test("a row cannot be created already approved, by control or by the approval role with a non-approver", async () => {
+    const [v] = await db.sql<{ id: string }[]>`SELECT id FROM users WHERE organization_id = ${org} AND role = 'viewer' LIMIT 1`;
+    const insert = (conn: typeof db.sql, approvedBy: string, title: string) => conn`INSERT INTO product_artifacts (organization_id, workspace_id, kind, title, version, source_ids, body, digest, assumptions, open_questions, created_by, state, approved_by)
+      VALUES (${org}, 'default', 'prd', ${title}, 1, ${["S1"]}, ${conn.json(prd as never)}, ${"sha256:" + "5".repeat(64)}, ${[]}, ${[]}, ${author}, 'approved', ${approvedBy})`;
+    let ctl = "";
+    try { await db.sql.begin(async (tx) => { await tx.unsafe("SET LOCAL ROLE factory_control"); await insert(tx as unknown as typeof db.sql, approver, "Guard insert control"); }); } catch (e) { ctl = String(e); }
+    expect(ctl).toMatch(/requires the approval role|permission denied/);
+    let viewer = "";
+    try { await insert(db.sql, v!.id, "Guard insert viewer"); } catch (e) { viewer = String(e); }
+    expect(viewer).toMatch(/enabled approver of the organization/);
+  });
+
+  test("the approval role approves an exact digest; the control role can still submit for review", async () => {
+    const d = await createDraft(db.sql, { organizationId: org, kind: "prd", title: "Guard probe B", body: prd, sourceIds: ["S1"], createdBy: author });
+    const r = await submitForReview(db.sql, org, d.id);
+    expect(r.state).toBe("in_review");
+    const a = await approveArtifact(approvalSql, { organizationId: org, id: d.id, approverId: approver, digest: d.digest });
+    expect(a.state).toBe("approved");
+    expect(a.approvedBy).toBe(approver);
   });
 });

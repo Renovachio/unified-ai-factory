@@ -1,4 +1,5 @@
-import { bigint, boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, bigint, bigserial, boolean, doublePrecision, foreignKey, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const created = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -580,4 +581,180 @@ export const workRuns = pgTable("work_runs", {
   decidedAt: timestamp("decided_at", { withTimezone: true }),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Adaptive Memory v2.5 (MEM-01), migration 0017. Keep nullability in step with the SQL: the parity test checks it.
+export const memoryRecords = pgTable("memory_records", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  kind: text("kind").notNull(),
+  claim: text("claim").notNull(),
+  normalizedClaimHash: text("normalized_claim_hash").notNull(),
+  sourceDigest: text("source_digest").notNull(),
+  status: text("status").notNull().default("proposed"),
+  isConsolidation: boolean("is_consolidation").notNull().default(false),
+  sensitivity: text("sensitivity").notNull().default("internal"),
+  recordVersion: integer("record_version").notNull().default(1),
+  supersedesId: uuid("supersedes_id").references((): AnyPgColumn => memoryRecords.id),
+  supersededBy: uuid("superseded_by").references((): AnyPgColumn => memoryRecords.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  approvedBy: uuid("approved_by").references(() => users.id),
+  validFrom: timestamp("valid_from", { withTimezone: true }).notNull().defaultNow(),
+  validTo: timestamp("valid_to", { withTimezone: true }),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const memorySources = pgTable("memory_sources", {
+  id: id(),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  artifactId: uuid("artifact_id").references(() => artifacts.id),
+  eventId: uuid("event_id").references(() => events.id),
+  sourceDigest: text("source_digest").notNull(),
+  sourceSpan: jsonb("source_span"),
+  extractionMethod: text("extraction_method").notNull(),
+  aclDigest: text("acl_digest").notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: created(),
+});
+
+export const memoryTransitions = pgTable("memory_transitions", {
+  id: id(),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  recordVersion: integer("record_version").notNull(),
+  actorId: uuid("actor_id").references(() => users.id),
+  actor: text("actor").notNull(),
+  reason: text("reason"),
+  evidenceDigest: text("evidence_digest").notNull(),
+  createdAt: created(),
+});
+
+export const memoryTombstones = pgTable("memory_tombstones", {
+  memoryId: uuid("memory_id").primaryKey().references(() => memoryRecords.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  requestedBy: uuid("requested_by").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  purgeStatus: jsonb("purge_status").notNull().default({ canonical: "erased" }),
+  createdAt: created(),
+});
+
+export const memoryFeedback = pgTable("memory_feedback", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  actorId: uuid("actor_id").notNull().references(() => users.id),
+  verdict: text("verdict").notNull(),
+  signalState: text("signal_state").notNull(),
+  retryOf: uuid("retry_of").references((): AnyPgColumn => memoryFeedback.id),
+  createdAt: created(),
+}, (t) => [
+  unique("memory_feedback_scope_key").on(t.id, t.projectId, t.memoryId),
+  foreignKey({ name: "memory_feedback_retry_same_scope", columns: [t.retryOf, t.projectId, t.memoryId], foreignColumns: [t.id, t.projectId, t.memoryId] }),
+  index("memory_feedback_memory").on(t.memoryId, t.createdAt),
+  uniqueIndex("memory_feedback_one_retry").on(t.retryOf).where(sql`retry_of IS NOT NULL`),
+]);
+
+export const memoryTelemetryConsent = pgTable("memory_telemetry_consent", {
+  seq: bigserial("seq", { mode: "number" }).primaryKey(),
+  id: uuid("id").notNull().unique().defaultRandom(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  optedIn: boolean("opted_in").notNull(),
+  grantedBy: uuid("granted_by").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  createdAt: created(),
+}, (t) => [index("memory_telemetry_consent_project").on(t.organizationId, t.projectId, t.seq)]);
+
+export const memorySourceRevocations = pgTable("memory_source_revocations", {
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  sourceKind: text("source_kind").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  reason: text("reason").notNull(),
+  revokedBy: uuid("revoked_by").notNull().references(() => users.id),
+  createdAt: created(),
+});
+
+// Adaptive Memory v2.5 (MEM-02), migration 0018.
+export const memoryIngestionRuns = pgTable("memory_ingestion_runs", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  sourceKind: text("source_kind").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  sourceDigest: text("source_digest").notNull(),
+  extractorId: text("extractor_id").notNull(),
+  consent: jsonb("consent").notNull(),
+  candidatesTotal: integer("candidates_total").notNull(),
+  proposed: integer("proposed").notNull(),
+  droppedSecret: integer("dropped_secret").notNull(),
+  droppedInjection: integer("dropped_injection").notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: created(),
+});
+
+export const memoryIngestionLinks = pgTable("memory_ingestion_links", {
+  runId: uuid("run_id").notNull().references(() => memoryIngestionRuns.id),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  spanStart: integer("span_start").notNull(),
+  spanEnd: integer("span_end").notNull(),
+  marker: text("marker").notNull(),
+});
+
+// Adaptive Memory v2.5 (MEM-03), migration 0019.
+export const memoryIndex = pgTable("memory_index", {
+  recordId: uuid("record_id").primaryKey().references(() => memoryRecords.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  indexedClaimHash: text("indexed_claim_hash").notNull(),
+  indexVersion: integer("index_version").notNull().default(1),
+  lexical: text("lexical").notNull(),
+  indexedAt: timestamp("indexed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const memoryRetrievalEvents = pgTable("memory_retrieval_events", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  actorId: uuid("actor_id").notNull().references(() => users.id),
+  queryDigest: text("query_digest").notNull(),
+  retrievalMode: text("retrieval_mode").notNull(),
+  returnedIds: uuid("returned_ids").array().notNull(),
+  omitted: jsonb("omitted").notNull(),
+  createdAt: created(),
+});
+
+// Adaptive Memory v2.5 (MEM-04), migration 0021.
+export const contextPacks = pgTable("context_packs", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  actorId: uuid("actor_id").notNull().references(() => users.id),
+  modelRole: text("model_role").notNull(),
+  maxInputTokens: integer("max_input_tokens").notNull(),
+  estimatedTokens: integer("estimated_tokens").notNull(),
+  retrievalEventId: uuid("retrieval_event_id").notNull().references(() => memoryRetrievalEvents.id),
+  manifest: jsonb("manifest").notNull(),
+  packDigest: text("pack_digest").notNull(),
+  renderedDigest: text("rendered_digest").notNull(),
+  renderedUri: text("rendered_uri").notNull(),
+  createdAt: created(),
+});
+
+// Adaptive Memory v2.5 (MEM-05), migration 0023.
+export const memoryConsolidations = pgTable("memory_consolidations", {
+  id: id(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  consolidatedId: uuid("consolidated_id").notNull().references(() => memoryRecords.id),
+  originalId: uuid("original_id").notNull().references(() => memoryRecords.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: created(),
 });

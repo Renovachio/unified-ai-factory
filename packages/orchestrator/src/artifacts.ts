@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Sql } from "@factory/db";
 
@@ -20,6 +20,15 @@ export class FileArtifactStore {
       renameSync(tmp, p); // atomic publish
     }
     return { digest: `sha256:${hex}`, uri: `file://${p}`, bytes: buf.length };
+  }
+  /** Removes an artifact (retention and erasure). Idempotent: returns false when it was already absent. */
+  delete(digest: string): boolean {
+    const hex = digest.replace(/^sha256:/, "");
+    const p = this.pathFor(hex);
+    if (!existsSync(p)) return false;
+    chmodSync(p, 0o644);
+    unlinkSync(p);
+    return true;
   }
   /** Reads and re-verifies the digest (tamper detection). */
   get(digest: string): Buffer {

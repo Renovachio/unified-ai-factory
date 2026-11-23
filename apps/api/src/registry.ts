@@ -41,7 +41,7 @@ export function registryProblem(e: unknown): ApiProblem | null {
   return null;
 }
 
-export type Handler = (a: { req: Request; sql: Sql; actor: Actor; cfg: SkillsConfig | undefined; maxBody: number; mutating: () => void; key: () => string }) => Promise<JsonResult>;
+export type Handler = (a: { req: Request; sql: Sql; approvalSql: Sql; actor: Actor; cfg: SkillsConfig | undefined; maxBody: number; mutating: () => void; key: () => string }) => Promise<JsonResult>;
 
 async function body(req: Request, max: number): Promise<Record<string, unknown>> { const { value } = await readJson(req, max); if (!value || typeof value !== "object" || Array.isArray(value)) throw problems.unprocessable("body must be an object"); return value as Record<string, unknown>; }
 const str = (b: Record<string, unknown>, k: string, re?: RegExp): string => { const v = b[k]; if (typeof v !== "string" || (re && !re.test(v))) throw problems.unprocessable(`${k} is missing or malformed`); return v; };
@@ -73,14 +73,14 @@ export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: H
       return { status: 201, body: { id: a.id, version: a.version, state: a.state, digest: a.digest } };
     } catch (e) { const p = artifactProblem(e); if (p) throw p; throw e; }
   } },
-  { method: "POST", pattern: /^\/product\/artifacts\/[^/]+\/(review|approve)$/, handler: async ({ req, sql, actor, maxBody, key, mutating }) => {
+  { method: "POST", pattern: /^\/product\/artifacts\/[^/]+\/(review|approve)$/, handler: async ({ req, sql, approvalSql, actor, maxBody, key, mutating }) => {
     const parts = segs(req); const id = parts[3] as string; const verb = parts[4] as string;
     if (!uuid.test(id)) throw problems.notFound("artifact not found");
     try {
       if (verb === "review") { require_(actor, "product:write"); mutating(); key(); const a = await submitForReview(sql, actor.orgId, id); return { status: 200, body: { id: a.id, state: a.state, digest: a.digest } }; }
       require_(actor, "approval:decide"); mutating(); key();
       const b = await body(req, maxBody);
-      const a = await approveArtifact(sql, { organizationId: actor.orgId, id, approverId: actor.userId, digest: str(b, "digest") });
+      const a = await approveArtifact(approvalSql, { organizationId: actor.orgId, id, approverId: actor.userId, digest: str(b, "digest") });
       return { status: 200, body: { id: a.id, state: a.state, digest: a.digest, approvedBy: a.approvedBy } };
     } catch (e) { const p = artifactProblem(e); if (p) throw p; throw e; }
   } },
@@ -146,7 +146,7 @@ export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: H
       return { status: 201, body: r };
     } catch (e) { const p = registryProblem(e); if (p) throw p; throw e; }
   } },
-  { method: "POST", pattern: /^\/approvals\/[^/]+\/decision$/, handler: async ({ req, sql, actor, maxBody, key, mutating }) => {
+  { method: "POST", pattern: /^\/approvals\/[^/]+\/decision$/, handler: async ({ req, sql, approvalSql, actor, maxBody, key, mutating }) => {
     require_(actor, "approval:decide"); mutating(); key();
     const id = segs(req)[2] as string;
     if (!uuid.test(id)) throw problems.notFound("approval request not found");
@@ -155,7 +155,7 @@ export const registryRoutes: Array<{ method: string; pattern: RegExp; handler: H
     const b = await body(req, maxBody);
     const decision = str(b, "decision", /^(approved|rejected)$/) as "approved" | "rejected";
     try {
-      await decideApproval(sql, { requestId: id, approverId: actor.userId, decision, presentedDigest: str(b, "digest"), presentedPermissionDigest: str(b, "permissionDigest"), ...(typeof b.note === "string" ? { note: b.note.slice(0, 500) } : {}) });
+      await decideApproval(approvalSql, { requestId: id, approverId: actor.userId, decision, presentedDigest: str(b, "digest"), presentedPermissionDigest: str(b, "permissionDigest"), ...(typeof b.note === "string" ? { note: b.note.slice(0, 500) } : {}) });
       return { status: 200, body: { requestId: id, decision } };
     } catch (e) { const p = registryProblem(e); if (p) throw p; throw e; }
   } },
