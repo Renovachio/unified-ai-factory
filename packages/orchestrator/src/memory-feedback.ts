@@ -1,6 +1,6 @@
 import type { Sql } from "@factory/db";
 import { recordSignal } from "@factory/capabilities";
-import { type Actor, type FeedbackInput, type FeedbackResult, type SignalSink, recordRetrievalFeedback } from "@factory/memory";
+import { type Actor, type FeedbackInput, type FeedbackResult, type RetryReport, type SignalSink, recordRetrievalFeedback, retryFailedSignals } from "@factory/memory";
 
 /**
  * Sends a memory feedback gap signal to SAI-11 through the capability intake. The intake enforces opt-in and anonymisation with the
@@ -14,4 +14,9 @@ export const sai11SignalSink: SignalSink = async (s, q) => {
 /** Composed entry point: the organization is taken from the actor, never from the caller's input. */
 export function feedbackWithSignals(sql: Sql, actor: Actor, projectId: string, input: FeedbackInput): Promise<FeedbackResult> {
   return recordRetrievalFeedback(sql, actor, projectId, input, sai11SignalSink);
+}
+
+/** Re-sends failed gap signals for the project, through the SAI-11 intake. */
+export function retryFeedbackSignals(sql: Sql, actor: Actor, projectId: string, optedIn: boolean): Promise<RetryReport> {
+  return retryFailedSignals(sql, actor, projectId, optedIn, sai11SignalSink);
 }

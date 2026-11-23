@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "../../db/src/client";
 import { createTestDb } from "../../db/src/testing";
-import { approveMemory, type Actor, proposeMemory } from "@factory/memory";
+import { approveMemory, type Actor, proposeMemory, recordRetrievalFeedback, type SignalSink } from "@factory/memory";
 import { digestOf } from "@factory/telemetry";
-import { feedbackWithSignals } from "../src/memory-feedback";
+import { feedbackWithSignals, retryFeedbackSignals } from "../src/memory-feedback";
 
 type Db = Awaited<ReturnType<typeof createTestDb>>;
 let db: Db;
@@ -80,5 +80,15 @@ describe("memory feedback to SAI-11, as the control role (MEM-06)", () => {
     const before = await signalCount();
     await expect(feedbackWithSignals(control, A(viewer), projA, { memoryId: "00000000-0000-4000-8000-000000000000", verdict: "wrong", optedIn: true })).rejects.toThrow();
     expect(await signalCount()).toBe(before);
+  });
+  test("a signal that fails is retried through the control role into the real intake, once; a second retry has nothing to do", async () => {
+    const failing: SignalSink = async (_s, q) => { await q`SELECT * FROM table_that_does_not_exist`; };
+    const first = await recordRetrievalFeedback(control, A(viewer), projA, { memoryId, verdict: "missing", optedIn: true }, failing);
+    expect(first.signalState).toBe("failed");
+    const before = await signalCount();
+    const rep = await retryFeedbackSignals(control, A(viewer), projA, true);
+    expect(rep).toEqual({ attempted: 1, sent: 1, failed: 0 });
+    expect((await signalCount()) - before).toBe(1);
+    expect(await retryFeedbackSignals(control, A(viewer), projA, true)).toEqual({ attempted: 0, sent: 0, failed: 0 });
   });
 });

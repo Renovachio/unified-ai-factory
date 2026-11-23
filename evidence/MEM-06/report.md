@@ -85,3 +85,14 @@ Still open (decisions for the operator):
 3. Retry or queueing for failed signals. None exists; a failed signal is lost.
 4. The SAI-11 supervisor must be pointed at the per-project workspaces.
 5. Pilot: not run (no authorized pilot project).
+
+## Addendum 3: retry of failed gap signals (migration 0032)
+
+- Failed signals were lost (addendum 2, open item 3). Now `retryFailedSignals` (memory) and `retryFeedbackSignals` (orchestrator) re-send them.
+- A retry is a NEW append-only row with `retry_of` pointing at the failed row. The failed row is never changed. A unique index on `retry_of` lets only one retry exist per row.
+- At most once: a retry that fails again is final. Retries need consent; without it nothing is sent.
+- A concurrent second retry hits the unique index and rolls back its own signal.
+- Tests: memory suite (retry linked and once, failed retry final, no consent sends nothing, other project untouched, cross-organization refused); orchestrator suite as `factory_control` (failure forced by a real database error, retry reaches the real intake once, second retry is empty).
+- Mutation check: removing the "already retried" condition makes the final-retry test fail. The condition was restored afterwards.
+- Not covered: a crash between the send and the insert inside the same transaction is rolled back by the database; no test kills a process mid-transaction.
+- Still open: nothing runs the retry automatically. An operator or a job must call it.

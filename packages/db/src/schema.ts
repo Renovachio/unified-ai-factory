@@ -651,6 +651,7 @@ export const memoryFeedback = pgTable("memory_feedback", {
   actorId: uuid("actor_id").notNull().references(() => users.id),
   verdict: text("verdict").notNull(),
   signalState: text("signal_state").notNull(),
+  retryOf: uuid("retry_of").references((): AnyPgColumn => memoryFeedback.id),
   createdAt: created(),
 });
 

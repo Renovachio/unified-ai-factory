@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestDb } from "../../db/src/testing";
 import { digestOf } from "../../telemetry/src/index";
-import { approveMemory, type Actor, MemoryError, type MemoryErrorCode, proposeMemory, recordRetrievalFeedback, type SignalSink } from "../src/index";
+import { approveMemory, type Actor, MemoryError, type MemoryErrorCode, proposeMemory, recordRetrievalFeedback, retryFailedSignals, type SignalSink } from "../src/index";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let dir = "";
@@ -160,5 +160,48 @@ describe("retrieval feedback (MEM-06)", () => {
     const r = await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "useful", optedIn: false });
     const err = await db.sql`UPDATE memory_feedback SET verdict = 'wrong' WHERE id = ${r.id}`.then(() => null, (e: Error) => e);
     expect(err?.message).toMatch(/append-only/);
+  });
+});
+
+describe("retry of failed gap signals (MEM-06)", () => {
+  const dbDown: SignalSink = async (_s, q) => { await q`SELECT * FROM table_that_does_not_exist`; };
+  const up: SignalSink = async () => undefined;
+
+  test("a failed signal is retried once, the retry is a new row linked to the failed one, and the original is unchanged", async () => {
+    const p = await project("fb-retry");
+    const m = await approved(p, "Vendor onboarding needs a tax form");
+    const first = await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "wrong", optedIn: true }, dbDown);
+    expect(first.signalState).toBe("failed");
+    const rep = await retryFailedSignals(db.sql, A(viewer), p, true, up);
+    expect(rep).toEqual({ attempted: 1, sent: 1, failed: 0 });
+    const rows = await db.sql<{ id: string; signal_state: string; retry_of: string | null }[]>`SELECT id, signal_state, retry_of FROM memory_feedback WHERE memory_id = ${m} ORDER BY created_at, id`;
+    expect(rows.map((r) => r.signal_state)).toEqual(["failed", "sent"]);
+    expect(rows[1]!.retry_of).toBe(first.id);
+  });
+
+  test("a failed retry is final: it is not retried again", async () => {
+    const p = await project("fb-retry-final");
+    const m = await approved(p, "Contractor access ends on the last working day");
+    await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "missing", optedIn: true }, dbDown);
+    expect(await retryFailedSignals(db.sql, A(viewer), p, true, dbDown)).toEqual({ attempted: 1, sent: 0, failed: 1 });
+    expect(await retryFailedSignals(db.sql, A(viewer), p, true, up)).toEqual({ attempted: 0, sent: 0, failed: 0 });
+  });
+
+  test("without consent a retry sends nothing", async () => {
+    const p = await project("fb-retry-noconsent");
+    const m = await approved(p, "Payroll runs on the fifteenth");
+    await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "stale", optedIn: true }, dbDown);
+    let sent = 0;
+    expect(await retryFailedSignals(db.sql, A(viewer), p, false, async () => { sent++; })).toEqual({ attempted: 0, sent: 0, failed: 0 });
+    expect(sent).toBe(0);
+  });
+
+  test("a retry from another project's user never touches this project's rows", async () => {
+    const p = await project("fb-retry-scope");
+    const m = await approved(p, "Expense claims need receipts above fifty dollars");
+    await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "wrong", optedIn: true }, dbDown);
+    const elsewhere = await project("fb-retry-elsewhere");
+    expect(await retryFailedSignals(db.sql, A(viewer), elsewhere, true, up)).toEqual({ attempted: 0, sent: 0, failed: 0 });
+    await expectCode(retryFailedSignals(db.sql, A(outsider, other), p, true, up), "NOT_FOUND");
   });
 });

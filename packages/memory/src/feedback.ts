@@ -1,3 +1,4 @@
+import type postgres from "postgres";
 import type { Sql } from "@factory/db";
 import { MemoryError, READER_ROLES } from "./domain";
 import { type Actor, requireActor, requireProject } from "./lifecycle";
@@ -34,6 +35,21 @@ export interface FeedbackInput {
 export type FeedbackSignalState = "not_requested" | "sent" | "failed";
 export interface FeedbackResult { id: string; signalState: FeedbackSignalState }
 
+/** The transaction handle the client passes to begin(); it has savepoint(). */
+type Tx = postgres.TransactionSql;
+
+/** Sends one signal inside the given transaction's savepoint. Returns the state to record; never throws. */
+async function sendInSavepoint(tx: Tx, sink: SignalSink | undefined, organizationId: string, projectId: string, memoryId: string, kind: string, verdict: FeedbackVerdict, optedIn: boolean): Promise<FeedbackSignalState> {
+  if (verdict === "useful" || !optedIn) return "not_requested";
+  if (!sink) return "failed"; // consent given but no SAI-11 intake wired: not sent, and the row says so
+  try {
+    await tx.savepoint((sp) => sink({ organizationId, kind: SIGNAL_KIND[verdict as Exclude<FeedbackVerdict, "useful">], subject: `memory retrieval ${kind}`, evidence: `${memoryId}:${verdict}`, optedIn: true, workspaceId: projectId }, sp as unknown as Sql));
+    return "sent";
+  } catch {
+    return "failed";
+  }
+}
+
 export async function recordRetrievalFeedback(sql: Sql, actor: Actor, projectId: string, input: FeedbackInput, sink?: SignalSink): Promise<FeedbackResult> {
   await requireActor(sql, actor, READER_ROLES);
   await requireProject(sql, actor.organizationId, projectId);
@@ -41,25 +57,41 @@ export async function recordRetrievalFeedback(sql: Sql, actor: Actor, projectId:
   if (!UUID.test(input.memoryId)) throw new MemoryError("NOT_FOUND", "no such memory in this project");
   const [m] = await sql<{ id: string; kind: string }[]>`SELECT id, kind FROM memory_records WHERE id = ${input.memoryId} AND organization_id = ${actor.organizationId} AND project_id = ${projectId}`;
   if (!m) throw new MemoryError("NOT_FOUND", "no such memory in this project");
-
   return sql.begin(async (tx) => {
-    let signalState: FeedbackSignalState = "not_requested";
-    if (input.verdict !== "useful" && input.optedIn) {
-      if (!sink) {
-        // Consent was given but no SAI-11 intake is wired: the signal was not sent, and the row says so.
-        signalState = "failed";
-      } else {
-        try {
-          await tx.savepoint((sp) => sink({ organizationId: actor.organizationId, kind: SIGNAL_KIND[input.verdict as Exclude<FeedbackVerdict, "useful">], subject: `memory retrieval ${m.kind}`, evidence: `${input.memoryId}:${input.verdict}`, optedIn: true, workspaceId: projectId }, sp as unknown as Sql));
-          signalState = "sent";
-        } catch {
-          signalState = "failed";
-        }
-      }
-    }
+    const signalState = await sendInSavepoint(tx, sink, actor.organizationId, projectId, input.memoryId, m.kind, input.verdict, input.optedIn);
     const [row] = await tx<{ id: string }[]>`INSERT INTO memory_feedback (organization_id, project_id, memory_id, actor_id, verdict, signal_state)
       VALUES (${actor.organizationId}, ${projectId}, ${input.memoryId}, ${actor.userId}, ${input.verdict}, ${signalState}) RETURNING id`;
     if (!row) throw new MemoryError("DB_REJECTED", "feedback row was not stored");
     return { id: row.id, signalState };
   }) as Promise<FeedbackResult>;
+}
+
+export interface RetryReport { attempted: number; sent: number; failed: number }
+
+/**
+ * Re-sends gap signals whose first attempt failed. Each retry is a NEW row pointing at the failed one (retry_of). A failed row is
+ * retried at most once: a retry that fails again is final and is not retried. Requires consent; without it nothing is sent.
+ */
+export async function retryFailedSignals(sql: Sql, actor: Actor, projectId: string, optedIn: boolean, sink: SignalSink | undefined, limit = 100): Promise<RetryReport> {
+  await requireActor(sql, actor, READER_ROLES);
+  await requireProject(sql, actor.organizationId, projectId);
+  const report: RetryReport = { attempted: 0, sent: 0, failed: 0 };
+  if (!optedIn || !sink) return report;
+  const pending = await sql<{ id: string; memory_id: string; verdict: FeedbackVerdict; kind: string }[]>`
+    SELECT f.id, f.memory_id, f.verdict, m.kind FROM memory_feedback f JOIN memory_records m ON m.id = f.memory_id
+    WHERE f.organization_id = ${actor.organizationId} AND f.project_id = ${projectId} AND f.signal_state = 'failed' AND f.retry_of IS NULL
+      AND NOT EXISTS (SELECT 1 FROM memory_feedback r WHERE r.retry_of = f.id)
+    ORDER BY f.created_at, f.id LIMIT ${limit}`;
+  for (const f of pending) {
+    report.attempted++;
+    const state = await sql.begin(async (tx) => {
+      const st = await sendInSavepoint(tx, sink, actor.organizationId, projectId, f.memory_id, f.kind, f.verdict, true);
+      // The unique index on retry_of makes a concurrent second retry fail here, which also rolls back its signal.
+      await tx`INSERT INTO memory_feedback (organization_id, project_id, memory_id, actor_id, verdict, signal_state, retry_of)
+        VALUES (${actor.organizationId}, ${projectId}, ${f.memory_id}, ${actor.userId}, ${f.verdict}, ${st}, ${f.id})`;
+      return st;
+    });
+    if (state === "sent") report.sent++; else report.failed++;
+  }
+  return report;
 }
