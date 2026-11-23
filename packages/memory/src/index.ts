@@ -6,3 +6,5 @@ export * from "./retrieve";
 export * from "./context";
 export * from "./consolidate";
 export * from "./retention";
+export * from "./conflict-approval";
+export * from "./retention-sweep";

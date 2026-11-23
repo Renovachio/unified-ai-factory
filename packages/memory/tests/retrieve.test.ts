@@ -195,7 +195,8 @@ describe("query safety, limits and roles", () => {
   });
 
   test("limit bounds the number of hits", async () => {
-    for (let i = 0; i < 4; i++) await approvedIn(projA, `LAMBDA-6 bounded result number ${i}`);
+    const suffixes = ["zeta pi omega", "eta rho sigma", "theta tau chi", "iota kappa psi"]; // distinct words: no conflict between them (MEM-05)
+    for (const suffix of suffixes) await approvedIn(projA, `LAMBDA-6 bounded result ${suffix}`);
     const r = await searchMemories(db.sql, A(viewer), projA, { query: "LAMBDA-6", limit: 2 });
     expect(r.hits).toHaveLength(2);
   });

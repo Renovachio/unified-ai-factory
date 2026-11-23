@@ -70,10 +70,20 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+async function legacyApproved(projectId: string, claim: string) {
+  const id = (await proposeMemory(db.sql, A(author), { projectId, kind: "requirement", claim, sources: await srcFor(projectId) })).id;
+  await db.sql.begin(async (tx) => {
+    await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+      VALUES (${id}, 'proposed', 'approved', 1, ${approver}, 'legacy-fixture', ${"sha256:" + "6".repeat(64)})`;
+    await tx`UPDATE memory_records SET status = 'approved', approved_by = ${approver}, updated_at = now() WHERE id = ${id}`;
+  });
+  return { id };
+}
+
 describe("proposing a consolidation changes nothing about its originals", () => {
   test("originals stay approved and usable; the consolidated memory is proposed, linked and not yet retrievable", async () => {
     const a = await approvedIn(projA, "Consolidate alpha export requirement one");
-    const b = await approvedIn(projA, "Consolidate alpha export requirement two");
+    const b = await approvedIn(projA, "Retain beta billing mandate for invoices");
     const c = await proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, b.id], claim: "Consolidate alpha export requirements", sources: await srcFor(projA) });
     expect(c.status).toBe("proposed");
     expect((await statusOf(a.id)).status).toBe("approved");
@@ -224,8 +234,9 @@ describe("durability, injection-as-data, review candidates", () => {
   test("review candidates: exact duplicates and similar-but-different claims are reported by id only, and nothing changes", async () => {
     const dupA = await approvedIn(projB, "Review duplicate export is audited weekly");
     const dupB = await approvedIn(projB, "review  duplicate export is audited weekly");
-    const x = await approvedIn(projB, "Requirement review export must include the audit trail for every release");
-    const y = await approvedIn(projB, "Requirement review export must include the audit trail for every quarter");
+    // Legacy overlap: approval now refuses overlapping claims (MEM-05 conflict rule), so this pre-existing state is written directly.
+    const x = await legacyApproved(projB, "Requirement review export must include the audit trail for every release");
+    const y = await legacyApproved(projB, "Requirement review export must include the audit trail for every quarter");
     const before = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM memory_records WHERE project_id = ${projB} AND status = 'approved'`;
     const r = await findReviewCandidates(db.sql, A(viewer), projB);
     expect(r.duplicateGroups.some((g) => g.includes(dupA.id) && g.includes(dupB.id))).toBe(true);
@@ -244,9 +255,12 @@ describe("durability, injection-as-data, review candidates", () => {
 });
 
 describe("restoring originals after their consolidation ended", () => {
+  let consolidatedCount = 0;
   async function consolidated(prefix: string) {
-    const a = await approvedIn(projA, `${prefix} alpha requirement`);
-    const b = await approvedIn(projA, `${prefix} beta requirement`);
+    // Each original gets its own token so the pair does not overlap (MEM-05 conflict rule); the prefix is shared on purpose.
+    const k = ++consolidatedCount;
+    const a = await approvedIn(projA, `${prefix} record k${k}a`);
+    const b = await approvedIn(projA, `${prefix} ledger k${k}b`);
     const c = await proposeConsolidation(db.sql, A(author), projA, { originalIds: [a.id, b.id], claim: `${prefix} consolidated`, sources: await srcFor(projA) });
     await approveMemory(db.sql, A(approver), projA, c.id);
     return { a, b, c };

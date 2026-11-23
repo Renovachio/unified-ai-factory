@@ -26,13 +26,19 @@ export interface RetentionReport {
  */
 export async function eraseMemoryText(sql: Sql, store: PackTextStore, actor: Actor, projectId: string, memoryId: string, reason: string): Promise<{ memory: MemoryView; packTextsDeleted: number }> {
   const memory = await eraseMemory(sql, actor, projectId, memoryId, reason);
+  const packTextsDeleted = await purgePackTextFor(sql, store, actor.organizationId, projectId, memoryId);
+  return { memory, packTextsDeleted };
+}
+
+/** Deletes the stored text of every pack that selected the memory. Safe to repeat; returns how many blobs were actually removed. */
+export async function purgePackTextFor(sql: Sql, store: PackTextStore, organizationId: string, projectId: string, memoryId: string): Promise<number> {
   const packs = await sql<{ rendered_digest: string }[]>`
     SELECT rendered_digest FROM context_packs
-    WHERE organization_id = ${actor.organizationId} AND project_id = ${projectId}
+    WHERE organization_id = ${organizationId} AND project_id = ${projectId}
       AND manifest->'selected' @> jsonb_build_array(jsonb_build_object('memoryId', ${memoryId}::text))`;
   let deleted = 0;
   for (const p of packs) if (store.delete(p.rendered_digest)) deleted++;
-  return { memory, packTextsDeleted: deleted };
+  return deleted;
 }
 
 /** Applies the retention policy to one project. Requires a steward. Safe to run repeatedly. */

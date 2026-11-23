@@ -6,6 +6,7 @@ import {
   claimHash,
   isUsable,
   MEMORY_SENSITIVITIES,
+  normalizeClaim,
   MemoryError,
   PROPOSER_ROLES,
   READER_ROLES,
@@ -288,6 +289,43 @@ async function projectOf(q: Q, organizationId: string, memoryId: string): Promis
  * Human approval of one exact proposed memory. The approver must not be its author, the memory needs at least one source
  * and none may be revoked. If it revises an approved memory, the old version is superseded in the same transaction.
  */
+/** Approved memories that overlap a memory being approved (same kind, different claim, token similarity at least this). */
+export const CONFLICT_SIMILARITY = 0.5;
+/** Claims shorter than this (distinct words) are never conflicts: two short claims overlap by chance too easily. */
+export const CONFLICT_MIN_WORDS = 5;
+const CONFLICT_MAX_ROWS = 500;
+
+export interface ConflictCandidate { id: string; claim: string; similarity: number }
+
+/**
+ * Approved memories in the same project and kind whose wording overlaps the given memory. This is a textual signal only: it does
+ * not decide whether two claims contradict. A human decides. Consolidation originals and the memory a revision replaces are not
+ * conflicts (they are the same knowledge, handled by their own rules).
+ */
+export async function conflictsOf(q: Q, organizationId: string, projectId: string, memoryId: string): Promise<ConflictCandidate[]> {
+  const [me] = await q<Row[]>`SELECT kind, claim, normalized_claim_hash, supersedes_id FROM memory_records WHERE id = ${memoryId}`;
+  if (!me) return [];
+  const rows = await q<{ id: string; claim: string }[]>`SELECT id, claim FROM memory_records
+    WHERE organization_id = ${organizationId} AND project_id = ${projectId} AND kind = ${me.kind as string} AND status = 'approved'
+      AND id <> ${memoryId} AND normalized_claim_hash <> ${me.normalized_claim_hash as string}
+      AND id NOT IN (SELECT original_id FROM memory_consolidations WHERE consolidated_id = ${memoryId})
+      AND id IS DISTINCT FROM ${(me.supersedes_id as string | null) ?? null}
+    ORDER BY created_at, id LIMIT ${CONFLICT_MAX_ROWS}`;
+  const tokens = (claim: string) => new Set(normalizeClaim(claim).split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 0));
+  const mine = tokens(me.claim as string);
+  if (mine.size < CONFLICT_MIN_WORDS) return [];
+  const out: ConflictCandidate[] = [];
+  for (const r of rows) {
+    const theirs = tokens(r.claim);
+    if (theirs.size < CONFLICT_MIN_WORDS) continue;
+    const inter = [...mine].filter((t) => theirs.has(t)).length;
+    const union = new Set([...mine, ...theirs]).size;
+    const similarity = union === 0 ? 0 : inter / union;
+    if (similarity >= CONFLICT_SIMILARITY) out.push({ id: r.id, claim: r.claim, similarity: Math.round(similarity * 1000) / 1000 });
+  }
+  return out;
+}
+
 export async function approveMemory(sql: Sql, actor: Actor, projectId: string, memoryId: string): Promise<MemoryView> {
   try {
     return await sql.begin(async (tx) => {
@@ -304,6 +342,8 @@ export async function approveMemory(sql: Sql, actor: Actor, projectId: string, m
       const originals = await tx<Row[]>`SELECT o.id, o.status, o.record_version FROM memory_consolidations c
         JOIN memory_records o ON o.id = c.original_id WHERE c.consolidated_id = ${memoryId} FOR UPDATE OF o`;
       if (originals.some((o) => o.status !== "approved")) throw new MemoryError("WRONG_STATE", "an original of this consolidation is no longer approved; re-propose the consolidation");
+      const conflicts = await conflictsOf(tx, actor.organizationId, projectId, memoryId);
+      if (conflicts.length > 0) throw new MemoryError("CONFLICT_UNRESOLVED", `this memory overlaps approved memory ${conflicts.map((c) => c.id).join(", ")}; approve it with an explicit erasure decision`);
       await tx`UPDATE memory_records SET status = 'approved', approved_by = ${actor.userId}, updated_at = now() WHERE id = ${memoryId}`;
       await recordTransition(tx, view, from, "approved", actor, null, {});
       for (const o of originals) {

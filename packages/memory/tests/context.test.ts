@@ -85,7 +85,8 @@ beforeAll(async () => {
   projA = (await sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'github', 'pa', 'o', 'a') RETURNING id`)[0]!.id as string;
   projB = (await sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'github', 'pb', 'o', 'b') RETURNING id`)[0]!.id as string;
   projBOrgB = (await sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${orgB}, 'github', 'pob', 'o', 'b') RETURNING id`)[0]!.id as string;
-  for (let i = 0; i < 4; i++) await approvedIn(projA, `packtopic export decision number ${i} is recorded for the release team`);
+  // Distinct subjects: approval refuses overlapping claims (MEM-05 conflict rule).
+  for (const sentence of ["billing invoices are reconciled monthly", "onboarding checklist needs manager sign off", "telemetry retention is thirty days", "invoicing tax rules change yearly"]) await approvedIn(projA, `packtopic ${sentence}`);
 });
 afterAll(async () => {
   await db.drop();

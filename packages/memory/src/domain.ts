@@ -58,7 +58,8 @@ export type MemoryErrorCode =
   | "PACK_NOT_FOUND"
   | "PACK_INVALID"
   | "PACK_INTEGRITY"
-  | "INVALID_CONSOLIDATION";
+  | "INVALID_CONSOLIDATION"
+  | "CONFLICT_UNRESOLVED";
 
 export class MemoryError extends Error {
   constructor(readonly code: MemoryErrorCode, message: string) {

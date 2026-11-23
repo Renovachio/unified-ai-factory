@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { appendEvent, connect } from "../../db/src/index";
 import { createTestDb } from "../../db/src/testing";
@@ -42,7 +43,8 @@ async function seedArtifact(jobId: string, label: string): Promise<{ id: string;
   return { id: a!.id as string, digest };
 }
 const src = (id: string, digest: string): SourceRef => ({ kind: "artifact", id, digest, extractionMethod: "user_statement", aclDigest: ACL });
-const claim = (tag: string) => `Ship the export feature in Q1 (${tag}).`;
+// Distinct wording per tag: the conflict rule (MEM-05) flags claims that overlap by half or more.
+const claim = (tag: string) => `Note ${createHash("sha256").update(tag + "a").digest("hex").slice(0, 16)} records ${createHash("sha256").update(tag + "b").digest("hex").slice(0, 16)} for ${tag}`;
 
 const expectCode = async (p: Promise<unknown>, code: MemoryErrorCode) => {
   let err: unknown;

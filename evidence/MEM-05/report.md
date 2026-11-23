@@ -186,3 +186,39 @@ Not built (stated):
 - Conflict-driven erasure of approved memory (see first bullet).
 
 Results: full suite 1489 pass, 0 fail (7 new retention tests). Typecheck, lint, gates, package validation and license pass.
+
+## Addendum 11: scheduler and conflict-driven erasure
+
+Operator decisions implemented:
+- Approved memory expires only when a new approval conflicts with it AND the approver accepts erasing it.
+
+Conflict detection (packages/memory/src/lifecycle.ts: conflictsOf):
+- Approved memories in the same project and kind, with a different normalized claim, whose word overlap (Jaccard) is at least 0.5 (the same threshold the review tooling uses).
+- Claims with fewer than 5 distinct words are never conflicts (short claims overlap by chance too easily; this is a judgment call, stated here).
+- Consolidation originals and the memory a revision replaces are excluded: they are the same knowledge.
+- This is a textual signal only. It does not decide whether two claims contradict; a human decides.
+
+Approval (packages/memory/src/conflict-approval.ts):
+- approveMemory refuses any memory that overlaps approved memory (CONFLICT_UNRESOLVED), so the rule cannot be bypassed by the plain path.
+- approveWithErasure(…, acceptErasureOf): the approver must name EXACTLY the overlapping memories. Each is erased (content, index, pack text) and the new memory is approved, in one transaction. Pack text is removed after commit; the sweep repairs any blob left behind.
+- The acceptance is the approver's, recorded in each erasure reason. The author of the erased memory is not asked (decision to confirm).
+
+Scheduler (packages/memory/src/retention-sweep.ts and scripts/memory-retention.ts):
+- runRetentionSweep: runs the retention policy for every project of the named steward's organization, repairs pack text left by failed deletions, and writes one audit row (action memory.retention) attributed to the steward.
+- The steward must be an enabled steward (approver, admin or security_officer); otherwise FORBIDDEN.
+- Operator entry point: DATABASE_URL, DISPATCH_ARTIFACT_ROOT (the same root as the pack text store), DISPATCH_RETENTION_STEWARD_ID. One run by default; --every-hours N repeats in the foreground.
+- Example cron (daily at 03:00):
+  0 3 * * * cd /path/to/unified-ai-factory-v2 && DATABASE_URL=... DISPATCH_ARTIFACT_ROOT=... DISPATCH_RETENTION_STEWARD_ID=... /path/to/bun scripts/memory-retention.ts >> /var/log/dispatch-retention.log 2>&1
+
+Tests:
+- 8 tests for approval conflicts and erasure decisions (refusal, exact-set requirement, unrelated memory kept, erasure with pack text removal, revision not a conflict, no-overlap approval).
+- 2 tests for the sweep (steward required; per-project report, audit row, repair of a failed blob deletion).
+- Existing memory tests whose fixtures overlapped were given distinct wording (lifecycle claim helper; retrieval and context pack claims; consolidation pairs), and one legacy-overlap review test writes its overlapping pair as legacy state. Overlap between approved memories can no longer arise through approval; the review tooling still reports it for memories that predate the rule.
+
+Not verified or not done:
+- The sweep and erasure are tested with the superuser connection, not as factory_control. Memory writes were granted to factory_control (migrations 0017, 0019, 0021, 0023); that was checked by reading the grants, not by a role-scoped run.
+- Concurrent approvals of overlapping memories can race (the conflict check reads approved rows without a lock on them).
+- The CLI is not run in an automated environment here; the cron line is documented, not installed.
+- Backup expiry remains an operator runbook item.
+
+Results: full suite 1497 pass, 0 fail (92 files). Typecheck, lint, gates, package validation, license and the script typecheck pass.
