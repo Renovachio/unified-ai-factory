@@ -6,9 +6,9 @@ import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { appendEvent } from "@factory/db";
 import {
-  approveMemory, approveWithErasure, buildContextPack, conflictsOf, getMemory, ingestSource, listMemories, MemoryError, rejectMemory, requireProject, ROLE_INPUT_CAPS,
+  approveMemory, approveWithErasure, eraseMemoryText, proposeRevision, buildContextPack, conflictsOf, getMemory, ingestSource, listMemories, MemoryError, rejectMemory, requireProject, ROLE_INPUT_CAPS,
   setTelemetryConsent, telemetryOptedIn,
-  type Actor as MemoryActor, type MemoryView,
+  type Actor as MemoryActor, type SourceRef, type MemoryView,
 } from "@factory/memory";
 import { FileArtifactStore, feedbackWithSignals } from "@factory/orchestrator";
 import { require_, type Actor } from "./auth";
@@ -56,6 +56,13 @@ function asProblem(e: unknown): unknown {
 async function guarded<T>(f: () => Promise<T>): Promise<T> { try { return await f(); } catch (e) { throw asProblem(e); } }
 
 const brief = (m: MemoryView) => ({ id: m.id, kind: m.kind, status: m.status, claim: m.claim, usable: m.usable, createdBy: m.createdBy, approvedBy: m.approvedBy, createdAt: m.createdAt, sources: m.sources.length, revokedSources: m.sources.filter((s) => s.revoked).length, supersededBy: m.supersededBy, validTo: m.validTo });
+
+/** The dispatch agent identity proposes on a human's behalf, so the human can approve (the author may not approve their own memory). */
+async function proposerActor(sql: Parameters<Handler>[0]["sql"], actor: Actor): Promise<MemoryActor> {
+  const [ag] = await sql`SELECT id FROM users WHERE organization_id = ${actor.orgId} AND auth_subject = ${LOCAL_AGENT_SUBJECT} AND disabled_at IS NULL`;
+  if (!ag) throw new MemoryError("FORBIDDEN", "the dispatch agent identity is not set up; start Dispatch once with its agent token");
+  return { organizationId: actor.orgId, userId: ag.id as string };
+}
 
 export const memoryRoutes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   // Read: the approved, usable memory relevant to a task, as one framed text block, plus the ids it came from.
@@ -121,9 +128,7 @@ export const memoryRoutes: Array<{ method: string; pattern: RegExp; handler: Han
       const ev = await appendEvent(sql, { jobId, type: "human.note", source: "api", actorId: actor.userId, payload: { text: note } });
       // The extractor proposes; the human who wrote the note consents and later approves. The dispatch agent identity is the proposer so the
       // memory package's "author cannot approve their own memory" rule still holds for a single user.
-      const [ag] = await sql`SELECT id FROM users WHERE organization_id = ${actor.orgId} AND auth_subject = ${LOCAL_AGENT_SUBJECT} AND disabled_at IS NULL`;
-      if (!ag) throw new MemoryError("FORBIDDEN", "the dispatch agent identity is not set up; start Dispatch once with its agent token");
-      const r = await ingestSource(sql, { organizationId: actor.orgId, userId: ag.id as string }, { projectId, source: { kind: "event", id: ev.id }, consent: { purpose: "project_memory", grantedBy: actor.userId } });
+      const r = await ingestSource(sql, await proposerActor(sql, actor), { projectId, source: { kind: "event", id: ev.id }, consent: { purpose: "project_memory", grantedBy: actor.userId } });
       return { status: 201, body: { proposed: r.stats.proposed, candidates: r.stats.candidates, droppedSecret: r.stats.droppedSecret, droppedInjection: r.stats.droppedInjection, memoryIds: r.links.map((l) => l.memoryId) } };
     });
   } },
@@ -167,6 +172,39 @@ export const memoryRoutes: Array<{ method: string; pattern: RegExp; handler: Han
     return guarded(async () => {
       await setTelemetryConsent(sql, memActor(actor), projectId, b.optedIn as boolean, text(b, "reason", 500));
       return { status: 200, body: { optedIn: b.optedIn } };
+    });
+  } },
+  // Human: everything recorded for a project (all statuses, claims, sources), for the person's own copy. Erased memory has no text to export.
+  { method: "GET", pattern: /^\/dispatch\/memory\/export$/, handler: async ({ req, sql, actor }) => {
+    localOnly(); require_(actor, "job:decide");
+    const projectId = uuid(new URL(req.url).searchParams.get("projectId"), "projectId");
+    return guarded(async () => {
+      const all = await listMemories(sql, memActor(actor), projectId);
+      return { status: 200, body: { exportedAt: new Date().toISOString(), projectId, items: all.map((m) => ({ ...brief(m), supersedesId: m.supersedesId, sensitivity: m.sensitivity, recordVersion: m.recordVersion, sources: m.sources.map((x) => ({ kind: x.sourceKind, id: x.sourceId, digest: x.digest, revoked: x.revoked })) })) } };
+    });
+  } },
+  // Human: erase a proposed, rejected or superseded memory and the stored text of packs that used it. Approved memory is refused (WRONG_STATE):
+  // it leaves only through approval of its replacement.
+  { method: "POST", pattern: /^\/dispatch\/memory\/[^/]+\/erase$/, handler: async ({ req, sql, actor, mutating, key, maxBody }) => {
+    localOnly(); mutating(); key(); require_(actor, "job:decide");
+    const memoryId = uuid(seg(req)[4], "memory id");
+    const b = await obj(req, maxBody);
+    const projectId = uuid(b.projectId, "projectId");
+    return guarded(async () => {
+      const r = await eraseMemoryText(sql, packStore(), memActor(actor), projectId, memoryId, text(b, "reason", 500));
+      return { status: 200, body: { memory: brief(r.memory), packTextsDeleted: r.packTextsDeleted } };
+    });
+  } },
+  // Human: correct an approved memory. A replacement is PROPOSED with the same sources (by the agent identity); approving it supersedes the old one.
+  { method: "POST", pattern: /^\/dispatch\/memory\/[^/]+\/revise$/, handler: async ({ req, sql, actor, mutating, key, maxBody }) => {
+    localOnly(); mutating(); key(); require_(actor, "job:decide");
+    const memoryId = uuid(seg(req)[4], "memory id");
+    const b = await obj(req, maxBody);
+    const projectId = uuid(b.projectId, "projectId"), claim = text(b, "claim", 4000);
+    return guarded(async () => {
+      const old = await getMemory(sql, memActor(actor), projectId, memoryId);
+      const m = await proposeRevision(sql, await proposerActor(sql, actor), memoryId, { claim, sources: old.sources.map((x) => ({ kind: x.sourceKind, id: x.sourceId, digest: x.digest, extractionMethod: x.extractionMethod as SourceRef["extractionMethod"], aclDigest: x.aclDigest })) });
+      return { status: 201, body: { memory: brief(m) } };
     });
   } },
 ];

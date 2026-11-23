@@ -37,7 +37,7 @@ Isolated local stack (temporary Postgres, API in local mode, `next start`), ente
 Not checked: screen reader or keyboard-only use, light colour scheme, narrow viewport (no automated accessibility tool in the repo).
 
 ## Not built (spec items still open)
-- Correct (revise), suppress, delete and export controls: no API routes (the package has `proposeRevision`, `eraseMemory`, `eraseMemoryText`, `revokeSource`).
+- Correct, delete and export now exist as API routes and `dispatch memory revise|erase|export` (follow-up commit, tested in `apps/api/tests/memory.test.ts`); they are NOT in the browser page yet. Suppress (source revocation) has no route. Erasing an APPROVED memory directly is refused by design (steward path is an open decision).
 - Retention and deletion propagation end-to-end test; the retention sweep is still not scheduled.
 - Restart test of the browser flow.
 - Multi-user (OIDC) mode: memory routes are local-mode only.

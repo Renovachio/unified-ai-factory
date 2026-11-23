@@ -112,4 +112,30 @@ describe("review support for the browser (MEM-07)", () => {
     const missing = "00000000-0000-4000-8000-000000000000";
     expect((await call(`/memory/consent?projectId=${missing}`)).status).toBe(404);
   });
+
+  test("export, erase and revise are human-only; approved memory cannot be erased directly; a revision supersedes after approval", async () => {
+    const p = await project();
+    const r = await call("/memory/note", { method: "POST", body: { ...p, text: NOTE } });
+    const id = r.body.memoryIds[0];
+    for (const [path, method, body] of [[`/memory/export?projectId=${p.projectId}`, "GET", undefined], [`/memory/${id}/erase`, "POST", { projectId: p.projectId, reason: "x" }], [`/memory/${id}/revise`, "POST", { projectId: p.projectId, claim: "We decided that exports use UTC timestamps for every customer record always." }]] as const) {
+      expect((await call(path, { token: AGENT, method, ...(body ? { body } : {}) })).status).toBe(403);
+    }
+    expect((await call(`/memory/${id}/revise`, { method: "POST", body: { projectId: p.projectId, claim: "We decided that exports use UTC timestamps for every customer record always." } })).status).toBe(409); // only approved memory can be revised
+    expect((await call(`/memory/${id}/decision`, { method: "POST", body: { projectId: p.projectId, decision: "approve" } })).status).toBe(200);
+    expect((await call(`/memory/${id}/erase`, { method: "POST", body: { projectId: p.projectId, reason: "mistake" } })).status).toBe(409); // approved: refused
+    const rev = await call(`/memory/${id}/revise`, { method: "POST", body: { projectId: p.projectId, claim: "We decided that invoice exports use UTC timestamps, never local time, for all customers." } });
+    expect(rev.status).toBe(201); expect(rev.body.memory.status).toBe("proposed");
+    const nid = rev.body.memory.id;
+    expect((await call(`/memory/${nid}/decision`, { method: "POST", body: { projectId: p.projectId, decision: "approve" } })).status).toBe(200);
+    const exp = await call(`/memory/export?projectId=${p.projectId}`);
+    expect(exp.status).toBe(200);
+    expect(exp.body.items.find((m: any) => m.id === id).status).toBe("superseded");
+    expect(exp.body.items.find((m: any) => m.id === nid).status).toBe("approved");
+    // a rejected memory can be erased, and its text is gone from the export
+    const r2 = await call("/memory/note", { method: "POST", body: { ...p, text: "We decided that every deploy window avoids Friday afternoons for the payments team always." } });
+    const id2 = r2.body.memoryIds[0];
+    await call(`/memory/${id2}/decision`, { method: "POST", body: { projectId: p.projectId, decision: "reject", reason: "no" } });
+    expect((await call(`/memory/${id2}/erase`, { method: "POST", body: { projectId: p.projectId, reason: "user request" } })).status).toBe(200);
+    expect(JSON.stringify((await call(`/memory/export?projectId=${p.projectId}`)).body)).not.toContain("Friday afternoons");
+  });
 });

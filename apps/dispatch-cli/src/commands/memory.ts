@@ -10,6 +10,9 @@ export const MEMORY_HELP = `Usage (run inside the project folder):
   dispatch memory note <text...>             record something Claude should remember (becomes PROPOSED, never active until you approve)
   dispatch memory approve <id>               approve a proposed memory (first characters of the id are enough)
   dispatch memory reject <id> [reason...]    reject a proposed memory
+  dispatch memory revise <id> <new text...>  correct an APPROVED memory: proposes a replacement (same sources); approve it to replace the old one
+  dispatch memory erase <id> [reason...]     erase a proposed, rejected or superseded memory (approved memory leaves only by approving its replacement)
+  dispatch memory export                     print everything recorded for this project as JSON
   dispatch memory consent on|off             allow/stop anonymous "memory was missing" signals for this project (default: off)`;
 
 interface Item { id: string; kind: string; status: string; claim: string; usable: boolean }
@@ -48,6 +51,20 @@ export async function cmdMemory(args: string[], cwd = process.cwd(), out: (s: st
       out(`${sub === "approve" ? "Approving" : "Rejecting"}: ${safe(m.claim)}`);
       await post(`${base}/${m.id}/decision`, { decision: sub, ...(sub === "reject" ? { reason: rest.slice(1).join(" ") || "rejected by reviewer" } : {}) });
       out(sub === "approve" ? "Approved. Claude will now be shown it when it is relevant." : "Rejected.");
+      return 0;
+    }
+    if (sub === "export") { out(JSON.stringify(await client.get(`${base}/export?projectId=${pid}`), null, 2)); return 0; }
+    if (sub === "revise") {
+      const m = await byPrefix(rest[0]); if (typeof m === "string") { err(`${sym.fail()} ${m}`); return 1; }
+      const claim = rest.slice(1).join(" ").trim(); if (!claim) { err(`${sym.fail()} write the corrected text after the id.`); return 2; }
+      const r = await post(`${base}/${m.id}/revise`, { claim }) as { memory?: { id: string } };
+      out(`Proposed a replacement (${(r.memory?.id ?? "").slice(0, 8)}). Nothing changes until you run \`dispatch memory approve ${(r.memory?.id ?? "").slice(0, 8)}\`.`);
+      return 0;
+    }
+    if (sub === "erase") {
+      const m = await byPrefix(rest[0]); if (typeof m === "string") { err(`${sym.fail()} ${m}`); return 1; }
+      await post(`${base}/${m.id}/erase`, { reason: rest.slice(1).join(" ") || "erased by the owner" });
+      out("Erased (its text is removed, and so is the stored text of any context pack that used it).");
       return 0;
     }
     if (sub === "consent") {
