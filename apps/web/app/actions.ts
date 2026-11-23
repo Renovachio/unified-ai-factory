@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { api } from "../lib/api";
 import { routeCommand } from "../lib/command-route";
+import { isId, memoryPage, parseConsent, parseDecision, parseNote } from "../lib/memory-form";
 
 /** Approve / reject / request rework for the EXACT candidate the approver was looking at (SHA, base, policy digest are part of the form). */
 export async function decide(form: FormData): Promise<void> {
@@ -58,4 +59,46 @@ export async function decideCapability(form: FormData): Promise<void> {
   if (!session.ok || !["approved", "rejected"].includes(decision)) redirect(`/approvals?error=${encodeURIComponent(session.ok ? "Invalid decision." : session.error.title)}`);
   const r = await api(`/v2/approvals/${encodeURIComponent(id)}/decision`, { method: "POST", csrf: session.data.csrf ?? undefined, idempotencyKey: randomUUID(), body: { decision, digest: String(form.get("digest")), permissionDigest: String(form.get("permissionDigest")), note: String(form.get("note") ?? "").slice(0, 500) || undefined } });
   redirect(`/approvals${r.ok ? "" : `?error=${encodeURIComponent(r.error.detail ?? r.error.title)}`}`);
+}
+
+// ---- MEM-07: project memory. Every call goes through the viewer's own session (owner in local mode) with CSRF and an idempotency key.
+// There is deliberately no token field and no "approve as agent" path: the API decides who may approve (job:decide), and the agent identity
+// can never obtain a browser session (browser entry codes are minted for the local owner token only).
+
+/** Record a note; the API turns it into PROPOSED memory (never active until approved). */
+export async function memoryNote(form: FormData): Promise<void> {
+  const p = parseNote(form);
+  const pid = String(form.get("projectId") ?? "");
+  if (!p.ok) redirect(isId(pid) ? memoryPage(pid, { error: p.error }) : "/projects");
+  const session = await api<{ csrf: string | null }>("/session");
+  if (!session.ok) redirect(memoryPage(p.value.projectId, { error: session.error.title }));
+  const r = await api<{ proposed: number; droppedSecret: number; droppedInjection: number }>("/v2/dispatch/memory/note", { method: "POST", csrf: session.data.csrf ?? undefined, idempotencyKey: randomUUID(), body: p.value });
+  if (!r.ok) redirect(memoryPage(p.value.projectId, { error: r.error.detail ?? r.error.title }));
+  const d = r.data; const dropped = Number(d.droppedSecret) + Number(d.droppedInjection);
+  redirect(memoryPage(p.value.projectId, { notice: `${Number(d.proposed)} memory item(s) proposed from your note${dropped ? `; ${dropped} sentence(s) dropped because they looked like a secret or an instruction` : ""}. Review them below.` }));
+}
+
+/** Approve or reject one proposed memory, naming the overlapping approved memories to erase when approval conflicts. */
+export async function memoryDecide(form: FormData): Promise<void> {
+  const p = parseDecision(form);
+  const pid = String(form.get("projectId") ?? "");
+  if (!p.ok) redirect(isId(pid) ? memoryPage(pid, { error: p.error }) : "/projects");
+  const { projectId, memoryId, ...body } = p.value;
+  const session = await api<{ csrf: string | null }>("/session");
+  if (!session.ok) redirect(memoryPage(projectId, { error: session.error.title }));
+  const r = await api<{ erased?: string[] }>(`/v2/dispatch/memory/${encodeURIComponent(memoryId)}/decision`, { method: "POST", csrf: session.data.csrf ?? undefined, idempotencyKey: randomUUID(), body: { projectId, ...body } });
+  if (!r.ok) redirect(memoryPage(projectId, { error: r.error.detail ?? r.error.title }));
+  const erased = r.data.erased?.length ?? 0;
+  redirect(memoryPage(projectId, { notice: body.decision === "reject" ? "Rejected. It will not be shown to Claude." : `Approved. Claude will be shown it when it is relevant.${erased ? ` ${erased} overlapping memory item(s) erased.` : ""}` }));
+}
+
+/** Turn anonymous "memory was missing" signals on or off for the project (approver/admin only, enforced by the API and the database). */
+export async function memoryConsent(form: FormData): Promise<void> {
+  const p = parseConsent(form);
+  const pid = String(form.get("projectId") ?? "");
+  if (!p.ok) redirect(isId(pid) ? memoryPage(pid, { error: p.error }) : "/projects");
+  const session = await api<{ csrf: string | null }>("/session");
+  if (!session.ok) redirect(memoryPage(p.value.projectId, { error: session.error.title }));
+  const r = await api("/v2/dispatch/memory/consent", { method: "POST", csrf: session.data.csrf ?? undefined, idempotencyKey: randomUUID(), body: p.value });
+  redirect(memoryPage(p.value.projectId, r.ok ? { notice: `Signals are now ${p.value.optedIn ? "on" : "off"} for this project.` } : { error: r.error.detail ?? r.error.title }));
 }
