@@ -218,6 +218,7 @@
       "name": "@factory/orchestrator",
       "version": "0.0.0",
       "dependencies": {
+        "@factory/capabilities": "workspace:*",
         "@factory/db": "workspace:*",
         "@factory/domain": "workspace:*",
         "@factory/memory": "workspace:*",

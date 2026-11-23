@@ -48,3 +48,11 @@ Not verified: revoked sources (feedback does not read sources), durable restart 
 
 - A sink supplied with `optedIn: true` while the user has not consented would send signals. The module trusts the caller's consent flag; the wiring must derive it from the project's setting.
 - Signal volume is not rate-limited here; recordSignal dedupes exact repeats only.
+
+## Addendum: wiring and role-scoped signal write
+
+- **Wiring (library level).** `packages/orchestrator/src/memory-feedback.ts`: `sai11SignalSink` sends each gap signal through SAI-11's existing capability intake (`recordSignal`), which enforces opt-in, anonymisation, intent normalisation and digest-only evidence. `feedbackWithSignals` is the composed entry point. The orchestrator gained a workspace dependency on `@factory/capabilities` (bun.lock: one line).
+- **Role-scoped signal write.** Tested as `factory_control` (the production control role): a wrong verdict with consent writes one `improvement_signals` row (kind `low_quality`, digest-only evidence, claim text absent). Without consent nothing is written. An intent the intake rejects (no usable content) is recorded as `failed` and does not fail the request.
+- **Not wired:** no HTTP route, UI or app calls `feedbackWithSignals`, because none exists for memory. No project-level consent setting exists; the caller supplies `optedIn`. Both are product decisions still open.
+- **Pilot:** still not run. No authorized pilot project exists (see MEM-08).
+- Tests: `packages/orchestrator/tests/memory-feedback.test.ts`, 3 tests. Full suite 1512 pass, 0 fail.

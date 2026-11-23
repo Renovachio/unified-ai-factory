@@ -17,6 +17,7 @@
     "@factory/telemetry": "workspace:*",
     "@factory/sandboxes": "workspace:*",
     "@factory/scm": "workspace:*",
-    "@factory/memory": "workspace:*"
+    "@factory/memory": "workspace:*",
+    "@factory/capabilities": "workspace:*"
   }
 }
