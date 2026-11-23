@@ -122,3 +122,18 @@ Not fixed:
 - The unique index against concurrent retries is covered by the race test; removing the index was reasoned to fail that test but was not run as a mutation.
 
 Results: full suite 1527 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+## Addendum 6: second independent review of 89081c9, and fixes
+
+Reviewer verdict: not safe to merge as is. Fixed and verified:
+- **Retry consent-off path untested.** The old test never produced a failed row, so removing the loop's consent check passed everything. The test now records a failed row, turns consent off, and requires the retry to stop with `stoppedOnConsent: true` and send nothing. Mutation check (removing the check) now fails that test.
+- **Consent change blocked by ordinary writes.** The row lock on the project conflicted with foreign-key inserts, so a change could fail with no send in progress, and the message blamed a send. Consent now uses a transaction advisory lock: a send takes the shared lock, a change tries the exclusive lock without waiting. A test shows a consent change succeeds while a foreign-key-style lock on the project is held.
+- **Guard refusal surfaced as a raw error.** It now maps to `FORBIDDEN`.
+- **Guard branches untested.** Tests now cover a granter from another organization, a disabled approver, a project outside the organization, and a valid insert as the control role (which exercises the sequence grant).
+
+Not fixed, and not fixable in the database as designed:
+- **Who is connected.** The guard checks the recorded granter, not the connected person. Any control-role connection can name an approver's id. Closing this needs the application to pass the authenticated identity into the database session and the guard to check it. That is an application change still to decide.
+- **Timing gap.** The guard reads the granter without a lock, so a demotion committing during the insert can still be missed. A row lock on users needs UPDATE privilege, which the control role must not have. The remedy is a consent-off row after a demotion. A migration that tried the lock was dropped before commit because it failed under the control role.
+- **Skip path.** The 23505 skip after a concurrent retry is still not asserted deterministically; the race test allows zero skips. Removing the unique index does fail the race test (reviewer mutation).
+
+Results: full suite 1529 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.

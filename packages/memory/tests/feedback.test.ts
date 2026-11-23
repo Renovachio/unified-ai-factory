@@ -179,7 +179,7 @@ describe("retry of failed gap signals (MEM-06)", () => {
     const first = await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "wrong" }, dbDown);
     expect(first.signalState).toBe("failed");
     const rep = await retryFailedSignals(db.sql, A(viewer), p, up);
-    expect(rep).toEqual({ attempted: 1, sent: 1, failed: 0, skipped: 0 });
+    expect(rep).toEqual({ attempted: 1, sent: 1, failed: 0, skipped: 0, stoppedOnConsent: false });
     const rows = await db.sql<{ id: string; signal_state: string; retry_of: string | null }[]>`SELECT id, signal_state, retry_of FROM memory_feedback WHERE memory_id = ${m} ORDER BY created_at, id`;
     expect(rows.map((r) => r.signal_state)).toEqual(["failed", "sent"]);
     expect(rows[1]!.retry_of).toBe(first.id);
@@ -190,17 +190,23 @@ describe("retry of failed gap signals (MEM-06)", () => {
     await setTelemetryConsent(db.sql, A(approver), p, true, "test consent");
     const m = await approved(p, "Contractor access ends on the last working day");
     await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "missing" }, dbDown);
-    expect(await retryFailedSignals(db.sql, A(viewer), p, dbDown)).toEqual({ attempted: 1, sent: 0, failed: 1, skipped: 0 });
-    expect(await retryFailedSignals(db.sql, A(viewer), p, up)).toEqual({ attempted: 0, sent: 0, failed: 0, skipped: 0 });
+    expect(await retryFailedSignals(db.sql, A(viewer), p, dbDown)).toEqual({ attempted: 1, sent: 0, failed: 1, skipped: 0, stoppedOnConsent: false });
+    expect(await retryFailedSignals(db.sql, A(viewer), p, up)).toEqual({ attempted: 0, sent: 0, failed: 0, skipped: 0, stoppedOnConsent: false });
   });
 
-  test("without consent a retry sends nothing", async () => {
+  test("a retry stops when consent is off, and sends nothing for the rows it reaches", async () => {
     const p = await project("fb-retry-noconsent");
     const m = await approved(p, "Payroll runs on the fifteenth");
-    await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "stale" }, dbDown);
+    await setTelemetryConsent(db.sql, A(approver), p, true, "on for failure");
+    const f = await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "stale" }, dbDown);
+    expect(f.signalState).toBe("failed");
+    await setTelemetryConsent(db.sql, A(approver), p, false, "off before retry");
     let sent = 0;
-    expect(await retryFailedSignals(db.sql, A(viewer), p, async () => { sent++; })).toEqual({ attempted: 0, sent: 0, failed: 0, skipped: 0 });
+    const rep = await retryFailedSignals(db.sql, A(viewer), p, async () => { sent++; });
+    expect(rep).toEqual({ attempted: 0, sent: 0, failed: 0, skipped: 0, stoppedOnConsent: true });
     expect(sent).toBe(0);
+    const rows = await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM memory_feedback WHERE memory_id = ${m} AND retry_of IS NOT NULL`;
+    expect(rows[0]!.n).toBe(0);
   });
 
   test("a retry from another project's user never touches this project's rows", async () => {
@@ -209,7 +215,7 @@ describe("retry of failed gap signals (MEM-06)", () => {
     const m = await approved(p, "Expense claims need receipts above fifty dollars");
     await recordRetrievalFeedback(db.sql, A(viewer), p, { memoryId: m, verdict: "wrong" }, dbDown);
     const elsewhere = await project("fb-retry-elsewhere");
-    expect(await retryFailedSignals(db.sql, A(viewer), elsewhere, up)).toEqual({ attempted: 0, sent: 0, failed: 0, skipped: 0 });
+    expect(await retryFailedSignals(db.sql, A(viewer), elsewhere, up)).toEqual({ attempted: 0, sent: 0, failed: 0, skipped: 0, stoppedOnConsent: false });
     await expectCode(retryFailedSignals(db.sql, A(outsider, other), p, up), "NOT_FOUND");
   });
 
@@ -283,5 +289,41 @@ describe("retry of failed gap signals (MEM-06)", () => {
     const mb = await approved(pb, "Credit reviews are logged in the ledger");
     await expect(db.sql`INSERT INTO memory_feedback (organization_id, project_id, memory_id, actor_id, verdict, signal_state, retry_of)
       VALUES (${org}, ${pb}, ${mb}, ${viewer}, 'wrong', 'sent', ${f.id})`).rejects.toThrow(/foreign key|memory_feedback_retry_same_scope/);
+  });
+
+  test("a consent change is not blocked by ordinary project writes (foreign-key inserts hold other locks)", async () => {
+    const p = await project("fb-consent-ordinary");
+    await db.sql.begin(async (tx) => {
+      await tx`SELECT id FROM repositories WHERE id = ${p} FOR KEY SHARE`;
+      await setTelemetryConsent(db.sql, A(approver), p, true, "while a write is open");
+    });
+    expect(await telemetryOptedIn(db.sql, org, p)).toBe(true);
+  });
+
+  test("the guard refuses a granter from another organization, a disabled approver, and a project outside the organization", async () => {
+    const p = await project("fb-guard-branches");
+    const cu = new URL(db.url); cu.username = "factory_control";
+    await db.sql.unsafe("ALTER ROLE factory_control LOGIN");
+    const { connect } = await import("../../db/src/client");
+    const control = connect(cu.toString());
+    const otherOrg = (await db.sql`INSERT INTO organizations (name) VALUES ('G2') RETURNING id`)[0]!.id as string;
+    const otherApprover = (await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${otherOrg}, 'x-appr', 'approver') RETURNING id`)[0]!.id as string;
+    const disabledApprover = (await db.sql`INSERT INTO users (organization_id, auth_subject, role, disabled_at) VALUES (${org}, 'dis-appr', 'approver', now()) RETURNING id`)[0]!.id as string;
+    const foreignProject = (await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${otherOrg}, 'github', 'gx', 'o', 'x') RETURNING id`)[0]!.id as string;
+    try {
+      await expect(control`INSERT INTO memory_telemetry_consent (organization_id, project_id, opted_in, granted_by, reason)
+        VALUES (${org}, ${p}, true, ${otherApprover}, 'cross org')`).rejects.toThrow(/approver or admin/);
+      await expect(control`INSERT INTO memory_telemetry_consent (organization_id, project_id, opted_in, granted_by, reason)
+        VALUES (${org}, ${p}, true, ${disabledApprover}, 'disabled')`).rejects.toThrow(/approver or admin/);
+      await expect(control`INSERT INTO memory_telemetry_consent (organization_id, project_id, opted_in, granted_by, reason)
+        VALUES (${org}, ${foreignProject}, true, ${approver}, 'foreign project')`).rejects.toThrow(/does not belong|approver or admin/);
+      // The positive path: a real approver of the organization may insert as the control role (sequence grant, 0034).
+      await control`INSERT INTO memory_telemetry_consent (organization_id, project_id, opted_in, granted_by, reason)
+        VALUES (${org}, ${p}, true, ${approver}, 'control role positive path')`;
+      expect(await telemetryOptedIn(db.sql, org, p)).toBe(true);
+    } finally {
+      await control.end();
+      await db.sql.unsafe("ALTER ROLE factory_control NOLOGIN");
+    }
   });
 });

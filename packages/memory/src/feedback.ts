@@ -67,7 +67,8 @@ export async function recordRetrievalFeedback(sql: Sql, actor: Actor, projectId:
   }) as Promise<FeedbackResult>;
 }
 
-export interface RetryReport { attempted: number; sent: number; failed: number; skipped: number }
+/** stoppedOnConsent is true when the batch ended early because consent was off when a row was reached. */
+export interface RetryReport { attempted: number; sent: number; failed: number; skipped: number; stoppedOnConsent: boolean }
 
 /**
  * Re-sends gap signals whose first attempt failed. Each retry is a NEW row pointing at the failed one (retry_of). A failed row is
@@ -78,7 +79,7 @@ export interface RetryReport { attempted: number; sent: number; failed: number; 
 export async function retryFailedSignals(sql: Sql, actor: Actor, projectId: string, sink: SignalSink | undefined, limit = 100): Promise<RetryReport> {
   await requireActor(sql, actor, READER_ROLES);
   await requireProject(sql, actor.organizationId, projectId);
-  const report: RetryReport = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
+  const report: RetryReport = { attempted: 0, sent: 0, failed: 0, skipped: 0, stoppedOnConsent: false };
   if (!sink) return report;
   const pending = await sql<{ id: string; memory_id: string; verdict: FeedbackVerdict; kind: string }[]>`
     SELECT f.id, f.memory_id, f.verdict, m.kind FROM memory_feedback f JOIN memory_records m ON m.id = f.memory_id
@@ -96,7 +97,7 @@ export async function retryFailedSignals(sql: Sql, actor: Actor, projectId: stri
           VALUES (${actor.organizationId}, ${projectId}, ${f.memory_id}, ${actor.userId}, ${f.verdict}, ${st}, ${f.id})`;
         return st;
       });
-      if (state === "stop") { report.attempted--; break; }
+      if (state === "stop") { report.attempted--; report.stoppedOnConsent = true; break; }
       if (state === "sent") report.sent++; else report.failed++;
     } catch (e) {
       if ((e as { code?: string }).code === "23505") { report.skipped++; continue; }
