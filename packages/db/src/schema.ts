@@ -643,6 +643,17 @@ export const memoryTombstones = pgTable("memory_tombstones", {
   createdAt: created(),
 });
 
+export const memoryFeedback = pgTable("memory_feedback", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  memoryId: uuid("memory_id").notNull().references(() => memoryRecords.id),
+  actorId: uuid("actor_id").notNull().references(() => users.id),
+  verdict: text("verdict").notNull(),
+  signalState: text("signal_state").notNull(),
+  createdAt: created(),
+});
+
 export const memorySourceRevocations = pgTable("memory_source_revocations", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   projectId: uuid("project_id").notNull().references(() => repositories.id),
