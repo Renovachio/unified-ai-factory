@@ -58,7 +58,7 @@ export async function recordRetrievalFeedback(sql: Sql, actor: Actor, projectId:
   const [m] = await sql<{ id: string; kind: string }[]>`SELECT id, kind FROM memory_records WHERE id = ${input.memoryId} AND organization_id = ${actor.organizationId} AND project_id = ${projectId}`;
   if (!m) throw new MemoryError("NOT_FOUND", "no such memory in this project");
   return sql.begin(async (tx) => {
-    const optedIn = await telemetryOptedIn(tx, actor.organizationId, projectId);
+    const optedIn = await telemetryOptedIn(tx, actor.organizationId, projectId, true);
     const signalState = await sendInSavepoint(tx, sink, actor.organizationId, projectId, input.memoryId, m.kind, input.verdict, optedIn);
     const [row] = await tx<{ id: string }[]>`INSERT INTO memory_feedback (organization_id, project_id, memory_id, actor_id, verdict, signal_state)
       VALUES (${actor.organizationId}, ${projectId}, ${input.memoryId}, ${actor.userId}, ${input.verdict}, ${signalState}) RETURNING id`;
@@ -67,17 +67,19 @@ export async function recordRetrievalFeedback(sql: Sql, actor: Actor, projectId:
   }) as Promise<FeedbackResult>;
 }
 
-export interface RetryReport { attempted: number; sent: number; failed: number }
+export interface RetryReport { attempted: number; sent: number; failed: number; skipped: number }
 
 /**
  * Re-sends gap signals whose first attempt failed. Each retry is a NEW row pointing at the failed one (retry_of). A failed row is
- * retried at most once: a retry that fails again is final and is not retried. Requires consent; without it nothing is sent.
+ * retried at most once: a retry that fails again is final. Consent is read per row, inside that row's transaction, under the project
+ * share lock; if consent is off when a row is reached, the batch stops. A row already retried by a concurrent call is skipped
+ * (unique index on retry_of); its signal rolls back with its transaction.
  */
 export async function retryFailedSignals(sql: Sql, actor: Actor, projectId: string, sink: SignalSink | undefined, limit = 100): Promise<RetryReport> {
   await requireActor(sql, actor, READER_ROLES);
   await requireProject(sql, actor.organizationId, projectId);
-  const report: RetryReport = { attempted: 0, sent: 0, failed: 0 };
-  if (!sink || !(await telemetryOptedIn(sql, actor.organizationId, projectId))) return report;
+  const report: RetryReport = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
+  if (!sink) return report;
   const pending = await sql<{ id: string; memory_id: string; verdict: FeedbackVerdict; kind: string }[]>`
     SELECT f.id, f.memory_id, f.verdict, m.kind FROM memory_feedback f JOIN memory_records m ON m.id = f.memory_id
     WHERE f.organization_id = ${actor.organizationId} AND f.project_id = ${projectId} AND f.signal_state = 'failed' AND f.retry_of IS NULL
@@ -85,14 +87,21 @@ export async function retryFailedSignals(sql: Sql, actor: Actor, projectId: stri
     ORDER BY f.created_at, f.id LIMIT ${limit}`;
   for (const f of pending) {
     report.attempted++;
-    const state = await sql.begin(async (tx) => {
-      const st = await sendInSavepoint(tx, sink, actor.organizationId, projectId, f.memory_id, f.kind, f.verdict, true);
-      // The unique index on retry_of makes a concurrent second retry fail here, which also rolls back its signal.
-      await tx`INSERT INTO memory_feedback (organization_id, project_id, memory_id, actor_id, verdict, signal_state, retry_of)
-        VALUES (${actor.organizationId}, ${projectId}, ${f.memory_id}, ${actor.userId}, ${f.verdict}, ${st}, ${f.id})`;
-      return st;
-    });
-    if (state === "sent") report.sent++; else report.failed++;
+    try {
+      const state = await sql.begin(async (tx) => {
+        const optedIn = await telemetryOptedIn(tx, actor.organizationId, projectId, true);
+        if (!optedIn) return "stop" as const;
+        const st = await sendInSavepoint(tx, sink, actor.organizationId, projectId, f.memory_id, f.kind, f.verdict, true);
+        await tx`INSERT INTO memory_feedback (organization_id, project_id, memory_id, actor_id, verdict, signal_state, retry_of)
+          VALUES (${actor.organizationId}, ${projectId}, ${f.memory_id}, ${actor.userId}, ${f.verdict}, ${st}, ${f.id})`;
+        return st;
+      });
+      if (state === "stop") { report.attempted--; break; }
+      if (state === "sent") report.sent++; else report.failed++;
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") { report.skipped++; continue; }
+      throw e;
+    }
   }
   return report;
 }

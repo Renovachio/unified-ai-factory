@@ -10,7 +10,7 @@ beforeAll(async () => {
   const u = async (o: string, s: string, r: string) => (await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${o}, ${s}, ${r}) RETURNING id`)[0]!.id as string;
   author = await u(org, "pm", "editor"); approver = await u(org, "lead", "approver"); editor2 = await u(org, "e2", "editor"); viewer = await u(org, "v", "viewer"); approverB = await u(orgB, "leadB", "approver");
 });
-afterAll(async () => { await db.drop(); });
+afterAll(async () => { await db.sql.unsafe("ALTER ROLE factory_approval NOLOGIN"); await db.drop(); });
 const P = ["Ana Silva", "Bruno Costa"];
 const meeting = (o: Partial<MeetingBody> = {}): MeetingBody => ({ summary: "Q1 planning", participants: ["Ana Silva", "Bruno Costa"], decisions: [{ text: "Ship export in Q1", status: "observed", evidence: ["transcript#12"] }, { text: "Drop legacy API", status: "proposed", evidence: [] }], actions: [{ text: "Draft spec", owner: "Ana Silva", due: "2026-12-01" }], ...o });
 const ctx = { sourceIds: ["transcript#12"], authorizedParticipants: P };

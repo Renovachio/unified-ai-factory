@@ -48,6 +48,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await control.end();
+  await db.sql.unsafe("ALTER ROLE factory_control NOLOGIN");
   await db.drop();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -91,8 +92,8 @@ describe("memory feedback to SAI-11, as the control role (MEM-06)", () => {
     expect(first.signalState).toBe("failed");
     const before = await signalCount();
     const rep = await retryFeedbackSignals(control, A(viewer), projA);
-    expect(rep).toEqual({ attempted: 1, sent: 1, failed: 0 });
+    expect(rep).toEqual({ attempted: 1, sent: 1, failed: 0, skipped: 0 });
     expect((await signalCount()) - before).toBe(1);
-    expect(await retryFeedbackSignals(control, A(viewer), projA)).toEqual({ attempted: 0, sent: 0, failed: 0 });
+    expect(await retryFeedbackSignals(control, A(viewer), projA)).toEqual({ attempted: 0, sent: 0, failed: 0, skipped: 0 });
   });
 });

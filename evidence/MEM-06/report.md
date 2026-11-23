@@ -104,3 +104,21 @@ Still open (decisions for the operator):
 - Tests: viewer refused to change consent; latest setting wins (on then off sends nothing); no row means off; the sink-related tests set consent explicitly.
 - Not decided: who may revoke consent beyond approvers, and whether consent should also be recorded per user. The operator should confirm the approver-only rule.
 - Full suite: 1523 pass, 0 fail.
+
+## Addendum 5: independent review of 5f9082c and a9997fe, and fixes (migration 0034)
+
+Reviewer verdict at review: not safe to merge. Fixed:
+- **Control role could not write consent** (the consent sequence had no grant). Fixed with a sequence grant in migration 0034. Because that grant alone would let any control-role connection write consent, migration 0034 also adds a database guard: the granting user must be an enabled approver or admin of the same organization, and the project must belong to that organization. The guard is tested with a direct insert as `factory_control` by a viewer, which is refused.
+- **Consent read once for a whole batch.** Retries now read consent per row, inside that row's transaction, under a share lock on the project row. If consent is off when a row is reached, the batch stops.
+- **Consent race.** A consent change takes the same project row with NOWAIT: it fails at once while a send holds the lock, instead of waiting on a send that could be waiting on it. Test: a change during a locked send is refused.
+- **Concurrent retries.** A duplicate from the unique index is now counted as `skipped` and no longer aborts the batch. Test: two concurrent retries produce one retry row.
+- **Cross-project retry.** A composite key and foreign key now tie `retry_of` to the same project and memory. Test: a retry pointing at another project's row is refused.
+- **Schema drift.** The drizzle schema now declares the consent sequence as bigserial and the indexes and composite key that the migrations create.
+- **Test cluster hygiene.** Every test that enables a database role now turns it back off in its cleanup.
+
+Not fixed:
+- The 0032 and 0033 down migrations are not clean restorations: the retry rows become ordinary rows after 0032 down, and 0033 down deletes the consent history. Both are expected for a rollback in an unreleased branch; the operator must not roll back past these in production without a backup.
+- A sink that calls setTelemetryConsent during a send gets an immediate error instead of a wait. This is by design, but no test covers a sink calling it.
+- The unique index against concurrent retries is covered by the race test; removing the index was reasoned to fail that test but was not run as a mutation.
+
+Results: full suite 1527 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.

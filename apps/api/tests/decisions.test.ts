@@ -27,7 +27,7 @@ beforeAll(async () => {
     authenticator: { authenticate: async (req) => { const s = req.headers.get("x-test-subject"); return s ? { subject: s, via: "bearer" as const } : null; } },
   });
 });
-afterAll(async () => { await approval.end(); await db.drop(); });
+afterAll(async () => { await approval.end(); await db.sql.unsafe("ALTER ROLE factory_approval NOLOGIN"); await db.drop(); });
 
 /** A job parked in AWAITING_HUMAN with a complete evidence binding (head, base, passing gate, policy digest). */
 async function parked(opts: { risk?: string; createdBy?: string } = {}) {

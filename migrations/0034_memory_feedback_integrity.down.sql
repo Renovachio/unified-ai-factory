@@ -1,0 +1,5 @@
+ALTER TABLE memory_feedback DROP CONSTRAINT memory_feedback_retry_same_scope;
+ALTER TABLE memory_feedback DROP CONSTRAINT memory_feedback_scope_key;
+DROP TRIGGER memory_telemetry_consent_actor_guard ON memory_telemetry_consent;
+DROP FUNCTION memory_consent_actor_guard();
+REVOKE USAGE ON SEQUENCE memory_telemetry_consent_seq_seq FROM factory_control;

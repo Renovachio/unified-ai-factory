@@ -31,7 +31,7 @@ beforeAll(async () => {
   for (const [org, sub, role] of [[orgA, "editor", "editor"], [orgA, "operator", "operator"], [orgA, "approver", "approver"], [orgA, "admin", "admin"], [orgA, "viewer", "viewer"], [orgB, "approverB", "approver"], [orgB, "operatorB", "operator"]] as const)
     await db.sql`INSERT INTO users (organization_id, auth_subject, role) VALUES (${org}, ${sub}, ${role})`;
 });
-afterAll(async () => { await approval.end(); await db.drop(); makeWritable(join(base, "q")); rmSync(base, { recursive: true, force: true }); });
+afterAll(async () => { await approval.end(); await db.sql.unsafe("ALTER ROLE factory_approval NOLOGIN"); await db.drop(); makeWritable(join(base, "q")); rmSync(base, { recursive: true, force: true }); });
 
 const tok = (sub: string) => new SignJWT({}).setProtectedHeader({ alg: "RS256", kid: "k1" }).setSubject(sub).setIssuer(ISS).setAudience(AUD).setIssuedAt().setExpirationTime("5m").sign(privateKey);
 let n = 0;

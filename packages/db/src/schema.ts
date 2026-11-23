@@ -1,4 +1,5 @@
-import { type AnyPgColumn, bigint, boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, bigint, bigserial, boolean, doublePrecision, foreignKey, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const created = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -653,10 +654,15 @@ export const memoryFeedback = pgTable("memory_feedback", {
   signalState: text("signal_state").notNull(),
   retryOf: uuid("retry_of").references((): AnyPgColumn => memoryFeedback.id),
   createdAt: created(),
-});
+}, (t) => [
+  unique("memory_feedback_scope_key").on(t.id, t.projectId, t.memoryId),
+  foreignKey({ name: "memory_feedback_retry_same_scope", columns: [t.retryOf, t.projectId, t.memoryId], foreignColumns: [t.id, t.projectId, t.memoryId] }),
+  index("memory_feedback_memory").on(t.memoryId, t.createdAt),
+  uniqueIndex("memory_feedback_one_retry").on(t.retryOf).where(sql`retry_of IS NOT NULL`),
+]);
 
 export const memoryTelemetryConsent = pgTable("memory_telemetry_consent", {
-  seq: bigint("seq", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+  seq: bigserial("seq", { mode: "number" }).primaryKey(),
   id: uuid("id").notNull().unique().defaultRandom(),
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   projectId: uuid("project_id").notNull().references(() => repositories.id),
@@ -664,7 +670,7 @@ export const memoryTelemetryConsent = pgTable("memory_telemetry_consent", {
   grantedBy: uuid("granted_by").notNull().references(() => users.id),
   reason: text("reason").notNull(),
   createdAt: created(),
-});
+}, (t) => [index("memory_telemetry_consent_project").on(t.organizationId, t.projectId, t.seq)]);
 
 export const memorySourceRevocations = pgTable("memory_source_revocations", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),

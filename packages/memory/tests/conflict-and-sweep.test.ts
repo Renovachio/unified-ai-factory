@@ -71,7 +71,7 @@ beforeAll(async () => {
   steward = await u("steward", "security_officer");
   viewer = await u("viewer", "viewer");
 });
-afterAll(async () => { await db.drop(); rmSync(dir, { recursive: true, force: true }); });
+afterAll(async () => { await db.sql.unsafe("ALTER ROLE factory_control NOLOGIN"); await db.drop(); rmSync(dir, { recursive: true, force: true }); });
 
 describe("approval resolves overlaps only with an explicit erasure decision", () => {
   test("approving a memory that overlaps approved memory is refused", async () => {
