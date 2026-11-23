@@ -1,6 +1,6 @@
 import type { Sql } from "@factory/db";
 import {
-  insertProposal, mapDbError, recordTransition, requireActor, requireProject, type Actor, type MemoryView, type SourceRef, verifySources,
+  conflictsOf, insertProposal, lockProjectApprovals, mapDbError, recordTransition, requireActor, requireProject, type Actor, type MemoryView, type SourceRef, verifySources,
 } from "./lifecycle";
 import { APPROVER_ROLES, MemoryError, normalizeClaim, PROPOSER_ROLES, READER_ROLES, SENSITIVITY_RANK, validateClaim, type MemoryKind, type MemorySensitivity } from "./domain";
 
@@ -133,6 +133,12 @@ export async function restoreConsolidation(sql: Sql, actor: Actor, projectId: st
             AND rv.source_kind = CASE WHEN s.artifact_id IS NOT NULL THEN 'artifact' ELSE 'event' END
             AND rv.source_id = COALESCE(s.artifact_id, s.event_id))) LIMIT 1`;
         if (bad) throw new MemoryError("SOURCE_REVOKED", "an original has a revoked source and cannot be restored");
+      }
+      // Restoring originals makes them approved again: the same rule as any approval applies (lock, then overlap refusal).
+      await lockProjectApprovals(tx, projectId);
+      for (const o of originals) {
+        const overlaps = await conflictsOf(tx, actor.organizationId, projectId, o.id as string);
+        if (overlaps.length > 0) throw new MemoryError("CONFLICT_UNRESOLVED", `an original overlaps approved memory ${overlaps.map((x) => x.id).join(", ")}; resolve that overlap before restoring`);
       }
       const restored: string[] = [];
       for (const o of originals) {

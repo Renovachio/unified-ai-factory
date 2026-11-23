@@ -10,10 +10,10 @@ statement of what the system cannot do, which the operator's own backup procedur
 | Proposed, never approved | Erased 90 days after creation |
 | Rejected | Erased 30 days after rejection |
 | Context pack text (rendered context that copies claims) | Deleted 30 days after the pack was created; the pack row keeps only ids and digests |
-| Approved | Never expires automatically. Erased only (a) by a steward, or (b) when a new approval overlaps it and the approver names it for erasure |
+| Approved | Never expires automatically. Erased only when a new approval overlaps it and the approver names it for erasure. A steward cannot erase approved memory directly (see the open decision below) |
 
-Overlap (conflict) is a textual signal: same kind, different claim, at least half of the words in common, and at least five
-distinct words on each side. It does not decide whether two claims contradict. A person decides.
+Overlap (conflict) is a textual signal: same kind, different claim, and a word-set similarity (intersection over union) of at least
+0.5, with at least five distinct words on each side. It does not decide whether two claims contradict. A person decides.
 
 ## Running the sweep
 
@@ -27,7 +27,7 @@ Required environment:
 - `DISPATCH_ARTIFACT_ROOT`: the same artifact root as the pack text store. A different root means pack text is never found or removed.
 - `DISPATCH_RETENTION_STEWARD_ID`: an enabled user with the approver, admin or security_officer role. Every erasure is attributed to this user.
 
-Each run writes one audit row (`memory.retention`) and prints one JSON line per project. Check the log after the first run.
+Each run writes one audit row (`memory.retention`) and prints one JSON line per run, with a per-project breakdown inside it. Check the log after the first run.
 
 ## Backups: what erasure does and does not do
 
@@ -56,4 +56,10 @@ For an erased memory:
 
 - Approval conflicts are checked against approved memory only. Two proposals that overlap are not flagged until one is approved.
 - The steward who runs the sweep is named in the audit trail; the affected memory's author is not asked before an erasure by the sweep.
+- The sweep writes its audit row after its erasures, outside one transaction. A failure in the middle leaves the completed erasures (each with its own audit trail) and no sweep row. Re-running the sweep finishes the work.
+- Conflict checks read every approved memory of the same kind in the project. Large projects make approval slower; there is no silent cap.
+
+## Open decision
+
+A steward cannot erase approved memory directly. If a legal or privacy request requires erasing approved memory that no new approval overlaps, the operator must decide how that is handled (for example, a separate, audited procedure). Until that decision is made, that request cannot be served by this system.
 - Pack text for memories erased before the sweep existed is removed only when the sweep next runs.

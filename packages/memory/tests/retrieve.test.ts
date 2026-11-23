@@ -7,7 +7,9 @@ import { connect } from "../../db/src/index";
 import { createTestDb } from "../../db/src/testing";
 import { digestOf } from "../../telemetry/src/index";
 import {
-  approveMemory, eraseMemory, INDEX_VERSION, MemoryError, proposeMemory, proposeRevision, rebuildIndex, revokeSource, searchMemories, tsqueryFor,
+  approveWithErasure,
+  type PackTextStore,
+  approveMemory, INDEX_VERSION, MemoryError, proposeMemory, proposeRevision, rebuildIndex, revokeSource, searchMemories, tsqueryFor,
   type Actor, type MemoryErrorCode,
 } from "../src/index";
 
@@ -46,6 +48,11 @@ async function approvedIn(projectId: string, claim: string, orgActor = A(author)
   await approveMemory(db.sql, A(approver), projectId, p.id);
   return { id: p.id, artifact: a };
 }
+const noText: PackTextStore = {
+  put: () => { throw new Error("no pack text is written in this test"); },
+  get: () => { throw new Error("no pack text is read in this test"); },
+  delete: () => false,
+};
 const ids = (r: { hits: Array<{ memoryId: string }> }) => r.hits.map((h) => h.memoryId);
 
 beforeAll(async () => {
@@ -129,8 +136,12 @@ describe("lifecycle changes remove results immediately", () => {
 
   test("an erased memory disappears from search and has no index row", async () => {
     const m = await approvedIn(projA, "ZETA-2 erasable decision text");
-    await eraseMemory(db.sql, A(author), projA, m.id, "owner request");
-    expect((await searchMemories(db.sql, A(viewer), projA, { query: "ZETA-2" })).hits).toHaveLength(0);
+    // Approved memory is erased only by an approval that names it as overlapping (MEM-05 rule).
+    const replacement = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "decision", claim: "ZETA-2 erasable decision text now replaces it", sources: [src(await artifactIn(projA, "zeta replacement"))] });
+    await approveWithErasure(db.sql, noText, A(approver), projA, replacement.id, [m.id]);
+    expect(ids(await searchMemories(db.sql, A(viewer), projA, { query: "ZETA-2" }))).not.toContain(m.id);
+    const [idx] = await db.sql`SELECT count(*)::int AS n FROM memory_index WHERE record_id = ${m.id}`;
+    expect(idx!.n).toBe(0);
   });
 
   test("a superseded version is no longer returned; the new approved version is", async () => {

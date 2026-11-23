@@ -7,7 +7,7 @@ import { connect } from "../../db/src/client";
 import { createTestDb } from "../../db/src/testing";
 import { digestOf } from "../../telemetry/src/index";
 import {
-  approveMemory, approveWithErasure, eraseMemory, lockProjectApprovals, MemoryError, proposeMemory, proposeRevision, runRetentionSweep, type Actor, type PackTextStore,
+  approveMemory, approveWithErasure, eraseMemory, lockProjectApprovals, MemoryError, proposeConsolidation, proposeMemory, proposeRevision, restoreConsolidation, runRetentionSweep, type Actor, type PackTextStore,
 } from "../src/index";
 
 class BlobStore implements PackTextStore {
@@ -138,13 +138,17 @@ describe("retention sweep (operator entry point)", () => {
     await expectCode(runRetentionSweep(db.sql, new BlobStore(), viewer), "FORBIDDEN");
   });
 
-  test("the sweep reports each project, writes one audit row attributed to the steward, and repairs pack text left by a failed erasure", async () => {
+  test("the sweep reports each project, writes one audit row attributed to the steward, and repairs pack text left by a failed removal", async () => {
     const p = await newProject("p7");
     const store = new BlobStore();
     const gone = await approved(p, "Legacy export format is CSV only");
     const digest = await packFor(store, p, gone, "rendered context: Legacy export format is CSV only");
-    await eraseMemory(db.sql, A(steward), p, gone, "subject request"); // erasure whose blob deletion never happened
-    store.blobs.set(digest, "rendered context: Legacy export format is CSV only"); // the blob survived
+    // The first text removal fails after the approval commits; the blob survives.
+    let failOnce = true;
+    const flaky = Object.assign(store, { delete: (d: string) => { if (failOnce) { failOnce = false; throw new Error("disk busy"); } return store.blobs.delete(d); } });
+    await expectCode(approveWithErasure(db.sql, flaky, A(approver), p, await proposal(p, "Legacy export format is CSV only for audits"), [gone]), "DB_REJECTED");
+    expect((await statusOf(gone)).status).toBe("deleted");
+    expect(store.blobs.has(digest)).toBe(true);
     const r = await runRetentionSweep(db.sql, store, steward);
     const project = r.projects.find((x) => x.projectId === p);
     expect(project?.repairedPackTexts).toBe(1);
@@ -198,5 +202,36 @@ describe("concurrency and the control role (review of the conflict and sweep wor
     } finally {
       await control.end();
     }
+  });
+});
+
+describe("review of addenda 10-12: approved memory and restore", () => {
+  test("approved memory cannot be erased by its author or a steward outside an approval that names it", async () => {
+    const p = await newProject("erase-guard");
+    const x = await approved(p, "Vendor contracts renew every twelve months");
+    await expectCode(eraseMemory(db.sql, A(author), p, x, "author erasure"), "WRONG_STATE");
+    await expectCode(eraseMemory(db.sql, A(steward), p, x, "steward erasure"), "WRONG_STATE");
+    expect((await statusOf(x)).status).toBe("approved");
+  });
+
+  test("restoring consolidated originals is refused when an original now overlaps a newer approved memory", async () => {
+    const p = await newProject("restore-guard");
+    const a = await approved(p, "Shipments must be insured above five hundred dollars");
+    const b = await approved(p, "Shipments require signature delivery for premium orders");
+    const c = (await proposeConsolidation(db.sql, A(author), p, { originalIds: [a, b], claim: "Shipments insurance and signature policy consolidated", sources: await source(p) })).id;
+    await approveMemory(db.sql, A(approver), p, c);
+    expect((await statusOf(a)).status).toBe("superseded");
+    // End the consolidation (revoked), as a steward would.
+    const [ver] = await db.sql<{ record_version: number }[]>`SELECT record_version FROM memory_records WHERE id = ${c}`;
+    await db.sql.begin(async (tx) => {
+      await tx`INSERT INTO memory_transitions (memory_id, from_status, to_status, record_version, actor_id, actor, evidence_digest)
+        VALUES (${c}, 'approved', 'revoked', ${ver!.record_version}, ${approver}, 'legacy-fixture', ${"sha256:" + "5".repeat(64)})`;
+      await tx`UPDATE memory_records SET status = 'revoked', updated_at = now() WHERE id = ${c}`;
+    });
+    // A new approval overlaps the superseded original: it is not a conflict then (the original is not approved).
+    const n = await proposal(p, "Shipments must be insured above five hundred dollars always");
+    await approveMemory(db.sql, A(approver), p, n);
+    await expectCode(restoreConsolidation(db.sql, A(approver), p, c), "CONFLICT_UNRESOLVED");
+    expect((await statusOf(a)).status).toBe("superseded");
   });
 });

@@ -231,3 +231,24 @@ Results: full suite 1497 pass, 0 fail (92 files). Typecheck, lint, gates, packag
 - Control role: the erasure path (approveWithErasure, runRetentionSweep) runs on a connection logged in as factory_control and passes. This is the role-scoped run that addendum 11 said was not yet done.
 
 Results: full suite 1499 pass, 0 fail (92 files). Typecheck, lint, gates, package validation and license pass.
+
+## Addendum 13: independent review of addenda 10-12, and fixes
+
+Reviewer: a separate subagent, read-only, on commit 32f627a. Its shell was blocked, so its findings were verified by reading the code. Each finding below was then reproduced or fixed here with a test.
+
+Verdict at review: not safe to merge. Fixed:
+
+- **Approved memory could be erased without an overlap decision** (eraseMemory allowed approved -> deleted for its author or a steward). Now refused with WRONG_STATE. Approved memory is erased only through eraseOverlappingMemory, called by approveWithErasure inside the approval transaction, for the exact named set. Tests: approved memory refused for author and steward; two existing erasure tests now go through the overlap approval.
+- **Conflict scan silently stopped at 500 rows** (conflictsOf LIMIT 500). Removed. The scan reads every approved memory of the same kind in the project. Cost: approval is slower in large projects; no silent cap.
+- **Restore could approve overlapping memory** (restoreConsolidation set originals to approved with no lock and no overlap check). Now takes the project lock and refuses any original that overlaps approved memory. Test fails when the check is removed.
+- **Conflict lookup of the target memory was not scoped** to organization and project. Now scoped.
+- **Tokenizer split combining marks** (Devanagari, Thai). Combining marks are kept inside words.
+- **Pack-text removal failure after commit** was an unclear raw error. Now a DB_REJECTED error stating the approval committed and that the sweep finishes the removal. The sweep test now produces this state through the real path (a store whose first deletion fails), not by erasing approved memory directly.
+- **Runbook accuracy**: similarity wording corrected (intersection over union), the sweep output described as one JSON line per run, the sweep's non-transactional audit row documented, and the open decision recorded: a steward cannot erase approved memory without an overlap, so a privacy request for such memory has no path yet.
+
+Not fixed, recorded:
+- Sweep audit row is written after its erasures, outside one transaction. Re-running finishes the work (documented in the runbook).
+- A conflict-free original approved overlapping a memory in another project is not possible (scope checks), so no cross-project finding remains.
+- The reviewer could not run tests or confirm the migration triggers it cited (memory_index delete trigger, factory_control grants). Those are covered by existing tests, which pass.
+
+Results: memory suite 157 pass; full suite 1501 pass, 0 fail at the previous step; after the final import cleanup, lint, typecheck and the memory suite pass.

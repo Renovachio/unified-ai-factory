@@ -18,6 +18,12 @@ import {
   type MemoryErrorCode,
   type SourceRef,
 } from "../src/index";
+import { approveWithErasure, type PackTextStore } from "../src/index";
+const noText: PackTextStore = {
+  put: () => { throw new Error("no pack text is written in this test"); },
+  get: () => { throw new Error("no pack text is read in this test"); },
+  delete: () => false,
+};
 
 type Db = Awaited<ReturnType<typeof createTestDb>>;
 let db: Db;
@@ -273,17 +279,18 @@ describe("rejection, erasure and tombstones", () => {
   });
 
   test("erasure removes the claim and its hash, keeps a content-free tombstone and transition history", async () => {
-    const p = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "fact", claim: "Secret project codename Orion.", sources: [src(artA, artADigest)] });
+    const p = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "fact", claim: "Secret project codename Orion is restricted to finance staff.", sources: [src(artA, artADigest)] });
     await approveMemory(db.sql, A(approver), projA, p.id);
-    const erased = await eraseMemory(db.sql, A(author), projA, p.id, "owner asked to forget");
-    expect(erased.status).toBe("deleted");
-    expect(erased.claim).toBe("");
+    // Approved memory is erased only by an approval that names it as overlapping (MEM-05 rule).
+    const replacement = await proposeMemory(db.sql, A(author), { projectId: projA, kind: "fact", claim: "Secret project codename Orion is restricted to finance staff only", sources: [src(artA, artADigest)] });
+    await approveWithErasure(db.sql, noText, A(approver), projA, replacement.id, [p.id]);
+    expect((await db.sql<{ status: string }[]>`SELECT status FROM memory_records WHERE id = ${p.id}`)[0]!.status).toBe("deleted");
     const [row] = await db.sql`SELECT claim, normalized_claim_hash FROM memory_records WHERE id = ${p.id}`;
     expect(row!.claim).toBe("");
     expect(row!.normalized_claim_hash).toBe("erased");
     const [tomb] = await db.sql`SELECT reason, requested_by FROM memory_tombstones WHERE memory_id = ${p.id}`;
-    expect(tomb!.reason).toBe("owner asked to forget");
-    expect(tomb!.requested_by).toBe(author);
+    expect(tomb!.reason).toContain("erasure accepted by approver");
+    expect(tomb!.requested_by).toBe(approver);
     const tr = await db.sql`SELECT to_status FROM memory_transitions WHERE memory_id = ${p.id} ORDER BY created_at, id`;
     expect(tr.map((r) => r.to_status)).toEqual(["proposed", "approved", "deleted"]);
     const dump = JSON.stringify(await db.sql`SELECT * FROM memory_tombstones WHERE memory_id = ${p.id}`);

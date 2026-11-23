@@ -293,7 +293,6 @@ async function projectOf(q: Q, organizationId: string, memoryId: string): Promis
 export const CONFLICT_SIMILARITY = 0.5;
 /** Claims shorter than this (distinct words) are never conflicts: two short claims overlap by chance too easily. */
 export const CONFLICT_MIN_WORDS = 5;
-const CONFLICT_MAX_ROWS = 500;
 
 export interface ConflictCandidate { id: string; claim: string; similarity: number }
 
@@ -311,15 +310,16 @@ export async function lockProjectApprovals(q: Q, projectId: string): Promise<voi
  * conflicts (they are the same knowledge, handled by their own rules).
  */
 export async function conflictsOf(q: Q, organizationId: string, projectId: string, memoryId: string): Promise<ConflictCandidate[]> {
-  const [me] = await q<Row[]>`SELECT kind, claim, normalized_claim_hash, supersedes_id FROM memory_records WHERE id = ${memoryId}`;
+  const [me] = await q<Row[]>`SELECT kind, claim, normalized_claim_hash, supersedes_id FROM memory_records WHERE id = ${memoryId} AND organization_id = ${organizationId} AND project_id = ${projectId}`;
   if (!me) return [];
   const rows = await q<{ id: string; claim: string }[]>`SELECT id, claim FROM memory_records
     WHERE organization_id = ${organizationId} AND project_id = ${projectId} AND kind = ${me.kind as string} AND status = 'approved'
       AND id <> ${memoryId} AND normalized_claim_hash <> ${me.normalized_claim_hash as string}
       AND id NOT IN (SELECT original_id FROM memory_consolidations WHERE consolidated_id = ${memoryId})
       AND id IS DISTINCT FROM ${(me.supersedes_id as string | null) ?? null}
-    ORDER BY created_at, id LIMIT ${CONFLICT_MAX_ROWS}`;
-  const tokens = (claim: string) => new Set(normalizeClaim(claim).split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 0));
+    ORDER BY created_at, id`;
+  // Combining marks (\p{M}) belong to words in many scripts; splitting on them would fragment Devanagari or Thai words.
+  const tokens = (claim: string) => new Set(normalizeClaim(claim).split(/[^\p{L}\p{M}\p{N}]+/u).filter((t) => t.length > 0));
   const mine = tokens(me.claim as string);
   if (mine.size < CONFLICT_MIN_WORDS) return [];
   const out: ConflictCandidate[] = [];
@@ -444,25 +444,42 @@ export async function revokeSource(
  * Erases a memory: content and content-derived hash are removed, status becomes `deleted`, a content-free tombstone and
  * the transition are kept. Allowed to the author or a steward. Idempotent for an already-erased memory.
  */
+/**
+ * Erases an UNAPPROVED or rejected memory (author or steward). Approved memory is refused here: it is erased only through
+ * eraseOverlappingMemory, inside an approval that names it (MEM-05 rule).
+ */
 export async function eraseMemory(sql: Sql, actor: Actor, projectId: string, memoryId: string, reason: string): Promise<MemoryView> {
   if (!reason.trim() || reason.length > 500) throw new MemoryError("INVALID_CLAIM", "an erasure needs a reason of at most 500 characters");
   try {
-    return await sql.begin(async (tx) => {
-      const role = await requireActor(tx, actor, READER_ROLES);
-      const m = await lockMemory(tx, actor.organizationId, projectId, memoryId);
-      if (!(STEWARD_ROLES as readonly string[]).includes(role) && m.created_by !== actor.userId) throw new MemoryError("FORBIDDEN", "only the author or a steward can erase this memory");
-      if (m.status === "deleted") return one(await viewsOf(tx, [m]), "erased memory view");
-      const from = m.status as MemoryStatus;
-      assertTransition(from, "deleted");
-      await tx`UPDATE memory_records SET status = 'deleted', claim = '', normalized_claim_hash = 'erased', updated_at = now() WHERE id = ${memoryId}`;
-      await tx`INSERT INTO memory_tombstones (memory_id, organization_id, project_id, requested_by, reason)
-        VALUES (${memoryId}, ${actor.organizationId}, ${projectId}, ${actor.userId}, ${reason})`;
-      await recordTransition(tx, { id: memoryId, organizationId: actor.organizationId, recordVersion: m.record_version as number }, from, "deleted", actor, reason, {});
-      return one(await viewsOf(tx, [await reload(tx, memoryId)]), "memory view");
-    }) as MemoryView;
+    return await sql.begin(async (tx) => eraseRow(tx, actor, projectId, memoryId, reason, false)) as MemoryView;
   } catch (e) {
     mapDbError(e);
   }
+}
+
+/**
+ * Erases an APPROVED memory that a new approval overlaps. Only approveWithErasure calls this, inside the same transaction as the
+ * approval, after the approver has named the memory. Refuses any other memory.
+ */
+export async function eraseOverlappingMemory(tx: Q, actor: Actor, projectId: string, memoryId: string, reason: string): Promise<MemoryView> {
+  if (!reason.trim() || reason.length > 500) throw new MemoryError("INVALID_CLAIM", "an erasure needs a reason of at most 500 characters");
+  return eraseRow(tx, actor, projectId, memoryId, reason, true);
+}
+
+async function eraseRow(tx: Q, actor: Actor, projectId: string, memoryId: string, reason: string, allowApproved: boolean): Promise<MemoryView> {
+  const role = await requireActor(tx, actor, READER_ROLES);
+  const m = await lockMemory(tx, actor.organizationId, projectId, memoryId);
+  if (!(STEWARD_ROLES as readonly string[]).includes(role) && m.created_by !== actor.userId) throw new MemoryError("FORBIDDEN", "only the author or a steward can erase this memory");
+  if (m.status === "deleted") return one(await viewsOf(tx, [m]), "erased memory view");
+  const from = m.status as MemoryStatus;
+  if (from === "approved" && !allowApproved) throw new MemoryError("WRONG_STATE", "approved memory is erased only when a new approval names it as overlapping (approveWithErasure)");
+  assertTransition(from, "deleted");
+  await tx`UPDATE memory_records SET status = 'deleted', claim = '', normalized_claim_hash = 'erased', updated_at = now() WHERE id = ${memoryId}`;
+  await tx`INSERT INTO memory_tombstones (memory_id, organization_id, project_id, requested_by, reason)
+    VALUES (${memoryId}, ${actor.organizationId}, ${projectId}, ${actor.userId}, ${reason})`;
+  await recordTransition(tx, { id: memoryId, organizationId: actor.organizationId, recordVersion: m.record_version as number }, from, "deleted", actor, reason, {});
+  return one(await viewsOf(tx, [await reload(tx, memoryId)]), "memory view");
+
 }
 
 /** Reads one memory. Scoped to the organization AND the project named by the caller; any mismatch is NOT_FOUND. */

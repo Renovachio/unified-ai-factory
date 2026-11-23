@@ -1,7 +1,7 @@
 import type { Sql } from "@factory/db";
 import { MemoryError } from "./domain";
 import type { PackTextStore } from "./context";
-import { type Actor, approveMemory, conflictsOf, eraseMemory, lockProjectApprovals, type MemoryView, requireActor, requireProject } from "./lifecycle";
+import { type Actor, approveMemory, conflictsOf, eraseOverlappingMemory, lockProjectApprovals, type MemoryView, requireActor, requireProject } from "./lifecycle";
 import { APPROVER_ROLES } from "./domain";
 import { purgePackTextFor } from "./retention";
 
@@ -25,7 +25,7 @@ export async function approveWithErasure(sql: Sql, store: PackTextStore, actor: 
         throw new MemoryError("CONFLICT_UNRESOLVED", `the erasure decision must name exactly the overlapping memories: ${conflicts.join(", ") || "none"}`);
       }
       for (const id of conflicts) {
-        await eraseMemory(tx as unknown as Sql, actor, projectId, id, `overlaps memory ${memoryId}; erasure accepted by approver`);
+        await eraseOverlappingMemory(tx, actor, projectId, id, `overlaps memory ${memoryId}; erasure accepted by approver`);
         erased.push(id);
       }
       return approveMemory(tx as unknown as Sql, actor, projectId, memoryId);
@@ -34,6 +34,11 @@ export async function approveWithErasure(sql: Sql, store: PackTextStore, actor: 
     if (e instanceof MemoryError) throw e;
     throw new MemoryError("DB_REJECTED", String((e as Error).message).slice(0, 200));
   }
-  for (const id of erased) await purgePackTextFor(sql, store, actor.organizationId, projectId, id);
+  try {
+    for (const id of erased) await purgePackTextFor(sql, store, actor.organizationId, projectId, id);
+  } catch (e) {
+    // The approval is already committed. The sweep repairs erased memories' pack text, so a retry or the next run finishes the job.
+    throw new MemoryError("DB_REJECTED", `approval committed, but removing pack text failed (${String((e as Error).message).slice(0, 120)}); run the retention sweep to finish`);
+  }
   return view;
 }
