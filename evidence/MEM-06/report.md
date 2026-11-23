@@ -137,3 +137,9 @@ Not fixed, and not fixable in the database as designed:
 - **Skip path.** The 23505 skip after a concurrent retry is still not asserted deterministically; the race test allows zero skips. Removing the unique index does fail the race test (reviewer mutation).
 
 Results: full suite 1529 pass, 0 fail. Typecheck, lint, gates, package validation and license pass.
+
+## Addendum 7: operator decisions
+
+- **Consent revocation rule (confirmed by the operator).** Only approvers and admins may set or change project consent. Enforced by the application check and the database guard (migration 0034). No change.
+- **Request detail for SAI-11 (decided).** Signals keep the memory's kind only ("memory retrieval <kind>"). No free text, request text or user-supplied topic is sent. Recommendation: keep this until a privacy-reviewed, closed list of request categories exists, chosen by the user from that list rather than typed. Clustering by request is therefore not available.
+- **Pilot (authorized in principle, not started).** No pilot can run yet: no project has been named for the pilot, and the model qualification registry (`config/model-qualification.json`) has no qualified entries. The only measured model fails the quality thresholds (`docs/evals/REPORT.md`). MEM-08 remains blocked on the qualified runtime, not on this authorization.

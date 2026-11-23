@@ -173,6 +173,6 @@ Spec: `unified-ai-factory-v2.5-memory/` (outside this repo). Branch `dev/mem-01`
 - work_package: MEM-07
   status: not_started   # depends on MEM-01/03/05 and v2.4 browser UI (not present in this branch)
 - work_package: MEM-08
-  status: blocked       # release gate: needs a qualified runtime, a real authorized pilot and quality benchmarks; none exist (see DSP-10, EVAL-001)
+  status: blocked       # release gate: needs a qualified runtime, a real authorized pilot and quality benchmarks; none exist (see DSP-10, EVAL-001). Operator authorized a pilot in principle; no project named, no qualified model in config/model-qualification.json
   blockers: [no qualified model or authorized runtime, no authorized pilot project, v2.1 gates NOT READY]
 ```
