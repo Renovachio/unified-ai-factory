@@ -26,6 +26,7 @@
         "@factory/domain": "workspace:*",
         "@factory/improvements": "workspace:*",
         "@factory/intake": "workspace:*",
+        "@factory/memory": "workspace:*",
         "@factory/orchestrator": "workspace:*",
         "@factory/product": "workspace:*",
         "@factory/sandboxes": "workspace:*",

@@ -78,3 +78,10 @@ What it does: `dispatch_begin` registers the folder Claude was started in and qu
 
 ### Plugin mode, verified live (2026-11-20, plain `claude -p` with `--plugin-dir`, compiled binary, sandboxed Dispatch home and ports)
 `/dispatch:do` from an ordinary Claude session: the MCP server connected and auto-started the factory; `dispatch_begin` registered the folder and queued the job; the plan (haiku, sonnet, sonnet) was accepted in place with a snapshot; a Haiku agent read, two Sonnet agents wrote in parallel (models read from the event log); the plugin's `--from-cwd` hook blocked an undeclared `notes.txt` (file absent afterwards); the API listed the run `awaiting_approval`/`in_place` with the exact diff; `dispatch changes` matched it; rejecting through the API restored `src/app.txt` and removed `docs/overview.md`; `.env` untouched. **Not verified:** installing through `dispatch plugin install` into your real Claude (only into a sandbox HOME), that the command's `model: opus` switches the model (the test session already ran Opus), and the keep path via the dashboard/terminal `/accept` prompt text.
+
+## Project memory (what Claude remembers about a project)
+* **You** record and approve it, in the project folder: `dispatch memory note <text>` (becomes *proposed*, inert), `dispatch memory list proposed`, `dispatch memory approve <id>` or `reject <id>`. `dispatch memory consent on|off` controls whether anonymous "memory was missing" signals go to the improvement supervisor (default off).
+* **Claude** gets two extra tools, `dispatch_memory` (read approved memory relevant to the task, framed as reference data) and `dispatch_memory_feedback` (useful / wrong / stale / missing). It cannot write, approve, reject, erase or change consent; the API refuses the agent token for those routes.
+* Notes are proposed by the dispatch agent identity and approved by you, so the "author cannot approve their own memory" rule holds for one person.
+* Retrieval is lexical (no embedding model is qualified). Rendered packs are stored under `<Dispatch home>/memory-packs`. The retention sweep (`docs/operator/MEMORY_RETENTION.md`) is not scheduled yet.
+

@@ -24,6 +24,7 @@
     "jose": "6.2.18",
     "@factory/intake": "workspace:*",
     "@factory/orchestrator": "workspace:*",
+    "@factory/memory": "workspace:*",
     "@factory/dispatch-core": "workspace:*"
   },
   "devDependencies": {

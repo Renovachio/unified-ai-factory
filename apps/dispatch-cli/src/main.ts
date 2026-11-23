@@ -7,6 +7,7 @@ import { cmdServe } from "./commands/serve";
 import { cmdGuardWrite, cmdMcp } from "./commands/agent";
 import { cmdWork } from "./commands/work";
 import { cmdPlugin } from "./commands/plugin";
+import { cmdMemory } from "./commands/memory";
 import { cmdChanges, cmdCode, cmdUndo } from "./commands/code";
 import { makeCtx } from "./launcher/context";
 import { HEADER, safe, sym } from "./render";
@@ -28,6 +29,7 @@ Usage:
   dispatch code [request]  Claude Code in THIS folder, on your real files (Opus plans, Haiku/Sonnet execute); snapshot first
   dispatch changes | undo  show / revert what changed since that snapshot (undo needs --yes)
   dispatch work            have Claude Code (Opus plans, cheaper agents execute) do the next queued job in a work copy
+  dispatch memory ...      record, review and approve what Claude should remember about this project (see: dispatch memory help)
   dispatch mcp             (used by Claude Code) the Dispatch tool server; never run by hand
   dispatch --version | --help
 
@@ -42,6 +44,7 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "mcp") return cmdMcp();
   if (cmd === "work") return cmdWork();
   if (cmd === "plugin") return cmdPlugin(rest);
+  if (cmd === "memory") return cmdMemory(rest);
   if (cmd === "code") return cmdCode(rest);
   if (cmd === "changes") return cmdChanges(process.cwd(), makeCtx({ create: false }).paths.home, (s) => console.log(s), (s) => console.error(s));
   if (cmd === "undo") return cmdUndo(process.cwd(), makeCtx({ create: false }).paths.home, rest.includes("--yes"), (s) => console.log(s), (s) => console.error(s));

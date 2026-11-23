@@ -12,3 +12,4 @@ export * from "./memory-context";
 export * from "./agent-composition";
 export * from "./worker";
 export * from "./worker-start";
+export * from "./memory-feedback";

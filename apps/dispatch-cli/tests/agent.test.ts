@@ -10,14 +10,22 @@ const ok: ApiCall = async (m, p, b) => { calls.push([m, p, b]); return { ok: tru
 const rpc = (method: string, params?: Record<string, unknown>, id = 1) => ({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) });
 
 describe("dispatch mcp: the Claude-facing tool server", () => {
-  test("handshake and tool list: exactly five tools and NOTHING that can approve, apply or decide", async () => {
+  test("handshake and tool list: exactly seven tools (five for work, two for memory) and NOTHING that can approve, apply or decide", async () => {
     const h = createMcpHandler(ok);
     expect(await h(rpc("initialize", { protocolVersion: "2024-11-05" }))).toMatchObject({ result: { capabilities: { tools: {} }, serverInfo: { name: "dispatch" } } });
     const l = (await h(rpc("tools/list")) as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
-    expect(l).toEqual(["dispatch_begin", "dispatch_next_job", "dispatch_start_run", "dispatch_progress", "dispatch_finish_run"]);
-    expect(l.join(" ")).not.toMatch(/approve|apply|decide|decision|reject/); expect(TOOLS.length).toBe(5);
+    expect(l).toEqual(["dispatch_begin", "dispatch_next_job", "dispatch_start_run", "dispatch_progress", "dispatch_finish_run", "dispatch_memory", "dispatch_memory_feedback"]);
+    expect(l.join(" ")).not.toMatch(/approve|apply|decide|decision|reject/); expect(TOOLS.length).toBe(7);
     expect(await h({ jsonrpc: "2.0", method: "notifications/initialized" })).toBeNull(); // notifications are never answered
     expect(await h(rpc("ping"))).toMatchObject({ result: {} });
+  });
+  test("memory tools call the memory routes and never a write route other than feedback", async () => {
+    calls.length = 0; const h = createMcpHandler(ok);
+    await h(rpc("tools/call", { name: "dispatch_memory", arguments: { projectId: "p1", task: "a b&c" } }));
+    await h(rpc("tools/call", { name: "dispatch_memory_feedback", arguments: { projectId: "p1", memoryId: "m1", verdict: "useful" } }));
+    expect(JSON.stringify(calls)).toContain("/api/v2/dispatch/memory/context?projectId=p1&task=a%20b%26c");
+    expect(JSON.stringify(calls)).toContain("/api/v2/dispatch/memory/feedback");
+    expect(JSON.stringify(calls)).not.toMatch(/decision|consent|note/);
   });
   test("tools call the matching API routes with the right bodies; ids are URL-encoded", async () => {
     calls.length = 0; const h = createMcpHandler(ok);
