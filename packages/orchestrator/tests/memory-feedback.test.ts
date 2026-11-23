@@ -55,32 +55,30 @@ afterAll(async () => {
 const signalCount = async () => (await db.sql<{ n: number }[]>`SELECT count(*)::int AS n FROM improvement_signals WHERE organization_id = ${org}`)[0]!.n;
 
 describe("memory feedback to SAI-11, as the control role (MEM-06)", () => {
-  test("with consent, a wrong verdict writes one SAI-11 signal through the control role, with digest-only evidence", async () => {
+  test("with consent, a wrong verdict writes one SAI-11 signal through the control role, in the project's own workspace, with no claim text", async () => {
     const before = await signalCount();
-    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "wrong", intent: "How are exports signed?", optedIn: true });
+    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "wrong", optedIn: true });
     expect(r.signalState).toBe("sent");
     expect((await signalCount()) - before).toBe(1);
-    const [s] = await db.sql<{ kind: string; evidence_digest: string; payload: unknown; intent_key: string }[]>`SELECT kind, evidence_digest, payload, intent_key FROM improvement_signals WHERE organization_id = ${org} ORDER BY occurred_at DESC LIMIT 1`;
+    const [s] = await db.sql<{ kind: string; workspace_id: string; intent_key: string; evidence_digest: string }[]>`SELECT kind, workspace_id, intent_key, evidence_digest FROM improvement_signals WHERE organization_id = ${org} ORDER BY occurred_at DESC LIMIT 1`;
     expect(s!.kind).toBe("low_quality");
-    expect(s!.evidence_digest).toMatch(/^sha256:|^[0-9a-f]{64}$/);
-    expect(JSON.stringify(s)).not.toContain("finance key");
+    expect(s!.workspace_id).toBe(projA);
+    expect(s!.intent_key).toBe("fact memory retrieval");
+    expect(JSON.stringify(s)).not.toMatch(/finance|signed|export/i);
     const [mem] = await db.sql<{ status: string }[]>`SELECT status FROM memory_records WHERE id = ${memoryId}`;
     expect(mem!.status).toBe("approved");
   });
 
   test("without consent, nothing reaches SAI-11 and the verdict is still kept", async () => {
     const before = await signalCount();
-    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "stale", intent: "export signing", optedIn: false });
+    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "stale", optedIn: false });
     expect(r.signalState).toBe("not_requested");
     expect(await signalCount()).toBe(before);
   });
 
-  test("the SAI-11 intake refuses an intent with no usable content: the verdict is kept as failed, the request does not fail", async () => {
+  test("a feedback row that cannot be stored rolls back the signal with it (one transaction)", async () => {
     const before = await signalCount();
-    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "missing", intent: "the a of and", optedIn: true });
-    expect(r.signalState).toBe("failed");
+    await expect(feedbackWithSignals(control, A(viewer), projA, { memoryId: "00000000-0000-4000-8000-000000000000", verdict: "wrong", optedIn: true })).rejects.toThrow();
     expect(await signalCount()).toBe(before);
-    const [row] = await db.sql<{ signal_state: string }[]>`SELECT signal_state FROM memory_feedback WHERE id = ${r.id}`;
-    expect(row!.signal_state).toBe("failed");
   });
 });
