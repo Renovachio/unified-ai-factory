@@ -222,3 +222,12 @@ Not verified or not done:
 - Backup expiry remains an operator runbook item.
 
 Results: full suite 1497 pass, 0 fail (92 files). Typecheck, lint, gates, package validation, license and the script typecheck pass.
+
+## Addendum 12: race and control-role checks for the conflict and sweep work
+
+- Race fixed: approvals in one project now take a transaction-scoped advisory lock (lockProjectApprovals) before the conflict check, on both the plain approval path and approveWithErasure. Without it, a second overlapping approval could read before the first committed and pass.
+- Race test is deterministic: a first approval holds the lock and does not commit; a second overlapping approval must wait, then sees the committed overlap and is refused. Mutation check: removing the lock makes this test fail.
+- An earlier, timing-based race test passed even without the lock (each approval finished before the other began), so it was replaced. Stated here because it proved nothing.
+- Control role: the erasure path (approveWithErasure, runRetentionSweep) runs on a connection logged in as factory_control and passes. This is the role-scoped run that addendum 11 said was not yet done.
+
+Results: full suite 1499 pass, 0 fail (92 files). Typecheck, lint, gates, package validation and license pass.

@@ -1,7 +1,7 @@
 import type { Sql } from "@factory/db";
 import { MemoryError } from "./domain";
 import type { PackTextStore } from "./context";
-import { type Actor, approveMemory, conflictsOf, eraseMemory, type MemoryView, requireActor, requireProject } from "./lifecycle";
+import { type Actor, approveMemory, conflictsOf, eraseMemory, lockProjectApprovals, type MemoryView, requireActor, requireProject } from "./lifecycle";
 import { APPROVER_ROLES } from "./domain";
 import { purgePackTextFor } from "./retention";
 
@@ -18,6 +18,7 @@ export async function approveWithErasure(sql: Sql, store: PackTextStore, actor: 
     view = await sql.begin(async (tx) => {
       await requireActor(tx, actor, APPROVER_ROLES);
       await requireProject(tx, actor.organizationId, projectId);
+      await lockProjectApprovals(tx, projectId);
       const conflicts = (await conflictsOf(tx, actor.organizationId, projectId, memoryId)).map((c) => c.id).sort();
       const accepted = [...new Set(acceptErasureOf)].sort();
       if (conflicts.length !== accepted.length || conflicts.some((id, i) => id !== accepted[i])) {

@@ -298,6 +298,14 @@ const CONFLICT_MAX_ROWS = 500;
 export interface ConflictCandidate { id: string; claim: string; similarity: number }
 
 /**
+ * Serialises approvals within one project (transaction-scoped advisory lock). Without it, two overlapping memories approved at the
+ * same moment could each pass the conflict check against a row the other had not yet committed.
+ */
+export async function lockProjectApprovals(q: Q, projectId: string): Promise<void> {
+  await q`SELECT pg_advisory_xact_lock(hashtext('memory-approval:' || ${projectId}::text))`;
+}
+
+/**
  * Approved memories in the same project and kind whose wording overlaps the given memory. This is a textual signal only: it does
  * not decide whether two claims contradict. A human decides. Consolidation originals and the memory a revision replaces are not
  * conflicts (they are the same knowledge, handled by their own rules).
@@ -342,6 +350,7 @@ export async function approveMemory(sql: Sql, actor: Actor, projectId: string, m
       const originals = await tx<Row[]>`SELECT o.id, o.status, o.record_version FROM memory_consolidations c
         JOIN memory_records o ON o.id = c.original_id WHERE c.consolidated_id = ${memoryId} FOR UPDATE OF o`;
       if (originals.some((o) => o.status !== "approved")) throw new MemoryError("WRONG_STATE", "an original of this consolidation is no longer approved; re-propose the consolidation");
+      await lockProjectApprovals(tx, projectId);
       const conflicts = await conflictsOf(tx, actor.organizationId, projectId, memoryId);
       if (conflicts.length > 0) throw new MemoryError("CONFLICT_UNRESOLVED", `this memory overlaps approved memory ${conflicts.map((c) => c.id).join(", ")}; approve it with an explicit erasure decision`);
       await tx`UPDATE memory_records SET status = 'approved', approved_by = ${actor.userId}, updated_at = now() WHERE id = ${memoryId}`;

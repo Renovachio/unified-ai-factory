@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { connect } from "../../db/src/client";
 import { createTestDb } from "../../db/src/testing";
 import { digestOf } from "../../telemetry/src/index";
 import {
-  approveMemory, approveWithErasure, eraseMemory, MemoryError, proposeMemory, proposeRevision, runRetentionSweep, type Actor, type PackTextStore,
+  approveMemory, approveWithErasure, eraseMemory, lockProjectApprovals, MemoryError, proposeMemory, proposeRevision, runRetentionSweep, type Actor, type PackTextStore,
 } from "../src/index";
 
 class BlobStore implements PackTextStore {
@@ -151,5 +152,51 @@ describe("retention sweep (operator entry point)", () => {
     const [audit] = await db.sql<{ actor: string; action: string; result: string }[]>`SELECT actor, action, result FROM audit_entries WHERE action = 'memory.retention' AND actor = ${steward} ORDER BY created_at DESC LIMIT 1`;
     expect(audit).toEqual({ actor: steward, action: "memory.retention", result: "ok" });
     expect(digestOf(r)).toMatch(/^sha256:/);
+  });
+});
+
+describe("concurrency and the control role (review of the conflict and sweep work)", () => {
+  test("an approval that starts while an overlapping approval is still uncommitted waits, then sees it and is refused", async () => {
+    const p = await newProject("race");
+    const x = await proposal(p, "Refund requests close within five business days");
+    const y = await proposal(p, "Refund requests must close within five business days");
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let release!: () => void;
+    const hold = new Promise<void>((r) => { release = r; });
+    // First approval: takes the project lock, approves y, does NOT commit yet.
+    const first = db.sql.begin(async (tx) => {
+      await lockProjectApprovals(tx, p);
+      await approveMemory(tx as unknown as typeof db.sql, A(approver), p, y);
+      await hold;
+    });
+    await sleep(200);
+    // Second approval of the overlapping x starts now. With the lock it must wait for the first to commit.
+    const second = approveMemory(db.sql, A(approver), p, x).then(() => "approved", (e) => e);
+    await sleep(300);
+    release();
+    await first;
+    const outcome = await second;
+    expect(outcome instanceof MemoryError && outcome.code).toBe("CONFLICT_UNRESOLVED");
+    expect((await statusOf(x)).status).toBe("proposed");
+  });
+
+  test("the erasure path works as the control role (the role an operator connection uses), not only as the database owner", async () => {
+    await db.sql.unsafe("ALTER ROLE factory_control LOGIN");
+    const cu = new URL(db.url); cu.username = "factory_control";
+    const control = connect(cu.toString());
+    try {
+      const p = await newProject("control");
+      const store = new BlobStore();
+      const old = await approved(p, "Ledger exports are signed with the finance key");
+      const digest = await packFor(store, p, old, "rendered context: Ledger exports are signed with the finance key");
+      const nu = await proposal(p, "Ledger exports must be signed with the finance key");
+      await approveWithErasure(control, store, A(approver), p, nu, [old]);
+      expect((await statusOf(old)).status).toBe("deleted");
+      expect(store.blobs.has(digest)).toBe(false);
+      const r = await runRetentionSweep(control, store, steward);
+      expect(r.projects.some((x) => x.projectId === p)).toBe(true);
+    } finally {
+      await control.end();
+    }
   });
 });
