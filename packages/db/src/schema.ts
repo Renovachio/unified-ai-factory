@@ -655,6 +655,17 @@ export const memoryFeedback = pgTable("memory_feedback", {
   createdAt: created(),
 });
 
+export const memoryTelemetryConsent = pgTable("memory_telemetry_consent", {
+  seq: bigint("seq", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+  id: uuid("id").notNull().unique().defaultRandom(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  projectId: uuid("project_id").notNull().references(() => repositories.id),
+  optedIn: boolean("opted_in").notNull(),
+  grantedBy: uuid("granted_by").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  createdAt: created(),
+});
+
 export const memorySourceRevocations = pgTable("memory_source_revocations", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   projectId: uuid("project_id").notNull().references(() => repositories.id),

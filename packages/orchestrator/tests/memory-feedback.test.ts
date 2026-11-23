@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "../../db/src/client";
 import { createTestDb } from "../../db/src/testing";
-import { approveMemory, type Actor, proposeMemory, recordRetrievalFeedback, type SignalSink } from "@factory/memory";
+import { approveMemory, type Actor, proposeMemory, recordRetrievalFeedback, setTelemetryConsent, type SignalSink } from "@factory/memory";
 import { digestOf } from "@factory/telemetry";
 import { feedbackWithSignals, retryFeedbackSignals } from "../src/memory-feedback";
 
@@ -56,8 +56,9 @@ const signalCount = async () => (await db.sql<{ n: number }[]>`SELECT count(*)::
 
 describe("memory feedback to SAI-11, as the control role (MEM-06)", () => {
   test("with consent, a wrong verdict writes one SAI-11 signal through the control role, in the project's own workspace, with no claim text", async () => {
+    await setTelemetryConsent(db.sql, A(approver), projA, true, "pilot on");
     const before = await signalCount();
-    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "wrong", optedIn: true });
+    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "wrong" });
     expect(r.signalState).toBe("sent");
     expect((await signalCount()) - before).toBe(1);
     const [s] = await db.sql<{ kind: string; workspace_id: string; intent_key: string; evidence_digest: string }[]>`SELECT kind, workspace_id, intent_key, evidence_digest FROM improvement_signals WHERE organization_id = ${org} ORDER BY occurred_at DESC LIMIT 1`;
@@ -70,25 +71,28 @@ describe("memory feedback to SAI-11, as the control role (MEM-06)", () => {
   });
 
   test("without consent, nothing reaches SAI-11 and the verdict is still kept", async () => {
+    await setTelemetryConsent(db.sql, A(approver), projA, false, "pilot off");
     const before = await signalCount();
-    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "stale", optedIn: false });
+    const r = await feedbackWithSignals(control, A(viewer), projA, { memoryId, verdict: "stale" });
     expect(r.signalState).toBe("not_requested");
     expect(await signalCount()).toBe(before);
   });
 
-  test("a feedback row that cannot be stored rolls back the signal with it (one transaction)", async () => {
+  test("an unknown memory is refused before any signal is sent", async () => {
+    await setTelemetryConsent(db.sql, A(approver), projA, true, "pilot on");
     const before = await signalCount();
-    await expect(feedbackWithSignals(control, A(viewer), projA, { memoryId: "00000000-0000-4000-8000-000000000000", verdict: "wrong", optedIn: true })).rejects.toThrow();
+    await expect(feedbackWithSignals(control, A(viewer), projA, { memoryId: "00000000-0000-4000-8000-000000000000", verdict: "wrong" })).rejects.toThrow();
     expect(await signalCount()).toBe(before);
   });
   test("a signal that fails is retried through the control role into the real intake, once; a second retry has nothing to do", async () => {
+    await setTelemetryConsent(db.sql, A(approver), projA, true, "pilot on");
     const failing: SignalSink = async (_s, q) => { await q`SELECT * FROM table_that_does_not_exist`; };
-    const first = await recordRetrievalFeedback(control, A(viewer), projA, { memoryId, verdict: "missing", optedIn: true }, failing);
+    const first = await recordRetrievalFeedback(control, A(viewer), projA, { memoryId, verdict: "missing" }, failing);
     expect(first.signalState).toBe("failed");
     const before = await signalCount();
-    const rep = await retryFeedbackSignals(control, A(viewer), projA, true);
+    const rep = await retryFeedbackSignals(control, A(viewer), projA);
     expect(rep).toEqual({ attempted: 1, sent: 1, failed: 0 });
     expect((await signalCount()) - before).toBe(1);
-    expect(await retryFeedbackSignals(control, A(viewer), projA, true)).toEqual({ attempted: 0, sent: 0, failed: 0 });
+    expect(await retryFeedbackSignals(control, A(viewer), projA)).toEqual({ attempted: 0, sent: 0, failed: 0 });
   });
 });

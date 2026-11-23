@@ -96,3 +96,11 @@ Still open (decisions for the operator):
 - Mutation check: removing the "already retried" condition makes the final-retry test fail. The condition was restored afterwards.
 - Not covered: a crash between the send and the insert inside the same transaction is rolled back by the database; no test kills a process mid-transaction.
 - Still open: nothing runs the retry automatically. An operator or a job must call it.
+
+## Addendum 4: consent is stored, not asserted (migration 0033)
+
+- The caller's `optedIn` flag is removed from feedback and retries. Consent is a per-project, append-only setting (`memory_telemetry_consent`), set by `setTelemetryConsent`, which requires the approver or admin role. The latest row wins; no row means not opted in.
+- Feedback and retries read the setting inside their transaction. The SAI-11 intake still receives `optedIn: true`, but only after the memory function has read consent from the database, and the intake checks that value.
+- Tests: viewer refused to change consent; latest setting wins (on then off sends nothing); no row means off; the sink-related tests set consent explicitly.
+- Not decided: who may revoke consent beyond approvers, and whether consent should also be recorded per user. The operator should confirm the approver-only rule.
+- Full suite: 1523 pass, 0 fail.

@@ -17,6 +17,6 @@ export function feedbackWithSignals(sql: Sql, actor: Actor, projectId: string, i
 }
 
 /** Re-sends failed gap signals for the project, through the SAI-11 intake. */
-export function retryFeedbackSignals(sql: Sql, actor: Actor, projectId: string, optedIn: boolean): Promise<RetryReport> {
-  return retryFailedSignals(sql, actor, projectId, optedIn, sai11SignalSink);
+export function retryFeedbackSignals(sql: Sql, actor: Actor, projectId: string): Promise<RetryReport> {
+  return retryFailedSignals(sql, actor, projectId, sai11SignalSink);
 }
