@@ -1,0 +1,16 @@
+{
+  "name": "@factory/sandboxes",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@factory/domain": "workspace:*",
+    "@factory/telemetry": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

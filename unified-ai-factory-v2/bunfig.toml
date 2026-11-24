@@ -1,0 +1,6 @@
+[install]
+exact = true
+frozenLockfile = false
+
+[test]
+preload = ["./packages/db/tests/setup-db.ts"]

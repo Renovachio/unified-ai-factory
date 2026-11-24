@@ -1,0 +1,10 @@
+{
+  "name": "logbook",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "claude plugin test .",
+    "validate": "claude plugin validate .",
+    "check": "claude plugin test . && claude plugin validate ."
+  }
+}

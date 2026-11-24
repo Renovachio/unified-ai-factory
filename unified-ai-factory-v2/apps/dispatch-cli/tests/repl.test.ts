@@ -1,0 +1,181 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PassThrough } from "node:stream";
+import { DispatchClient } from "@factory/dispatch-client";
+import { createTestDb } from "../../../packages/db/src/testing";
+import { bootstrapLocalOwner, CompositeAuthenticator, createApi, LOCAL_AGENT_SUBJECT, LocalBrowserEntry, LocalOwnerAuthenticator, SessionManager } from "../../../apps/api/src/index";
+import type { Ctx } from "../src/launcher/context";
+import { Executor } from "../src/repl/executor";
+import { runRepl, type ReplHooks } from "../src/repl/repl";
+import { Session } from "../src/repl/session";
+
+let db: Awaited<ReturnType<typeof createTestDb>>; let server: ReturnType<typeof Bun.serve>; let base = ""; let org = ""; let repoId = ""; let home = ""; let n = 0;
+const TOKEN = "r".repeat(48); const AGENT_TOKEN = "g".repeat(48); let calls: string[] = [];
+beforeAll(async () => {
+  process.env.DISPATCH_CONFIG_DIR = join(import.meta.dir, "../../../config"); process.env.DISPATCH_LOCAL_TOKEN_FILE = "/unused"; // enables local-project routes
+  db = await createTestDb(); org = await bootstrapLocalOwner(db.sql); home = mkdtempSync(join(tmpdir(), "dsp-repl-"));
+  const sm = new SessionManager("y".repeat(40));
+  const api = createApi({ sql: db.sql, rateLimit: { capacity: 100000, refillPerSec: 100000 }, authenticator: new CompositeAuthenticator([new LocalOwnerAuthenticator(TOKEN), new LocalOwnerAuthenticator(AGENT_TOKEN, LOCAL_AGENT_SUBJECT), sm]), local: { entry: new LocalBrowserEntry(sm, "http://127.0.0.1:3000") } });
+  server = Bun.serve({ port: 0, hostname: "127.0.0.1", idleTimeout: 30, fetch: (r) => { calls.push(`${r.method} ${new URL(r.url).pathname}`); return api(r); } }); base = `http://127.0.0.1:${server.port}`;
+  repoId = (await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'github', 'rr', 'acme', 'clip') RETURNING id`)[0]?.id as string;
+});
+afterAll(async () => { server.stop(true); await db.drop(); rmSync(home, { recursive: true, force: true }); });
+
+const client = () => new DispatchClient({ baseUrl: base, headers: () => ({ authorization: `Bearer ${TOKEN}` }), timeoutMs: 5000 });
+const ctx = () => ({ paths: { home }, cfg: {}, env: {} }) as unknown as Ctx;
+async function seedJob(title: string, repo = repoId): Promise<string> { return (await db.sql`WITH q AS (INSERT INTO requests (repository_id, source, source_external_id, payload_digest, type, title, description) VALUES (${repo}, 'api', ${"s" + n++}, 'x', 'feature', ${title}, 'd') RETURNING id) INSERT INTO jobs (request_id, repository_id) SELECT id, ${repo} FROM q RETURNING id`)[0]?.id as string; }
+const hooks = (log: string[] = [], stopAnswer = false): ReplHooks => ({ openDashboard: async () => "dashboard opened", shutdown: async (io) => { const a = await io.ask("Type “shutdown”: "); log.push(a); return a === "shutdown" || stopAnswer ? { stopped: true, message: "stopped" } : { stopped: false, message: "Not stopped." }; } });
+async function session(lines: string[], h = hooks(), extra: { initialRequest?: string } = {}): Promise<{ out: string; result: string }> {
+  const input = new PassThrough(); const output = new PassThrough(); let out = ""; output.on("data", (d) => (out += String(d)));
+  const p = runRepl(ctx(), h, { input, output, client: client(), ...extra }); for (const l of lines) input.write(l + "\n"); input.end(); const result = await p; return { out, result };
+}
+
+describe("interactive REPL against the real API (DSP-03/06/08)", () => {
+  test("/help lists every documented command; unknown slash commands get suggestions and reach neither the API nor a shell", async () => {
+    calls = []; const { out, result } = await session(["/help", "/statu", "/rm -rf /", "/exit"]);
+    expect(out).toContain("\n  /new"); // multi-line output keeps its line breaks
+    for (const c of ["/new", "/projects", "/project use", "/jobs", "/status", "/models", "/skills", "/agents", "/approvals", "/approve", "/pause", "/resume", "/cancel", "/logs", "/dashboard", "/context", "/exit", "/shutdown"]) expect(out).toContain(c);
+    expect(out).toContain("Did you mean /status"); expect(out).toContain("Unknown command /rm"); expect(calls).toEqual([]); expect(result).toBe("detached");
+  });
+  test("/status, /projects and /jobs show real, tenant-scoped data; titles are rendered as data with control characters stripped", async () => {
+    await seedJob("Fix clipboard \u001b[31mRED\u001b[0m sync"); const { out } = await session(["/status", "/projects", "/jobs", "/exit"]);
+    expect(out).toMatch(/Jobs: \d+ in flight/); expect(out).toContain("acme/clip"); expect(out).toContain("Fix clipboard"); expect(out).not.toContain("\u001b[31m");
+  });
+  test("deterministic natural language needs no model; unrecognised text is refused and causes no API call", async () => {
+    calls = []; const a = await session(["show my jobs", "exit"]); expect(a.out).toContain("job(s)"); expect(calls.some((c) => c.includes("/snapshot"))).toBe(true);
+    calls = []; const b = await session(["pause the clipboard job", "/exit"]); expect(b.out).toContain("fixed set of phrases"); expect(calls).toEqual([]);
+    const c = await session(["stop everything", "/exit"]); expect(c.out).toContain("Which do you want");
+  });
+  test("/project use sets scope; unknown/unauthorized projects are refused identically; /context shows and clears it", async () => {
+    const [o2] = await db.sql`INSERT INTO organizations (name) VALUES ('rival') RETURNING id`; const [rr] = await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${o2?.id}, 'github', 'x9', 'rival', 'secret') RETURNING id`;
+    const { out } = await session([`/project use ${repoId.slice(0, 8)}`, "/context", "/project use " + String(rr?.id), "/project use nope-nope", "/context clear", "/context", "/exit"]);
+    expect(out).toContain("Active project: acme/clip"); expect(out).toContain("No visible project"); expect(out).not.toContain("rival"); expect(out).toContain("Context cleared");
+    expect(out.split("Active project: none").length).toBeGreaterThanOrEqual(2);
+  });
+  test("a context pointing at a project that is no longer visible is dropped, not trusted (stale permission)", async () => {
+    const s = Session.open(null, "dispatch-local-owner"); s.setProject("00000000-0000-4000-8000-000000000000", "ghost");
+    const msgs: string[] = []; const ex = new Executor(client(), s, { out: (m) => msgs.push(m), ask: async () => "" }); const r = await ex.execute({ type: "job.list" });
+    expect(msgs.join()).toContain("no longer available"); expect(s.projectId).toBeNull(); expect(r.status).toBe("completed");
+  });
+  test("cancel: wrong confirmation does nothing; right confirmation cancels exactly that job; ambiguity is never guessed", async () => {
+    const a = await seedJob("cancel-me-alpha"); const b = await seedJob("cancel-me-beta");
+    const amb = await session(["/cancel cancel-me", "/exit"]); expect(amb.out).toContain("matches 2 jobs");
+    const no = await session([`/cancel ${a}`, "nope", "/exit"]); expect(no.out).toContain("Cancelled nothing"); expect((await db.sql`SELECT state FROM jobs WHERE id = ${a}`)[0]?.state).not.toBe("CANCELLED");
+    const yes = await session([`/cancel ${a}`, a.slice(0, 8), "/exit"]); expect(yes.out).toContain("Cancelled job"); expect((await db.sql`SELECT state FROM jobs WHERE id = ${a}`)[0]?.state).toBe("CANCELLED"); expect((await db.sql`SELECT state FROM jobs WHERE id = ${b}`)[0]?.state).not.toBe("CANCELLED");
+  });
+  test("a confirmation is bound to the revision the user saw: if the job changes while confirming, nothing is cancelled", async () => {
+    const id = await seedJob("moves-while-confirming"); const s = Session.open(null, "dispatch-local-owner");
+    const ex = new Executor(client(), s, { out: () => undefined, ask: async () => { await db.sql`ALTER TABLE jobs DISABLE TRIGGER USER`; await db.sql`UPDATE jobs SET version = version + 1 WHERE id = ${id}`; await db.sql`ALTER TABLE jobs ENABLE TRIGGER USER`; return id.slice(0, 8); } });
+    const r = await ex.execute({ type: "job.cancel", jobId: id }); expect(r).toMatchObject({ status: "blocked", reasonCode: "stale-confirmation" }); expect((await db.sql`SELECT state FROM jobs WHERE id = ${id}`)[0]?.state).not.toBe("CANCELLED");
+  });
+  test("pause then resume go through the existing operator endpoints with the observed revision", async () => {
+    const id = await seedJob("pausable-job"); const p = await session([`/pause ${id}`, "/exit"]); expect(p.out).toContain("Pause requested"); expect((await db.sql`SELECT paused_at FROM jobs WHERE id = ${id}`)[0]?.paused_at).not.toBeNull();
+    const r = await session([`/resume ${id}`, "/exit"]); expect(r.out).toContain("Resumed"); expect((await db.sql`SELECT paused_at FROM jobs WHERE id = ${id}`)[0]?.paused_at).toBeNull();
+    const bad = await session(["/pause 11111111-1111-4111-8111-111111111111", "/exit"]); expect(bad.out).toContain("No visible job");
+  });
+  test("/models separates available, qualified and authorized; /skills and /agents label proposals; empty inbox says so", async () => {
+    const m = await session(["/models", "/skills", "/agents", "/approvals", "/exit"]);
+    expect(m.out).toContain("available 0 · qualified 0 · authorized 0"); expect(m.out).toContain("metered model APIs disabled"); expect(m.out).toContain("No runtime is configured"); expect(m.out).toContain("approved & active: 0"); expect(m.out).toContain("Nothing needs your attention");
+  });
+  test("a job awaiting a human decision is routed to the dashboard (exact SHA binding), never decided blindly from the terminal", async () => {
+    const id = await seedJob("needs a human"); await db.sql`ALTER TABLE jobs DISABLE TRIGGER USER`; await db.sql`UPDATE jobs SET state = 'AWAITING_HUMAN' WHERE id = ${id}`; await db.sql`ALTER TABLE jobs ENABLE TRIGGER USER`;
+    const { out } = await session(["/approvals", `/approve ${id.slice(0, 8)}`, "/exit"]); expect(out).toContain("job-decision"); expect(out).toContain("review and decide it in the dashboard");
+  });
+  test("/exit and end-of-input detach without stopping; /shutdown needs the typed confirmation and honours a refusal", async () => {
+    const log: string[] = []; expect((await session(["/exit"])).result).toBe("detached"); expect((await session([])).result).toBe("detached");
+    const refused = await session(["/shutdown", "no", "/exit"], hooks(log)); expect(refused.result).toBe("detached"); expect(refused.out).toContain("Not stopped");
+    const ok = await session(["/shutdown", "shutdown"], hooks(log)); expect(ok.result).toBe("shutdown");
+  });
+  test("an unreachable factory yields a clear, non-crashing message", async () => {
+    const dead = new DispatchClient({ baseUrl: "http://127.0.0.1:1", headers: () => ({}), timeoutMs: 500 }); const s = Session.open(null, "x"); const msgs: string[] = [];
+    const r = await new Executor(dead, s, { out: (m) => msgs.push(m), ask: async () => "" }).execute({ type: "factory.status" }); expect(r.status).toBe("failed"); expect(r.message).toContain("dispatch status");
+  });
+  test("project.create intent points to /new <folder>, not faked", async () => {
+    const r = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).execute({ type: "project.create", title: "X" }); expect(r).toMatchObject({ status: "blocked", reasonCode: "use-folder" });
+  });
+
+  test("/dispatch <request> creates a job in the active project; the text is stored verbatim as untrusted data, not run", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session([`/project use ${repoId.slice(0, 8)}`, "/dispatch add dark mode; rm -rf / /cancel everything", "/exit"]);
+    expect(out).toContain("Request created: job"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before + 1);
+    const r = (await db.sql`SELECT description FROM requests ORDER BY created_at DESC LIMIT 1`)[0]; expect(r?.description).toBe("add dark mode; rm -rf / /cancel everything");
+  });
+  test("with exactly one project and none selected, /dispatch uses it; the shell form (initialRequest) does the same, then the prompt is usable", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session(["/context", "/exit"], hooks(), { initialRequest: "write the release notes" });
+    expect(out).toContain("Request created: job"); expect(out).toContain("Active project: acme/clip"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before + 1);
+  });
+  test("with several projects and none selected it asks which one and creates nothing; with no project it says so", async () => {
+    const [o] = await db.sql`SELECT id FROM organizations WHERE name = 'Dispatch (local)'`; const [r2] = await db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${o?.id}, 'github', 'second', 'acme', 'other') RETURNING id`;
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c);
+    const { out } = await session(["/context clear", "/dispatch do something", "/exit"]); expect(out).toContain("Which project?"); expect(out).toContain("acme/other"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before);
+    await db.sql`DELETE FROM repositories WHERE id = ${r2?.id}`;
+    const none = await new Executor(client(), Session.open(null, "x"), { out: () => undefined, ask: async () => "" }).submitRequest("x"); expect(none.status === "completed" || none.status === "blocked").toBe(true);
+  });
+  test("/dispatch with no text shows usage and creates nothing", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c); const { out } = await session(["/dispatch", "/exit"]); expect(out).toContain("Usage: /dispatch <request>"); expect(Number((await db.sql`SELECT count(*) AS c FROM jobs`)[0]?.c)).toBe(before);
+  });
+
+  test("/new <folder> registers a local folder (no GitHub), makes it active, is idempotent, and /dispatch then works", async () => {
+    const dir = join(home, "my-notes"); (await import("node:fs")).mkdirSync(join(dir, ".git"), { recursive: true });
+    const a = await session([`/new ${dir}`, `/new ${dir}`, "/projects", "/dispatch draft the intro", "/exit"]);
+    expect(a.out).toContain("Added: my-notes"); expect(a.out).toContain("Already added: my-notes"); expect(a.out).toContain("Request created");
+    const rows = await db.sql`SELECT provider, owner, local_path FROM repositories WHERE name = 'my-notes'`; expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ provider: "local", local_path: (await import("node:fs")).realpathSync(dir) });
+    expect((await db.sql`SELECT count(*) AS c FROM jobs j JOIN repositories r ON r.id = j.repository_id WHERE r.name = 'my-notes'`)[0]?.c).toBe("1");
+  });
+  test("dangerous or invalid folders are refused with the reason and nothing is registered", async () => {
+    const before = Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c);
+    const { out } = await session(["/new /", "/new /etc", "/new ~", "/new /no/such/folder", `/new ${join(home, "..", "..")}`, "/exit"]);
+    expect(out).toContain("refusing"); expect(out).toContain("cannot create folders inside"); // an unwritable parent is refused rather than offered
+    expect(Number((await db.sql`SELECT count(*) AS c FROM repositories`)[0]?.c)).toBe(before);
+  });
+  test("the DB refuses a local project without a path and a github one with a path", async () => {
+    await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name) VALUES (${org}, 'local', 'zz', 'local', 'zz')`).rejects.toThrow();
+    await expect(db.sql`INSERT INTO repositories (organization_id, provider, external_id, owner, name, local_path) VALUES (${org}, 'github', 'zy', 'o', 'n', '/x')`).rejects.toThrow();
+  });
+
+  test("our own colour codes survive, untrusted escape sequences do not; shell-escaped folder paths work", async () => {
+    const dir = join(home, "Scribe Deck Transcripts"); (await import("node:fs")).mkdirSync(dir, { recursive: true });
+    const had = Object.getOwnPropertyDescriptor(process.stdout, "isTTY"); Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true }); // colours on, as in a real terminal
+    let a: { out: string; result: string };
+    try { a = await session([`/new ${join(home, "Scribe\\ Deck\\ Transcripts")}`, "/new /no/such/\u001b[2Jfolder", "/exit"]); }
+    finally { if (had) Object.defineProperty(process.stdout, "isTTY", had); else Reflect.deleteProperty(process.stdout, "isTTY"); }
+    expect(a.out).toContain("Added: Scribe Deck Transcripts"); expect(a.out).not.toContain("\u001b[2J");   // untrusted escape removed
+    expect(a.out).toContain("\u001b[33m!\u001b[0m"); expect(a.out).not.toContain("·[33m");               // our own marker intact, not mangled
+  });
+
+  test("/new <missing folder> asks, creates only on yes, and registers it; refusing leaves the disk untouched; dangerous places are refused without asking", async () => {
+    const fs = await import("node:fs"); const nu = join(home, "MeetingNotes"); const no = join(home, "NotCreated");
+    const declined = await session([`/new ${no}`, "n", "/exit"]); expect(declined.out).toContain("does not exist. Create it?"); expect(declined.out).toContain("Nothing was created"); expect(fs.existsSync(no)).toBe(false);
+    const yes = await session([`/new ${nu}`, "y", "/dispatch first note", "/exit"]); expect(yes.out).toContain("Created and added: MeetingNotes"); expect(fs.existsSync(nu)).toBe(true); expect(yes.out).toContain("Request created");
+    const again = await session([`/new ${nu}`, "/exit"]); expect(again.out).toContain("Already added: MeetingNotes"); expect(again.out).not.toContain("Create it?");
+    const bad = await session(["/new /etc/mynotes", "/new /System/x", "/exit"]); expect(bad.out).not.toContain("Create it?"); expect(bad.out).toContain("refusing a system folder"); expect(fs.existsSync("/etc/mynotes")).toBe(false);
+  });
+
+  test("agent runs: /runs, /review (diff), /accept needs a typed word and applies exactly what was shown, /discard touches nothing", async () => {
+    const fs = await import("node:fs"); const dhome = fs.realpathSync(mkdtempSync(join(tmpdir(), "dsp-dhome-"))); const prev = process.env.DISPATCH_HOME; process.env.DISPATCH_HOME = dhome;
+    const agent = async (method: string, path: string, body?: unknown) => { const r = await fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${AGENT_TOKEN}`, "content-type": "application/json", "idempotency-key": `ag${++n}` }, ...(body ? { body: JSON.stringify(body) } : {}) }); return (await r.json()) as Record<string, any>; }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    try {
+      const proj = join(home, "RunsProj"); fs.mkdirSync(join(proj, "notes"), { recursive: true }); fs.writeFileSync(join(proj, "notes/a.txt"), "alpha\n");
+      const plan = (w: string) => ({ summary: "tidy notes", tasks: [{ id: "read", goal: "read the notes", model: "haiku", reads: ["notes/"], writes: [], dependsOn: [] }, { id: "edit", goal: "uppercase a", model: "sonnet", reads: [], writes: [w], dependsOn: ["read"] }] });
+      await session([`/new ${proj}`, "/dispatch uppercase notes", "/exit"]);
+      const jobsOf = async () => (await db.sql`SELECT j.id FROM jobs j JOIN repositories r ON r.id = j.repository_id WHERE r.local_path = ${fs.realpathSync(proj)} ORDER BY j.created_at`).map((x) => x.id as string);
+      const [first] = await jobsOf(); const run = await agent("POST", "/api/v2/dispatch/runs", { jobId: first, plan: plan("notes/") }); fs.writeFileSync(join(run.workspace, "notes/a.txt"), "ALPHA\n");
+      await agent("POST", `/api/v2/dispatch/runs/${run.runId}/finish`, { summary: "uppercased a.txt" });
+      const id8 = (run.runId as string).slice(0, 8);
+      const r1 = await session(["/runs", `/review ${id8}`, `/accept ${id8}`, "no", "/exit"]);
+      expect(r1.out).toContain("awaiting_approval"); expect(r1.out).toContain("1×sonnet"); expect(r1.out).toContain("+ALPHA"); expect(r1.out).toContain("-alpha"); expect(r1.out).toContain("haiku"); expect(r1.out).toContain("Nothing was applied");
+      expect(fs.readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("alpha\n");
+      const r2 = await session([`/accept ${id8}`, "apply", "/runs", "/exit"]); expect(r2.out).toContain("Applied 1 change(s)"); expect(fs.readFileSync(join(proj, "notes/a.txt"), "utf8")).toBe("ALPHA\n"); expect(r2.out).toContain("applied");
+      const again = await session([`/accept ${id8}`, "/exit"]); expect(again.out).toContain("applied; there is nothing to apply");
+      // a second run: discard leaves the folder alone
+      await session(["/dispatch second pass", "/exit"]); const second = (await jobsOf())[1];
+      const r3 = await agent("POST", "/api/v2/dispatch/runs", { jobId: second, plan: plan("out/") }); fs.mkdirSync(join(r3.workspace, "out"), { recursive: true }); fs.writeFileSync(join(r3.workspace, "out/x.md"), "x\n");
+      await agent("POST", `/api/v2/dispatch/runs/${r3.runId}/finish`, { summary: "x" });
+      const d = await session(["/discard " + (r3.runId as string).slice(0, 8), "/exit"]); expect(d.out).toContain("your folder was not touched"); expect(fs.existsSync(join(proj, "out"))).toBe(false); expect(fs.existsSync(r3.workspace)).toBe(false);
+      expect((await session(["/review zzzzzz", "/exit"])).out).toContain("Usage:"); expect((await session(["/review 0000000a", "/exit"])).out).toContain("No such run");
+    } finally { if (prev === undefined) delete process.env.DISPATCH_HOME; else process.env.DISPATCH_HOME = prev; fs.rmSync(dhome, { recursive: true, force: true }); }
+  });
+});

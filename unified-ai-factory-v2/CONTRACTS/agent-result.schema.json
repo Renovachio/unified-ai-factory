@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentRunResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runId",
+    "exitStatus",
+    "usageSource",
+    "inferenceBillingMode"
+  ],
+  "properties": {
+    "runId": {
+      "type": "string"
+    },
+    "exitStatus": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "timed_out",
+        "cancelled"
+      ]
+    },
+    "candidateSha": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{40}$"
+    },
+    "artifactUri": {
+      "type": "string"
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "computeSeconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "usageSource": {
+      "enum": [
+        "cli_reported",
+        "local_runtime",
+        "estimated",
+        "unavailable"
+      ]
+    },
+    "inferenceBillingMode": {
+      "enum": [
+        "subscription_included",
+        "local_compute"
+      ]
+    }
+  }
+}

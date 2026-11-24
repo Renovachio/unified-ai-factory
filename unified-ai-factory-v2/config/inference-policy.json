@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "allowedInferenceModes": [
+    "subscription_cli",
+    "local_model"
+  ],
+  "modelApiBillingEnabled": false,
+  "autoMergeHighRisk": false,
+  "pilotHumanApproval": true
+}

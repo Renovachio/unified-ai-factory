@@ -1,0 +1,15 @@
+{
+  "name": "@factory/dispatch-core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@factory/telemetry": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

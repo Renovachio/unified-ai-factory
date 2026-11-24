@@ -1,0 +1,12 @@
+# Dispatch security notes
+
+- Dispatch is an interaction layer over the existing API, RBAC, approvals and state machine; it adds no second orchestrator and no authority of its own.
+- **Network:** everything binds to 127.0.0.1; the private PostgreSQL listens on a unix socket only (socket dir 0700). Browser URLs are verified loopback `http://127.0.0.1:<port>` before opening, via an argument array (no shell).
+- **Auth:** a random per-install owner token (0600) authenticates the terminal and menu bar. The browser never sees it: it gets a single-use, 60-second code that becomes an HttpOnly, SameSite=Strict session cookie (not `Secure`, because loopback is plain HTTP).
+- **Inference:** no model API keys, no usage-billed endpoints. Provider variables (`ANTHROPIC_*`, `OPENAI_*`, …) are detected, warned about and removed from every child process environment. Deterministic commands invoke no model.
+- **Typed intents:** model output is untrusted input; it must validate against `dispatch.schema.json` (unknown fields rejected, identifiers restricted) and can never skip confirmation. Confirmations are single-use, short-lived, and bound to actor, action, target, project, session and revision.
+- **Output:** control characters in untrusted text (job titles, event data) are stripped in the terminal and escaped in the dashboard; untrusted text is labelled.
+- **Tenancy:** every read and write is scoped by organisation in the API; the active project is re-checked on every use.
+- **Local projects:** a folder project is only accepted in Dispatch local mode (single-user, loopback) and is validated server-side (resolved real path; refuses root, home, system, credential and app-data folders, and Dispatch's own data). Its path is stored but the factory only ever acts on it through the existing sandbox and approval paths, which do not yet run local-folder jobs (nothing executes them today).
+- **Agent work (Claude Code):** see `docs/dispatch/AGENTS.md` and `docs/adr/0004-agent-sandbox-outbound-https.md`. Agents use a separate `editor` identity (`dispatch-local-agent`, own token file `secrets/local-agent-token`, 0600) that cannot approve; approval needs the owner identity and a digest-bound typed confirmation. Claude Code itself is NOT OS-sandboxed.
+- **Known gaps:** not code-signed; macOS only; the owner token grants admin on the local install (single-user model); no real-provider, GitHub App or multi-tenant OIDC test was possible.

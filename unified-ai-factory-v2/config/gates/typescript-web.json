@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "profile": "typescript-web",
+  "locked": true,
+  "steps": [
+    { "id": "lint", "command": ["bun", "run", "lint"], "timeoutSeconds": 180 },
+    { "id": "typecheck", "command": ["bun", "run", "typecheck"], "timeoutSeconds": 180 },
+    { "id": "unit", "command": ["bun", "run", "test:unit"], "timeoutSeconds": 300 },
+    { "id": "build", "command": ["bun", "run", "build"], "timeoutSeconds": 600 }
+  ],
+  "protectedPaths": [".github/workflows/**", "factory-policy/**", "migrations/**", "security/**"]
+}

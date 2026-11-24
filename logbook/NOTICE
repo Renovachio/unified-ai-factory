@@ -1,0 +1,11 @@
+logbook
+
+Design ideas (not code) were taken from helm, https://github.com/ninjanazal/helm,
+Copyright (c) Eurico Martins, MIT License: structuring a Claude Code mod around one
+register() with fall-through hooks, adding a session-scope system-prompt section per
+concern, and pinning a per-folder mode in a file under .claude/.
+
+The memory model (kinds, lifecycle, supersede links, budgeted packs) is adapted from
+the author's own Unified AI Software Factory (packages/memory), rewritten.
+
+If helm code is copied in a later version, its MIT notice goes in third_party/helm/.

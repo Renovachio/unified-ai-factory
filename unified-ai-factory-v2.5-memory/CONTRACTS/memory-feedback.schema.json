@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.dispatch.invalid/schemas/memory-feedback.schema.json",
+  "title": "memory-feedback.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "memoryId",
+    "kind",
+    "evidenceRef"
+  ],
+  "properties": {
+    "memoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "enum": [
+        "helpful",
+        "irrelevant",
+        "incorrect",
+        "outdated",
+        "unsafe",
+        "contradicted"
+      ]
+    },
+    "evidenceRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "comment": {
+      "type": "string"
+    },
+    "correctionProposal": {
+      "type": "string"
+    }
+  }
+}

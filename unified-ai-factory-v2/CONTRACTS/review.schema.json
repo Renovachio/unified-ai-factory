@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewerResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reviewerRole",
+    "candidateSha",
+    "verdict",
+    "findings"
+  ],
+  "properties": {
+    "reviewerRole": {
+      "enum": [
+        "code",
+        "security",
+        "ux",
+        "ui",
+        "performance"
+      ]
+    },
+    "candidateSha": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{40}$"
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "changes_requested",
+        "blocked"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "summary"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "remediation": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

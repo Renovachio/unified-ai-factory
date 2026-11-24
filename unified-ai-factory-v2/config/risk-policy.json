@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "note": "Factory-owned risk and merge policy. Not writable by agents or target repositories. Changing it changes the policy digest and therefore invalidates every approval bound to the old digest.",
+  "minimumRisk": {
+    "pathRules": [
+      { "glob": ".github/workflows/**", "level": "CRITICAL", "reason": "CI/workflow definitions" },
+      { "glob": "factory-policy/**", "level": "CRITICAL", "reason": "factory policy" },
+      { "glob": "security/**", "level": "CRITICAL", "reason": "security policy" },
+      { "glob": "config/**", "level": "CRITICAL", "reason": "factory configuration" },
+      { "glob": "licenses/**", "level": "CRITICAL", "reason": "licence/provenance control" },
+      { "glob": "**/deploy/**", "level": "CRITICAL", "reason": "deployment control" },
+      { "glob": "Dockerfile*", "level": "HIGH", "reason": "container build" },
+      { "glob": "migrations/**", "level": "HIGH", "reason": "database migrations" },
+      { "glob": "**/*.sql", "level": "HIGH", "reason": "SQL" },
+      { "glob": "**/package.json", "level": "HIGH", "reason": "dependencies/scripts" },
+      { "glob": "bun.lock", "level": "HIGH", "reason": "dependency lockfile" },
+      { "glob": "**/auth/**", "level": "HIGH", "reason": "authentication/authorisation" },
+      { "glob": "**/payments/**", "level": "HIGH", "reason": "payments" },
+      { "glob": "apps/web/**", "level": "MEDIUM", "reason": "user interface" },
+      { "glob": "src/**", "level": "MEDIUM", "reason": "application source" },
+      { "glob": "apps/**", "level": "MEDIUM", "reason": "application source" },
+      { "glob": "packages/**", "level": "MEDIUM", "reason": "application source" },
+      { "glob": "**/*.md", "level": "LOW", "reason": "documentation" },
+      { "glob": "docs/**", "level": "LOW", "reason": "documentation" },
+      { "glob": "tests/**", "level": "LOW", "reason": "tests" },
+      { "glob": "**/*.test.*", "level": "LOW", "reason": "tests" }
+    ],
+    "unmatchedPathLevel": "MEDIUM",
+    "maxFilesForConfidentClassification": 200
+  },
+  "merge": {
+    "pilotHumanApproval": true,
+    "autoMerge": { "enabled": false, "allowedRisks": ["LOW"], "requireCalibration": true },
+    "humanApproval": { "requiredForRisks": ["HIGH", "CRITICAL"], "twoPersonForRisks": ["CRITICAL"], "approvalMaxAgeMinutes": 240 }
+  }
+}

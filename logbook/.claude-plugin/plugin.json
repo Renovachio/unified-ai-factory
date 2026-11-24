@@ -1,0 +1,7 @@
+{
+  "name": "logbook",
+  "version": "0.1.0",
+  "description": "Memory for Claude Code sessions: captures decisions, constraints and preferences as you work and brings the relevant ones back.",
+  "license": "MIT",
+  "keywords": ["memory", "context", "decisions"]
+}

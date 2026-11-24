@@ -1,0 +1,165 @@
+openapi: 3.1.0
+info:
+  title: Unified AI Factory Control API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /jobs:
+    post:
+      operationId: createJob
+      security: [{ userSession: [] }]
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './job-create.schema.json' }
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: './job-response.schema.json' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+    get:
+      operationId: listJobs
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { in: query, name: cursor, schema: { type: string } }
+        - { in: query, name: state, schema: { type: string } }
+        - { in: query, name: repositoryId, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Cursor paginated jobs }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /jobs/{jobId}:
+    get:
+      operationId: getJob
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Job details; ETag is the job version }
+        '304': { description: Not modified (If-None-Match) }
+        '404': { $ref: '#/components/responses/Problem' }
+  /jobs/{jobId}/decisions:
+    post:
+      operationId: recordDecision
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string } }
+      description: Persists a human decision bound to head/base/policy digest and the full evidence binding. Never merges by itself.
+      responses:
+        '202': { description: SHA-bound approval recorded; not merged }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /jobs/{jobId}/events/stream:
+    get:
+      operationId: streamJobEvents
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Reconnectable event stream }
+  /jobs/{jobId}/feedback:
+    post:
+      operationId: answerQuestions
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Answer recorded; intake resumes }
+        '409': { $ref: '#/components/responses/Problem' }
+  /jobs/{jobId}/events:
+    get:
+      operationId: listJobEvents
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+        - { in: query, name: afterSequence, schema: { type: integer, minimum: 0 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        '200': { description: Ordered events and nextSequence }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /jobs/{jobId}/cancel:
+    post:
+      operationId: cancelJob
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Cancelled }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /auto-merge:
+    get:
+      operationId: autoMergeStatus
+      security: [{ userSession: [] }]
+      responses:
+        '200': { description: Global kill switch and per-repository opt-in state }
+  /auto-merge/kill:
+    post:
+      operationId: autoMergeKill
+      security: [{ userSession: [] }]
+      responses:
+        '202': { description: Kill switch engaged (takes effect on the next evaluation) }
+        '403': { $ref: '#/components/responses/Problem' }
+  /auto-merge/disarm:
+    post:
+      operationId: autoMergeDisarm
+      security: [{ userSession: [] }]
+      responses:
+        '202': { description: Kill switch released (admin / security officer only) }
+        '403': { $ref: '#/components/responses/Problem' }
+  /jobs/{jobId}/hold-auto-merge:
+    post:
+      operationId: holdAutoMerge
+      security: [{ userSession: [] }]
+      parameters:
+        - { in: path, name: jobId, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Job requires a human approval }
+  /health/live:
+    get: { operationId: live, responses: { '200': { description: ok } } }
+  /health/ready:
+    get: { operationId: ready, responses: { '200': { description: ready }, '503': { description: unavailable } } }
+  /integrations/github/webhook:
+    post:
+      operationId: githubWebhook
+      security: []
+      description: Raw body HMAC-verified (X-Hub-Signature-256); X-GitHub-Delivery is deduplicated.
+      responses:
+        '202': { description: Accepted (processed or duplicate) }
+        '401': { $ref: '#/components/responses/Problem' }
+components:
+  responses:
+    Problem:
+      description: RFC 9457 Problem Details
+      content:
+        application/problem+json:
+          schema: { type: object, required: [type, title, status], properties: { type: { type: string }, title: { type: string }, status: { type: integer }, detail: { type: string }, instance: { type: string } } }
+  securitySchemes:
+    userSession:
+      type: openIdConnect
+      openIdConnectUrl: https://example.invalid/.well-known/openid-configuration

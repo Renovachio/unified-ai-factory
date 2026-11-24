@@ -1,0 +1,29 @@
+{
+  "name": "@factory/agents",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@factory/db": "workspace:*",
+    "@factory/domain": "workspace:*",
+    "@factory/runtimes": "workspace:*",
+    "@factory/telemetry": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@factory/intake": "workspace:*",
+    "@factory/orchestrator": "workspace:*",
+    "@factory/runner": "workspace:*",
+    "@factory/sandboxes": "workspace:*",
+    "@factory/scheduler": "workspace:*",
+    "@factory/scm": "workspace:*",
+    "@factory/checks": "workspace:*",
+    "@factory/api": "workspace:*",
+    "@factory/evals": "workspace:*"
+  }
+}

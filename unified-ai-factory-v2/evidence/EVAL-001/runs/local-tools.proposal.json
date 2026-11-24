@@ -1,0 +1,38 @@
+{
+  "note": "PROPOSAL ONLY - not an approval. A registry record needs an operator approval and must pass config/model-qualification.json checks.",
+  "subject": "local-model+tool-loop",
+  "model": "qwen3.5:4b",
+  "fixtureDigest": "sha256:e92576d1d5a3abe931c00e014b3d13b30d2c233450458f0150a0998f1128d9a3",
+  "proposals": [
+    {
+      "role": "builder",
+      "samples": 12,
+      "passes": 1,
+      "rate": 0.08333333333333333,
+      "wilsonLower95": 0.014864709450773488,
+      "criticalMisses": 0,
+      "falsePositives": 0,
+      "cleanSamples": 3
+    },
+    {
+      "role": "review_code",
+      "samples": 10,
+      "passes": 0,
+      "rate": 0,
+      "wilsonLower95": 0,
+      "criticalMisses": 7,
+      "falsePositives": 0,
+      "cleanSamples": 3
+    },
+    {
+      "role": "review_security",
+      "samples": 7,
+      "passes": 0,
+      "rate": 0,
+      "wilsonLower95": 0,
+      "criticalMisses": 7,
+      "falsePositives": 0,
+      "cleanSamples": 3
+    }
+  ]
+}

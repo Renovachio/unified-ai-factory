@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CreateJobResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "jobId",
+    "state",
+    "version"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

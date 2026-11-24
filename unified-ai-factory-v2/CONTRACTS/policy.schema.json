@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FactoryPolicy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "allowedInferenceModes",
+    "modelApiBillingEnabled",
+    "autoMergeHighRisk",
+    "pilotHumanApproval"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "allowedInferenceModes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "subscription_cli",
+          "local_model"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "modelApiBillingEnabled": {
+      "const": false
+    },
+    "autoMergeHighRisk": {
+      "const": false
+    },
+    "pilotHumanApproval": {
+      "const": true
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@factory/improvements",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "typecheck": "tsc -p tsconfig.json", "build": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@factory/capabilities": "workspace:*",
+    "@factory/db": "workspace:*",
+    "@factory/evals": "workspace:*",
+    "@factory/skills": "workspace:*",
+    "postgres": "4.1.1"
+  }
+}
