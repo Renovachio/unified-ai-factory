@@ -9,4 +9,4 @@ Status: accepted (2026-11-18)
 4. Pilot: every merge is manual; HIGH/CRITICAL are always manual.
 
 ## Consequences
-Fail-closed CI gate (LIC-001); policy constants in `@factory/domain`; open operator actions tracked in `PROGRESS.md`.
+Fail-closed CI gate (LIC-001); policy constants in `@factory/domain`; open operator actions tracked in `docs/operator/OPEN_ACTIONS.md`.

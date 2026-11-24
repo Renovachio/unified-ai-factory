@@ -15,4 +15,4 @@ GitHub App installation-scoped credentials never reach coding sandboxes. Strip u
 On secret leak or sandbox escape: quarantine worker and job, revoke relevant credentials, freeze artifacts and audit logs, notify operator, require security clearance before re-entry. Never autonomously erase forensic evidence.
 
 ## Tests
-See `TESTS.md`: paid inference rejection; prompt injection; path traversal; network escape; stale fencing; approval invalidation; webhook forgery; race conditions.
+Covered by the test suite: paid inference rejection; prompt injection; path traversal; network escape; stale fencing; approval invalidation; webhook forgery; race conditions.

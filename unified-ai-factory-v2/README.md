@@ -1,8 +1,8 @@
 # Unified AI Software Factory
 
-A Bun/TypeScript monorepo that takes a request through intake, spec, build, gates, review, policy and a guarded merge, with a human approving by default. All 25 work orders in `MASTER_PLAN.md` are implemented. Original implementation only; upstream source code is not included.
+A Bun/TypeScript monorepo that takes a request through intake, spec, build, gates, review, policy and a guarded merge, with a human approving by default. The original 25 build phases are implemented. Original implementation only; upstream source code is not included.
 
-**Status: built and CI-green, not production-ready.** Nothing has run against a real GitHub App, subscription CLI, cloud provider or pilot data. The v2.3 `dispatch` command and its limits are described below. Per-task status and its caveats are in `PROGRESS.md`; open operator actions and known limits are in `docs/operator/OPEN_ACTIONS.md`. "Accepted" there means the operator told the agent to continue the plan, not that an independent human reviewed the code.
+**Status: built and CI-green, not production-ready.** Nothing has run against a real GitHub App, subscription CLI, cloud provider or pilot data. The v2.3 `dispatch` command and its limits are described below. Open operator actions and known limits are in `docs/operator/OPEN_ACTIONS.md`.
 
 ## Quick start
 ```sh
@@ -70,7 +70,7 @@ Plain sentences work only for a fixed phrase set ("show my jobs", "list models")
 
 **Pieces:** `packages/dispatch-core` (config, paths, process identity, lifecycle, intent router), `packages/dispatch-client` (typed client, SSE sync with cursor/dedupe/gap reconcile/backoff), `apps/dispatch-cli` (launcher + prompt), `apps/api/src/{local,dispatch}.ts` (local owner auth, one-time browser sign-in, snapshot/events/projects/approvals/capabilities views), dashboard pages (`/`, `/projects`, `/approvals`, `/models`, `/diagnostics`, `/logs`, `/help`), `apps/dispatch-menubar` (optional Swift menu bar), `scripts/{package-dispatch,dispatch-pilot}.ts`, `packaging/dispatch/`.
 
-**Status:** local verification passed (`bun run ci`: 1236 tests, 0 failures; packaged install exercised from a clean shell). **Not released:** the real authorized coding pilot is BLOCKED (no configured runtime, qualified model, provider-terms approval, worker daemon or GitHub App), so no draft PR has been produced. Also unverified: a real browser/accessibility pass, a human TTY session, the menu-bar GUI; unsigned, macOS arm64 only, no launchd supervision. Per-task detail: `PROGRESS.md`, `evidence/DSP-01..10/report.md`. Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Check pilot gates: `DISPATCH_HOME=... bun scripts/dispatch-pilot.ts`.
+**Status:** local verification passed (`bun run ci`: 1236 tests, 0 failures; packaged install exercised from a clean shell). **Not released:** the real authorized coding pilot is BLOCKED (no configured runtime, qualified model, provider-terms approval, worker daemon or GitHub App), so no draft PR has been produced. Also unverified: a real browser/accessibility pass, a human TTY session, the menu-bar GUI; unsigned, macOS arm64 only, no launchd supervision. Per-task detail: `evidence/DSP-01..10/report.md`. Docs: `docs/dispatch/{INSTALLATION,COMMANDS,OPERATIONS,SECURITY}.md`. Check pilot gates: `DISPATCH_HOME=... bun scripts/dispatch-pilot.ts`.
 
 ## Try it locally
 `bun run demo` starts a throwaway Postgres, seeds **synthetic** data through the real API (one active skill, one awaiting approval, one rejected hostile archive, one improvement proposal), and serves the API on `127.0.0.1:8787` and the dashboard on `127.0.0.1:3000` (first page load compiles for ~30 s; add `--no-web` for the API only). Pick an identity at `http://127.0.0.1:8787/demo/login`, then open `/skills` and `/improvements`. The demo authenticator lives only in `scripts/demo.ts`, is loopback-only, and must never be reused in a deployment. `bun scripts/diagnostics.ts` (with `DATABASE_URL`) prints a redacted health snapshot.
@@ -79,4 +79,4 @@ Plain sentences work only for a fixed phrase set ("show my jobs", "list models")
 See `docs/operator/OPEN_ACTIONS.md`: provider-terms decision, GitHub App, OIDC identity provider, evidence signing key, ratifying the proposed dependency approvals and the LGPL exception, and a real pilot.
 
 ## Authority
-`SECURITY.md` and `AGENTS.md` are hard constraints. `CONTRACTS/` sets interface shapes. `TASKS/` sets work-order scope. `docs/BLUEPRINT_V1_1.md` and `ARCHITECTURE.md` are explanatory where not in conflict. If instructions disagree, stop and log an ADR; never weaken safeguards.
+`SECURITY.md` and `AGENTS.md` are hard constraints. `CONTRACTS/` sets interface shapes. `docs/BLUEPRINT_V1_1.md` and `ARCHITECTURE.md` are explanatory where not in conflict. If instructions disagree, stop and log an ADR; never weaken safeguards.

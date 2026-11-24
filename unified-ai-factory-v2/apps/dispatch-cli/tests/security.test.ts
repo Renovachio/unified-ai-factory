@@ -10,7 +10,7 @@ import { bootstrapLocalOwner, CompositeAuthenticator, createApi, LocalBrowserEnt
 import type { Ctx } from "../src/launcher/context";
 import { runRepl, type ReplHooks } from "../src/repl/repl";
 
-// Adversarial tests (TESTS.md "Security and adversarial"): everything runs through the real prompt loop and the real API.
+// Adversarial tests (security and adversarial cases): everything runs through the real prompt loop and the real API.
 let db: Awaited<ReturnType<typeof createTestDb>>; let server: ReturnType<typeof Bun.serve>; let base = ""; let org = ""; let repoId = ""; let home = ""; let n = 0;
 const TOKEN = "s3cr3t-".repeat(8); let requests: Array<{ method: string; path: string }> = [];
 beforeAll(async () => {

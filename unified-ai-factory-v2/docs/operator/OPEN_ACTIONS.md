@@ -1,6 +1,6 @@
 # Open operator actions and known limits
 
-All 25 work orders in `MASTER_PLAN.md` were implemented and accepted **on the strength of an instruction to proceed, not of an independent human review** (`PROGRESS.md`, "Accepted by"). Treat acceptance as "built, tested, CI-green", not as "reviewed for production". Nothing here has run against a real GitHub App, a real subscription CLI, a real cloud provider, or real pilot data.
+The build phases were implemented and accepted **on the strength of an instruction to proceed, not of an independent human review**. Treat acceptance as "built, tested, CI-green", not as "reviewed for production". Nothing here has run against a real GitHub App, a real subscription CLI, a real cloud provider, or real pilot data.
 
 ## Needs a human decision or credentials (blocking real use)
 1. **Provider terms** (AGT-002/AGT-003): no approval recorded, so the Claude Code / Codex adapters are DISABLED. Follow `docs/adr/0002-subscription-cli-provider-terms-decision.md`. Until then only the mock and local-model runtimes can run.

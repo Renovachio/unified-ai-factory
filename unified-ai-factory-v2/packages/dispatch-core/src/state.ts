@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname } from "node:path";
 
 export type Phase = "Stopped" | "Starting" | "Ready" | "Degraded" | "Failed" | "Stopping";
-/** MASTER_PLAN §5 / ARCHITECTURE lifecycle: the only legal edges. */
+/** ARCHITECTURE lifecycle: the only legal edges. */
 const EDGES: Record<Phase, readonly Phase[]> = {
   Stopped: ["Starting"], Starting: ["Ready", "Degraded", "Failed"], Ready: ["Stopping", "Degraded", "Failed"], Degraded: ["Ready", "Stopping", "Failed"], Failed: ["Starting", "Stopping"], Stopping: ["Stopped"],
 };
